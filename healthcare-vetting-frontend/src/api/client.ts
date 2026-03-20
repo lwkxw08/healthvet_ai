@@ -173,6 +173,64 @@ export const dashboardApi = {
     apiRequest<Record<string, unknown>>("/api/dashboard/stats", { token }),
 };
 
+// Admin API
+export const adminApi = {
+  getPricing: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/pricing", { token }),
+  updatePricing: (token: string, checkType: string, data: { cost_price?: number; sell_price?: number; label?: string }) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/pricing/${checkType}`, { method: "PUT", body: data, token }),
+  getRevenueAnalytics: (token: string, params?: { period?: string; date_from?: string; date_to?: string; agency_id?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.period) qs.set("period", params.period);
+    if (params?.date_from) qs.set("date_from", params.date_from);
+    if (params?.date_to) qs.set("date_to", params.date_to);
+    if (params?.agency_id) qs.set("agency_id", params.agency_id);
+    return apiRequest<Record<string, unknown>>(`/api/admin/analytics/revenue?${qs.toString()}`, { token });
+  },
+  getOperationsAnalytics: (token: string, params?: { period?: string; date_from?: string; date_to?: string; agency_id?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.period) qs.set("period", params.period);
+    if (params?.date_from) qs.set("date_from", params.date_from);
+    if (params?.date_to) qs.set("date_to", params.date_to);
+    if (params?.agency_id) qs.set("agency_id", params.agency_id);
+    return apiRequest<Record<string, unknown>>(`/api/admin/analytics/operations?${qs.toString()}`, { token });
+  },
+  getAgencyAnalytics: (token: string, params?: { period?: string; date_from?: string; date_to?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.period) qs.set("period", params.period);
+    if (params?.date_from) qs.set("date_from", params.date_from);
+    if (params?.date_to) qs.set("date_to", params.date_to);
+    return apiRequest<Record<string, unknown>[]>(`/api/admin/analytics/agencies?${qs.toString()}`, { token });
+  },
+  getInvoices: (token: string, params?: { period?: string; date_from?: string; date_to?: string; agency_id?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.period) qs.set("period", params.period);
+    if (params?.date_from) qs.set("date_from", params.date_from);
+    if (params?.date_to) qs.set("date_to", params.date_to);
+    if (params?.agency_id) qs.set("agency_id", params.agency_id);
+    if (params?.status) qs.set("status", params.status);
+    return apiRequest<Record<string, unknown>[]>(`/api/admin/invoices?${qs.toString()}`, { token });
+  },
+  createInvoice: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/invoices", { method: "POST", body: data, token }),
+  markInvoicePaid: (token: string, invoiceId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/invoices/${invoiceId}/mark-paid`, { method: "POST", token }),
+  generateInvoices: (token: string, agencyId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/invoices/generate?agency_id=${agencyId}`, { method: "POST", token }),
+};
+
+// Agency Services & Status API
+export const agencyServicesApi = {
+  getMyServices: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/agencies/my-services", { token }),
+  getCandidatesWithStatus: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/agencies/candidates-with-status", { token }),
+  updateCandidateStatus: (token: string, candidateId: string, employmentStatus: string) =>
+    apiRequest<Record<string, unknown>>(`/api/agencies/candidates/${candidateId}/status`, {
+      method: "PUT", body: { employment_status: employmentStatus }, token,
+    }),
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   createInvite: (token: string, candidateEmail: string) =>

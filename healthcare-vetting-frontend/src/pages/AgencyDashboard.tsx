@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
+  DollarSign, FileText, Briefcase,
 } from "lucide-react";
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
 type Tab = "dashboard" | "candidates" | "alerts" | "candidate-detail" | "invites";
 
@@ -13,7 +14,7 @@ export default function AgencyDashboard() {
   const { token, logout } = useAuth();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [stats, setStats] = useState<Record<string, unknown> | null>(null);
-  const [candidates, setCandidates] = useState<Record<string, unknown>[]>([]);
+  const [, setCandidates] = useState<Record<string, unknown>[]>([]);
   const [alerts, setAlerts] = useState<Record<string, unknown>[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, unknown> | null>(null);
   const [candidateCompliance, setCandidateCompliance] = useState<Record<string, unknown> | null>(null);
@@ -24,6 +25,14 @@ export default function AgencyDashboard() {
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [inviteError, setInviteError] = useState("");
   const [copiedCode, setCopiedCode] = useState("");
+
+  // Services breakdown data
+  const [servicesData, setServicesData] = useState<Record<string, unknown> | null>(null);
+
+  // Candidate status tracking
+  const [candidatesWithStatus, setCandidatesWithStatus] = useState<Record<string, unknown>[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!token) return;
@@ -38,6 +47,21 @@ export default function AgencyDashboard() {
       setCandidates(c);
       setAlerts(a);
       setInvites(inv);
+
+      // Load services breakdown and candidates with status
+      try {
+        const svc = await agencyServicesApi.getMyServices(token);
+        setServicesData(svc);
+      } catch {
+        // endpoint may not exist yet
+      }
+      try {
+        const cws = await agencyServicesApi.getCandidatesWithStatus(token);
+        setCandidatesWithStatus(cws);
+      } catch {
+        // fallback to regular candidates
+        setCandidatesWithStatus(c);
+      }
     } catch (err) {
       console.error("Failed to load data", err);
     }
@@ -107,16 +131,45 @@ export default function AgencyDashboard() {
     });
   };
 
+  const updateCandidateStatus = async (candidateId: string, newStatus: string) => {
+    if (!token) return;
+    setUpdatingStatus(candidateId);
+    try {
+      await agencyServicesApi.updateCandidateStatus(token, candidateId, newStatus);
+      // Update local state
+      setCandidatesWithStatus((prev) =>
+        prev.map((c) => (c.id === candidateId || c.candidate_id === candidateId)
+          ? { ...c, employment_status: newStatus }
+          : c
+        )
+      );
+      setCandidates((prev) =>
+        prev.map((c) => (c.id === candidateId)
+          ? { ...c, employment_status: newStatus }
+          : c
+        )
+      );
+    } catch (err) {
+      console.error("Failed to update status", err);
+    } finally {
+      setUpdatingStatus(null);
+    }
+  };
+
   const StatusBadge = ({ status }: { status: string }) => {
     const colors: Record<string, string> = {
       compliant: "bg-green-500/20 text-green-400 border-green-500/30",
       clear: "bg-green-500/20 text-green-400 border-green-500/30",
       active: "bg-green-500/20 text-green-400 border-green-500/30",
       valid: "bg-green-500/20 text-green-400 border-green-500/30",
+      hired: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
       pending: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
       in_progress: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+      vetting: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       pending_review: "bg-orange-500/20 text-orange-400 border-orange-500/30",
       flagged: "bg-red-500/20 text-red-400 border-red-500/30",
+      rejected: "bg-red-500/20 text-red-400 border-red-500/30",
+      left_business: "bg-gray-500/20 text-gray-400 border-gray-500/30",
       critical: "bg-red-500/20 text-red-400 border-red-500/30",
       high: "bg-orange-500/20 text-orange-400 border-orange-500/30",
       medium: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
@@ -142,14 +195,21 @@ export default function AgencyDashboard() {
     { name: "Flagged", value: stats.flagged as number, color: "#ef4444" },
   ] : [];
 
-  const barData = [
-    { name: "ID Check", cost: 2 },
-    { name: "DBS", cost: 49 },
-    { name: "RTW", cost: 0 },
-    { name: "CV Scan", cost: 1 },
-    { name: "Reg Check", cost: 0 },
-    { name: "References", cost: 0 },
-  ];
+  // Services breakdown from backend
+  const services = servicesData?.services as Record<string, unknown>[] | undefined;
+  const _totalCostFromServices = servicesData?.total_cost as number | undefined;
+  const totalRevenueFromServices = servicesData?.total_revenue as number | undefined;
+  const _totalMargin = servicesData?.total_margin as number | undefined;
+  void _totalCostFromServices;
+  void _totalMargin;
+
+  // Filter candidates by status
+  const filteredCandidates = statusFilter === "all"
+    ? candidatesWithStatus
+    : candidatesWithStatus.filter((c) => {
+        const empStatus = (c.employment_status as string) || "vetting";
+        return empStatus === statusFilter;
+      });
 
   return (
     <div className="min-h-screen bg-slate-900">
@@ -221,72 +281,217 @@ export default function AgencyDashboard() {
               </div>
             </div>
 
-            {/* Charts */}
+            {/* Charts Row */}
             <div className="grid grid-cols-2 gap-6">
+              {/* FIXED Pie Chart - increased height, donut style, Legend */}
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-4">Compliance Distribution</h3>
-                <ResponsiveContainer width="100%" height={250}>
+                <ResponsiveContainer width="100%" height={320}>
                   <PieChart>
-                    <Pie data={pieData} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="45%"
+                      outerRadius={100}
+                      innerRadius={50}
+                      dataKey="value"
+                      paddingAngle={2}
+                    >
                       {pieData.map((entry, index) => (
                         <Cell key={index} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "white" }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#1e293b",
+                        border: "1px solid #334155",
+                        borderRadius: "8px",
+                        color: "white",
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={36}
+                      formatter={(value: string, entry: Record<string, unknown>) => {
+                        const payload = entry.payload as Record<string, unknown> | undefined;
+                        const val = payload?.value ?? "";
+                        return <span style={{ color: "#cbd5e1", fontSize: "13px" }}>{value}: {String(val)}</span>;
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
 
+              {/* Services Summary Chart */}
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-4">Per-Check Cost (GBP)</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={barData}>
-                    <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                    <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                    <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "white" }} />
-                    <Bar dataKey="cost" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                <h3 className="text-md font-semibold text-white mb-4 flex items-center gap-2">
+                  <FileText className="text-blue-400" size={18} /> Services Summary
+                </h3>
+                {services && services.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={services.map((s) => ({
+                      name: (s.label as string || "").length > 12
+                        ? (s.label as string || "").substring(0, 12) + "..."
+                        : (s.label as string || ""),
+                      count: s.count as number,
+                      revenue: s.total_sell as number,
+                    }))}>
+                      <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} angle={-20} textAnchor="end" height={60} />
+                      <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#1e293b",
+                          border: "1px solid #334155",
+                          borderRadius: "8px",
+                          color: "white",
+                        }}
+                        formatter={(value: number, name: string) => {
+                          if (name === "revenue") return [`£{value.toFixed(2)}`, "Revenue"];
+                          return [value, "Checks"];
+                        }}
+                      />
+                      <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} name="count" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-64 text-slate-400">
+                    <div className="text-center">
+                      <FileText className="mx-auto mb-2 text-slate-600" size={32} />
+                      <p className="text-sm">No services data available yet</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Unit Economics */}
+            {/* REDESIGNED Services Rendered Breakdown */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-              <h3 className="text-md font-semibold text-white mb-4">Unit Economics (Per Candidate)</h3>
-              <div className="grid grid-cols-4 gap-4">
-                <div className="p-4 bg-slate-700/50 rounded-lg text-center">
-                  <p className="text-slate-400 text-xs mb-1">ID Verification</p>
-                  <p className="text-xl font-bold text-white">£2</p>
+              <h3 className="text-md font-semibold text-white mb-4 flex items-center gap-2">
+                <DollarSign className="text-green-400" size={18} /> Services Rendered
+              </h3>
+              {services && services.length > 0 ? (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-slate-700">
+                          <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Service</th>
+                          <th className="text-right text-xs text-slate-400 font-medium px-4 py-3">Checks Completed</th>
+                          <th className="text-right text-xs text-slate-400 font-medium px-4 py-3">Unit Price</th>
+                          <th className="text-right text-xs text-slate-400 font-medium px-4 py-3">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {services.map((svc) => {
+                          const checkType = svc.check_type as string;
+                          const label = svc.label as string;
+                          const count = svc.count as number;
+                          const sellPrice = svc.sell_price as number;
+                          const totalSell = svc.total_sell as number;
+                          return (
+                            <tr key={checkType} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <Briefcase className="text-blue-400" size={14} />
+                                  <span className="text-sm text-white">{label}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <span className="text-sm text-white font-medium">{count}</span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <span className="text-sm text-slate-300">£{sellPrice.toFixed(2)}</span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <span className="text-sm text-green-400 font-medium">£{totalSell.toFixed(2)}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-slate-600">
+                          <td className="px-4 py-3 text-sm text-white font-bold" colSpan={3}>Total Services Charged</td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="text-lg text-green-400 font-bold">
+                              £{(totalRevenueFromServices ?? 0).toFixed(2)}
+                            </span>
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-3 gap-4 mt-4">
+                    <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                      <p className="text-slate-400 text-xs mb-1">Total Services</p>
+                      <p className="text-2xl font-bold text-white">
+                        {services.reduce((sum, s) => sum + (s.count as number), 0)}
+                      </p>
+                      <p className="text-slate-500 text-xs mt-1">checks completed</p>
+                    </div>
+                    <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                      <p className="text-slate-400 text-xs mb-1">Total Amount</p>
+                      <p className="text-2xl font-bold text-green-400">£{(totalRevenueFromServices ?? 0).toFixed(2)}</p>
+                      <p className="text-slate-500 text-xs mt-1">services charged</p>
+                    </div>
+                    <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                      <p className="text-slate-400 text-xs mb-1">Avg per Candidate</p>
+                      <p className="text-2xl font-bold text-blue-400">
+                        £{stats.total_candidates && (stats.total_candidates as number) > 0
+                          ? ((totalRevenueFromServices ?? 0) / (stats.total_candidates as number)).toFixed(2)
+                          : "0.00"}
+                      </p>
+                      <p className="text-slate-500 text-xs mt-1">per candidate</p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="p-8 text-center text-slate-400">
+                  <DollarSign className="mx-auto mb-2 text-slate-600" size={32} />
+                  <p className="text-sm">No services data available yet.</p>
+                  <p className="text-xs text-slate-500 mt-1">Services will appear here once candidates complete vetting checks.</p>
                 </div>
-                <div className="p-4 bg-slate-700/50 rounded-lg text-center">
-                  <p className="text-slate-400 text-xs mb-1">Enhanced DBS</p>
-                  <p className="text-xl font-bold text-white">£49</p>
-                </div>
-                <div className="p-4 bg-slate-700/50 rounded-lg text-center">
-                  <p className="text-slate-400 text-xs mb-1">Total Cost</p>
-                  <p className="text-xl font-bold text-amber-400">~£54</p>
-                </div>
-                <div className="p-4 bg-slate-700/50 rounded-lg text-center">
-                  <p className="text-slate-400 text-xs mb-1">You Charge</p>
-                  <p className="text-xl font-bold text-green-400">£90-£140</p>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Candidates Tab */}
+        {/* Candidates Tab - WITH STATUS TRACKING */}
         {tab === "candidates" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">Candidates ({candidates.length})</h2>
+              <h2 className="text-xl font-bold text-white">Candidates ({candidatesWithStatus.length})</h2>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Filter:</span>
+                {["all", "vetting", "hired", "rejected", "left_business"].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      statusFilter === s
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-700"
+                    }`}
+                  >
+                    {s === "all" ? "All" : s.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {candidates.length === 0 ? (
+            {filteredCandidates.length === 0 ? (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-12 text-center">
                 <Users className="text-slate-600 mx-auto mb-3" size={48} />
-                <p className="text-slate-400">No candidates assigned yet</p>
-                <p className="text-slate-500 text-sm mt-1">Candidates will appear here once assigned to your agency</p>
+                <p className="text-slate-400">
+                  {statusFilter === "all" ? "No candidates assigned yet" : `No ${statusFilter.replace(/_/g, " ")} candidates`}
+                </p>
+                <p className="text-slate-500 text-sm mt-1">
+                  {statusFilter === "all"
+                    ? "Candidates will appear here once assigned to your agency"
+                    : "Try a different filter"}
+                </p>
               </div>
             ) : (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
@@ -297,25 +502,51 @@ export default function AgencyDashboard() {
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Profession</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Registration</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Score</th>
-                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Status</th>
+                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Compliance</th>
+                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Employment Status</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {candidates.map((c) => (
-                      <tr key={c.id as string} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-                        <td className="px-4 py-3 text-sm text-white">{c.first_name as string} {c.last_name as string}</td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{(c.profession as string) || "N/A"}</td>
-                        <td className="px-4 py-3 text-sm text-slate-300">{(c.registration_body as string) || "N/A"} {(c.registration_number as string) || ""}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-white">{c.compliance_score as number}%</td>
-                        <td className="px-4 py-3"><StatusBadge status={c.compliance_status as string} /></td>
-                        <td className="px-4 py-3">
-                          <button onClick={() => viewCandidate(c)} className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1">
-                            <Eye size={14} /> View
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredCandidates.map((c) => {
+                      const cId = (c.id as string) || (c.candidate_id as string);
+                      const empStatus = (c.employment_status as string) || "vetting";
+                      return (
+                        <tr key={cId} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                          <td className="px-4 py-3 text-sm text-white">{c.first_name as string} {c.last_name as string}</td>
+                          <td className="px-4 py-3 text-sm text-slate-300">{(c.profession as string) || "N/A"}</td>
+                          <td className="px-4 py-3 text-sm text-slate-300">{(c.registration_body as string) || "N/A"} {(c.registration_number as string) || ""}</td>
+                          <td className="px-4 py-3 text-sm font-medium text-white">{c.compliance_score as number}%</td>
+                          <td className="px-4 py-3"><StatusBadge status={c.compliance_status as string} /></td>
+                          <td className="px-4 py-3">
+                            <select
+                              value={empStatus}
+                              onChange={(e) => updateCandidateStatus(cId, e.target.value)}
+                              disabled={updatingStatus === cId}
+                              className={`text-xs rounded-lg px-2 py-1.5 border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                empStatus === "hired"
+                                  ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                                  : empStatus === "rejected"
+                                  ? "bg-red-500/20 text-red-400 border-red-500/30"
+                                  : empStatus === "left_business"
+                                  ? "bg-gray-500/20 text-gray-400 border-gray-500/30"
+                                  : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                              } ${updatingStatus === cId ? "opacity-50" : ""}`}
+                            >
+                              <option value="vetting">Vetting</option>
+                              <option value="hired">Hired</option>
+                              <option value="rejected">Rejected</option>
+                              <option value="left_business">Left Business</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button onClick={() => viewCandidate(c)} className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1">
+                              <Eye size={14} /> View
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -470,7 +701,10 @@ export default function AgencyDashboard() {
               <h2 className="text-xl font-bold text-white">
                 {selectedCandidate.first_name as string} {selectedCandidate.last_name as string}
               </h2>
-              <StatusBadge status={selectedCandidate.compliance_status as string} />
+              <div className="flex items-center gap-3">
+                <StatusBadge status={selectedCandidate.compliance_status as string} />
+                <StatusBadge status={(selectedCandidate.employment_status as string) || "vetting"} />
+              </div>
             </div>
 
             {/* Candidate Info */}

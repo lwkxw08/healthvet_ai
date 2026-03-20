@@ -2,6 +2,8 @@
 import secrets
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
+from typing import Optional
 from app.database import get_db
 from app.utils.auth import get_current_user, generate_id
 from app.schemas.agencies import InviteCreate, InviteResponse
@@ -218,5 +220,112 @@ async def get_pending_invites(current_user: dict = Depends(get_current_user)):
                JOIN agencies a ON ai.agency_id = a.id
                WHERE ai.candidate_email=? AND ai.status='pending'""",
             (candidate_email,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── Candidate Employment Status ──────────────────────────────────
+
+class CandidateStatusUpdate(BaseModel):
+    employment_status: str  # vetting, hired, rejected, left_business
+
+
+@router.put("/candidates/{candidate_id}/status")
+async def update_candidate_status(
+    candidate_id: str,
+    data: CandidateStatusUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """Agency updates a candidate's employment status."""
+    if current_user["type"] != "agency":
+        raise HTTPException(status_code=403, detail="Agencies only")
+
+    valid_statuses = {"vetting", "hired", "rejected", "left_business"}
+    if data.employment_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(valid_statuses)}")
+
+    agency_id = current_user["sub"]
+    now = datetime.now(timezone.utc).isoformat()
+
+    with get_db() as db:
+        row = db.execute(
+            "SELECT * FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+            (agency_id, candidate_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Candidate not found in your agency")
+
+        db.execute(
+            "UPDATE agency_candidates SET employment_status=?, employment_status_updated_at=? WHERE agency_id=? AND candidate_id=?",
+            (data.employment_status, now, agency_id, candidate_id),
+        )
+
+    return {"status": "updated", "employment_status": data.employment_status}
+
+
+# ── Agency Services / Billing Breakdown ──────────────────────────
+
+@router.get("/my-services")
+async def get_my_services(current_user: dict = Depends(get_current_user)):
+    """Get the agency's services rendered breakdown based on admin-set pricing."""
+    if current_user["type"] != "agency":
+        raise HTTPException(status_code=403, detail="Agencies only")
+
+    agency_id = current_user["sub"]
+
+    with get_db() as db:
+        # Get invoices for this agency
+        invoices = [dict(r) for r in db.execute(
+            "SELECT * FROM invoices WHERE agency_id=? ORDER BY created_at DESC",
+            (agency_id,),
+        ).fetchall()]
+
+        total_billed = sum(i["sell_amount"] for i in invoices)
+        total_paid = sum(i["sell_amount"] for i in invoices if i["status"] == "paid")
+        total_outstanding = total_billed - total_paid
+
+        # Breakdown by check type
+        by_type = {}
+        for inv in invoices:
+            ct = inv["check_type"] or "other"
+            if ct not in by_type:
+                by_type[ct] = {"description": inv["description"] or ct, "count": 0, "total": 0.0}
+            by_type[ct]["count"] += 1
+            by_type[ct]["total"] += inv["sell_amount"]
+
+        # Get candidate count
+        cand_count = db.execute(
+            "SELECT COUNT(*) as cnt FROM agency_candidates WHERE agency_id=?",
+            (agency_id,),
+        ).fetchone()
+
+        return {
+            "total_billed": round(total_billed, 2),
+            "total_paid": round(total_paid, 2),
+            "total_outstanding": round(total_outstanding, 2),
+            "invoice_count": len(invoices),
+            "candidate_count": dict(cand_count)["cnt"] if cand_count else 0,
+            "by_check_type": by_type,
+            "invoices": invoices,
+        }
+
+
+@router.get("/candidates-with-status")
+async def get_candidates_with_status(current_user: dict = Depends(get_current_user)):
+    """Get all agency candidates with their employment status."""
+    if current_user["type"] != "agency":
+        raise HTTPException(status_code=403, detail="Agencies only")
+
+    agency_id = current_user["sub"]
+    with get_db() as db:
+        rows = db.execute(
+            """SELECT c.id, c.first_name, c.last_name, c.email, c.compliance_score,
+                      c.compliance_status, c.created_at,
+                      ac.employment_status, ac.employment_status_updated_at, ac.assigned_at
+               FROM candidates c
+               JOIN agency_candidates ac ON c.id = ac.candidate_id
+               WHERE ac.agency_id=?
+               ORDER BY c.created_at DESC""",
+            (agency_id,),
         ).fetchall()
         return [dict(r) for r in rows]

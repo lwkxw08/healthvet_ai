@@ -111,6 +111,44 @@ def migrate_db():
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         )""")
+    # Add employment_status column to agency_candidates if missing
+    try:
+        existing_ac_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_candidates)").fetchall()}
+        if "employment_status" not in existing_ac_cols:
+            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN employment_status TEXT DEFAULT 'vetting'")
+        if "employment_status_updated_at" not in existing_ac_cols:
+            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN employment_status_updated_at TEXT")
+    except Exception:
+        pass
+    # Create pricing_settings table if it doesn't exist
+    try:
+        cursor.execute("SELECT 1 FROM pricing_settings LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS pricing_settings (
+            id TEXT PRIMARY KEY,
+            check_type TEXT UNIQUE NOT NULL,
+            label TEXT NOT NULL,
+            cost_price REAL DEFAULT 0.0,
+            sell_price REAL DEFAULT 0.0,
+            updated_at TEXT DEFAULT (datetime('now'))
+        )""")
+    # Create invoices table if it doesn't exist
+    try:
+        cursor.execute("SELECT 1 FROM invoices LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS invoices (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_id TEXT,
+            check_type TEXT,
+            description TEXT,
+            cost_amount REAL DEFAULT 0.0,
+            sell_amount REAL DEFAULT 0.0,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT (datetime('now')),
+            paid_at TEXT,
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        )""")
     # Add cv_file_name column to cv_analyses if missing
     try:
         existing_cv_cols = {row[1] for row in cursor.execute("PRAGMA table_info(cv_analyses)").fetchall()}
@@ -120,6 +158,26 @@ def migrate_db():
             cursor.execute("ALTER TABLE cv_analyses ADD COLUMN employment_entries TEXT")
     except Exception:
         pass
+    # Seed default pricing if table is empty
+    count = cursor.execute("SELECT COUNT(*) FROM pricing_settings").fetchone()[0]
+    if count == 0:
+        defaults = [
+            ("identity", "Identity Verification", 2.0, 15.0),
+            ("dbs", "Enhanced DBS Check", 49.0, 85.0),
+            ("right_to_work", "Right to Work", 1.0, 10.0),
+            ("cv_analysis", "CV Analysis", 1.5, 12.0),
+            ("registration", "Registration Check", 1.0, 10.0),
+            ("references", "References (per ref)", 0.5, 8.0),
+            ("employment", "Employment Verification", 1.0, 10.0),
+            ("monitoring", "Continuous Monitoring (annual)", 5.0, 50.0),
+        ]
+        for check_type, label, cost, sell in defaults:
+            from app.utils.auth import generate_id
+            cursor.execute(
+                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (?, ?, ?, ?, ?)",
+                (generate_id(), check_type, label, cost, sell),
+            )
+
     conn.commit()
     conn.close()
 
@@ -169,6 +227,8 @@ def init_db():
             agency_id TEXT NOT NULL,
             candidate_id TEXT NOT NULL,
             assigned_at TEXT DEFAULT (datetime('now')),
+            employment_status TEXT DEFAULT 'vetting',
+            employment_status_updated_at TEXT,
             PRIMARY KEY (agency_id, candidate_id),
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
@@ -390,6 +450,29 @@ def init_db():
             accepted_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS pricing_settings (
+            id TEXT PRIMARY KEY,
+            check_type TEXT UNIQUE NOT NULL,
+            label TEXT NOT NULL,
+            cost_price REAL DEFAULT 0.0,
+            sell_price REAL DEFAULT 0.0,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS invoices (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_id TEXT,
+            check_type TEXT,
+            description TEXT,
+            cost_amount REAL DEFAULT 0.0,
+            sell_amount REAL DEFAULT 0.0,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT (datetime('now')),
+            paid_at TEXT,
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
     """)
 
