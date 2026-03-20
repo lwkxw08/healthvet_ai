@@ -1,0 +1,397 @@
+import sqlite3
+import os
+from contextlib import contextmanager
+
+# Use /data/app.db for persistent storage in deployment, local otherwise
+DB_PATH = os.environ.get("DATABASE_PATH", "/data/app.db" if os.path.isdir("/data") else "app.db")
+
+
+def get_db_path():
+    return DB_PATH
+
+
+def get_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+@contextmanager
+def get_db():
+    conn = get_connection()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def migrate_db():
+    """Run database migrations for schema changes."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Add new columns to right_to_work_checks if they don't exist
+    existing_cols = {row[1] for row in cursor.execute("PRAGMA table_info(right_to_work_checks)").fetchall()}
+    new_cols = {
+        "verification_method": "TEXT DEFAULT 'share_code'",
+        "nationality": "TEXT",
+        "document_type": "TEXT",
+        "document_reference": "TEXT",
+        "ni_number": "TEXT",
+    }
+    for col, col_type in new_cols.items():
+        if col not in existing_cols:
+            cursor.execute(f"ALTER TABLE right_to_work_checks ADD COLUMN {col} {col_type}")
+    # Also create new tables if they don't exist (for existing databases)
+    try:
+        cursor.execute("SELECT 1 FROM employment_history LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS employment_history (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            cv_analysis_id TEXT,
+            employer_name TEXT NOT NULL,
+            job_title TEXT NOT NULL,
+            start_date TEXT,
+            end_date TEXT,
+            is_current INTEGER DEFAULT 0,
+            reason_for_leaving TEXT,
+            duties TEXT,
+            verifier_name TEXT,
+            verifier_email TEXT,
+            verifier_job_title TEXT,
+            source TEXT DEFAULT 'cv_extracted',
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        )""")
+    try:
+        cursor.execute("SELECT 1 FROM employment_verifications LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS employment_verifications (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            employment_id TEXT NOT NULL,
+            verifier_name TEXT NOT NULL,
+            verifier_email TEXT NOT NULL,
+            verifier_job_title TEXT,
+            employer_name TEXT,
+            token TEXT UNIQUE,
+            status TEXT DEFAULT 'pending',
+            job_title_confirmed INTEGER,
+            dates_confirmed INTEGER,
+            reason_for_leaving_confirmed TEXT,
+            additional_comments TEXT,
+            fraud_flags TEXT,
+            ip_address TEXT,
+            domain_verified INTEGER DEFAULT 0,
+            reminder_count INTEGER DEFAULT 0,
+            sent_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id),
+            FOREIGN KEY (employment_id) REFERENCES employment_history(id)
+        )""")
+    # Create agency_invites table if it doesn't exist
+    try:
+        cursor.execute("SELECT 1 FROM agency_invites LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS agency_invites (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_email TEXT NOT NULL,
+            invite_code TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'pending',
+            candidate_id TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            accepted_at TEXT,
+            FOREIGN KEY (agency_id) REFERENCES agencies(id),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        )""")
+    # Add cv_file_name column to cv_analyses if missing
+    try:
+        existing_cv_cols = {row[1] for row in cursor.execute("PRAGMA table_info(cv_analyses)").fetchall()}
+        if "cv_file_name" not in existing_cv_cols:
+            cursor.execute("ALTER TABLE cv_analyses ADD COLUMN cv_file_name TEXT")
+        if "employment_entries" not in existing_cv_cols:
+            cursor.execute("ALTER TABLE cv_analyses ADD COLUMN employment_entries TEXT")
+    except Exception:
+        pass
+    conn.commit()
+    conn.close()
+
+
+def init_db():
+    """Initialize database tables."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS candidates (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            phone TEXT,
+            date_of_birth TEXT,
+            address_line1 TEXT,
+            address_line2 TEXT,
+            city TEXT,
+            postcode TEXT,
+            country TEXT DEFAULT 'GB',
+            profession TEXT,
+            registration_number TEXT,
+            registration_body TEXT,
+            status TEXT DEFAULT 'pending',
+            compliance_score REAL DEFAULT 0.0,
+            compliance_status TEXT DEFAULT 'incomplete',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS agencies (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            contact_name TEXT,
+            phone TEXT,
+            plan TEXT DEFAULT 'standard',
+            monthly_fee REAL DEFAULT 300.0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS agency_candidates (
+            agency_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            assigned_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (agency_id, candidate_id),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS identity_checks (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            provider TEXT DEFAULT 'onfido',
+            status TEXT DEFAULT 'pending',
+            document_type TEXT,
+            document_authenticity TEXT,
+            facial_match_score REAL,
+            liveness_check TEXT,
+            address_verified INTEGER DEFAULT 0,
+            result TEXT,
+            details TEXT,
+            started_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS right_to_work_checks (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            share_code TEXT,
+            verification_method TEXT DEFAULT 'share_code',
+            nationality TEXT,
+            document_type TEXT,
+            document_reference TEXT,
+            ni_number TEXT,
+            status TEXT DEFAULT 'pending',
+            visa_type TEXT,
+            visa_expiry TEXT,
+            work_restrictions TEXT,
+            verified INTEGER DEFAULT 0,
+            result TEXT,
+            details TEXT,
+            checked_at TEXT DEFAULT (datetime('now')),
+            next_check_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS dbs_checks (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            provider TEXT DEFAULT 'ucheck',
+            check_type TEXT DEFAULT 'enhanced',
+            status TEXT DEFAULT 'pending',
+            application_ref TEXT,
+            certificate_number TEXT,
+            issue_date TEXT,
+            result TEXT,
+            details TEXT,
+            update_service_registered INTEGER DEFAULT 0,
+            next_renewal TEXT,
+            submitted_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS cv_analyses (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            cv_text TEXT,
+            cv_file_name TEXT,
+            gap_analysis TEXT,
+            overlap_detection TEXT,
+            qualification_flags TEXT,
+            fraud_risk_score REAL DEFAULT 0.0,
+            inconsistencies TEXT,
+            ai_summary TEXT,
+            employment_entries TEXT,
+            status TEXT DEFAULT 'pending',
+            analysed_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS registration_checks (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            body TEXT NOT NULL,
+            registration_number TEXT,
+            status TEXT DEFAULT 'pending',
+            is_active INTEGER,
+            sanctions TEXT,
+            conditions TEXT,
+            last_checked TEXT DEFAULT (datetime('now')),
+            next_check TEXT,
+            result TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS references_ (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            referee_name TEXT NOT NULL,
+            referee_email TEXT NOT NULL,
+            referee_phone TEXT,
+            referee_organisation TEXT,
+            referee_job_title TEXT,
+            relationship TEXT,
+            token TEXT UNIQUE,
+            status TEXT DEFAULT 'pending',
+            responses TEXT,
+            sentiment_score REAL,
+            fraud_flags TEXT,
+            ip_address TEXT,
+            domain_verified INTEGER DEFAULT 0,
+            reminder_count INTEGER DEFAULT 0,
+            sent_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS compliance_records (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            overall_status TEXT DEFAULT 'incomplete',
+            score REAL DEFAULT 0.0,
+            identity_verified INTEGER DEFAULT 0,
+            right_to_work_valid INTEGER DEFAULT 0,
+            dbs_valid INTEGER DEFAULT 0,
+            registration_active INTEGER DEFAULT 0,
+            references_verified INTEGER DEFAULT 0,
+            cv_validated INTEGER DEFAULT 0,
+            flags TEXT,
+            audit_log TEXT,
+            last_evaluated TEXT DEFAULT (datetime('now')),
+            cqc_ready INTEGER DEFAULT 0,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS monitoring_alerts (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            alert_type TEXT NOT NULL,
+            severity TEXT DEFAULT 'medium',
+            message TEXT NOT NULL,
+            details TEXT,
+            is_read INTEGER DEFAULT 0,
+            is_resolved INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            resolved_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS webhook_events (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload TEXT,
+            status TEXT DEFAULT 'received',
+            processed_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            actor TEXT,
+            details TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS employment_history (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            cv_analysis_id TEXT,
+            employer_name TEXT NOT NULL,
+            job_title TEXT NOT NULL,
+            start_date TEXT,
+            end_date TEXT,
+            is_current INTEGER DEFAULT 0,
+            reason_for_leaving TEXT,
+            duties TEXT,
+            verifier_name TEXT,
+            verifier_email TEXT,
+            verifier_job_title TEXT,
+            source TEXT DEFAULT 'cv_extracted',
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS employment_verifications (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            employment_id TEXT NOT NULL,
+            verifier_name TEXT NOT NULL,
+            verifier_email TEXT NOT NULL,
+            verifier_job_title TEXT,
+            employer_name TEXT,
+            token TEXT UNIQUE,
+            status TEXT DEFAULT 'pending',
+            job_title_confirmed INTEGER,
+            dates_confirmed INTEGER,
+            reason_for_leaving_confirmed TEXT,
+            additional_comments TEXT,
+            fraud_flags TEXT,
+            ip_address TEXT,
+            domain_verified INTEGER DEFAULT 0,
+            reminder_count INTEGER DEFAULT 0,
+            sent_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id),
+            FOREIGN KEY (employment_id) REFERENCES employment_history(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS agency_invites (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_email TEXT NOT NULL,
+            invite_code TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'pending',
+            candidate_id TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            accepted_at TEXT,
+            FOREIGN KEY (agency_id) REFERENCES agencies(id),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+    """)
+
+    conn.commit()
+    conn.close()
