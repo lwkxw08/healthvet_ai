@@ -184,6 +184,7 @@ class ComplianceResponse(BaseModel):
     registration_active: bool
     references_verified: bool
     cv_validated: bool
+    employment_verified: bool = False
     flags: Optional[str] = None
     audit_log: Optional[str] = None
     last_evaluated: Optional[str] = None

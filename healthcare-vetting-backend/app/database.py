@@ -149,6 +149,13 @@ def migrate_db():
             paid_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         )""")
+    # Add employment_verified column to compliance_records if missing
+    try:
+        existing_cr_cols = {row[1] for row in cursor.execute("PRAGMA table_info(compliance_records)").fetchall()}
+        if "employment_verified" not in existing_cr_cols:
+            cursor.execute("ALTER TABLE compliance_records ADD COLUMN employment_verified INTEGER DEFAULT 0")
+    except Exception:
+        pass
     # Add cv_file_name column to cv_analyses if missing
     try:
         existing_cv_cols = {row[1] for row in cursor.execute("PRAGMA table_info(cv_analyses)").fetchall()}
@@ -355,6 +362,7 @@ def init_db():
             registration_active INTEGER DEFAULT 0,
             references_verified INTEGER DEFAULT 0,
             cv_validated INTEGER DEFAULT 0,
+            employment_verified INTEGER DEFAULT 0,
             flags TEXT,
             audit_log TEXT,
             last_evaluated TEXT DEFAULT (datetime('now')),

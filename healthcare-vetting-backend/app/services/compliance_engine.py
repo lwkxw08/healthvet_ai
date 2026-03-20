@@ -12,12 +12,13 @@ class ComplianceEngine:
     """Rule-based compliance evaluation engine."""
 
     RULES = {
-        "identity_verified": {"weight": 20, "required": True},
-        "right_to_work_valid": {"weight": 20, "required": True},
-        "dbs_valid": {"weight": 25, "required": True},
-        "registration_active": {"weight": 15, "required": True},
-        "references_verified": {"weight": 15, "required": True, "min_count": 2},
+        "identity_verified": {"weight": 15, "required": True},
+        "right_to_work_valid": {"weight": 15, "required": True},
+        "dbs_valid": {"weight": 20, "required": True},
         "cv_validated": {"weight": 5, "required": False},
+        "employment_verified": {"weight": 15, "required": True},
+        "registration_active": {"weight": 10, "required": True},
+        "references_verified": {"weight": 15, "required": True, "min_count": 2},
     }
 
     @staticmethod
@@ -141,6 +142,32 @@ class ComplianceEngine:
             if not cv_pass and cv:
                 flags.append(f"CV fraud risk score: {dict(cv)['fraud_risk_score']}")
 
+            # Employment Verification
+            emp_verifications = db.execute(
+                "SELECT * FROM employment_verifications WHERE candidate_id=? AND status='completed'",
+                (candidate_id,),
+            ).fetchall()
+            emp_entries = db.execute(
+                "SELECT COUNT(*) as cnt FROM employment_history WHERE candidate_id=?",
+                (candidate_id,),
+            ).fetchone()
+            total_entries = dict(emp_entries)["cnt"] if emp_entries else 0
+            verified_count = len(emp_verifications)
+            # Employment is verified if there are entries and at least 1 is verified
+            emp_pass = total_entries > 0 and verified_count > 0
+            checks["employment_verified"] = emp_pass
+            audit_entries.append({
+                "check": "employment_verification",
+                "result": "passed" if emp_pass else "failed",
+                "timestamp": now,
+                "details": f"{verified_count} of {total_entries} employment entries verified",
+            })
+            if not emp_pass:
+                if total_entries == 0:
+                    flags.append("No employment history entries added")
+                else:
+                    flags.append(f"Employment: {verified_count}/{total_entries} verified")
+
             # Calculate compliance score
             score = 0.0
             for check_name, passed in checks.items():
@@ -173,8 +200,8 @@ class ComplianceEngine:
                     """UPDATE compliance_records SET
                        overall_status=?, score=?, identity_verified=?,
                        right_to_work_valid=?, dbs_valid=?, registration_active=?,
-                       references_verified=?, cv_validated=?, flags=?,
-                       audit_log=?, last_evaluated=?, cqc_ready=?
+                       references_verified=?, cv_validated=?, employment_verified=?,
+                       flags=?, audit_log=?, last_evaluated=?, cqc_ready=?
                        WHERE candidate_id=?""",
                     (
                         overall_status, score,
@@ -184,6 +211,7 @@ class ComplianceEngine:
                         1 if checks["registration_active"] else 0,
                         1 if checks["references_verified"] else 0,
                         1 if checks["cv_validated"] else 0,
+                        1 if checks["employment_verified"] else 0,
                         json.dumps(flags),
                         json.dumps(audit_entries),
                         now,
@@ -196,9 +224,9 @@ class ComplianceEngine:
                     """INSERT INTO compliance_records
                        (id, candidate_id, overall_status, score, identity_verified,
                         right_to_work_valid, dbs_valid, registration_active,
-                        references_verified, cv_validated, flags, audit_log,
-                        last_evaluated, cqc_ready)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        references_verified, cv_validated, employment_verified,
+                        flags, audit_log, last_evaluated, cqc_ready)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         generate_id(), candidate_id, overall_status, score,
                         1 if checks["identity_verified"] else 0,
@@ -207,6 +235,7 @@ class ComplianceEngine:
                         1 if checks["registration_active"] else 0,
                         1 if checks["references_verified"] else 0,
                         1 if checks["cv_validated"] else 0,
+                        1 if checks["employment_verified"] else 0,
                         json.dumps(flags),
                         json.dumps(audit_entries),
                         now,

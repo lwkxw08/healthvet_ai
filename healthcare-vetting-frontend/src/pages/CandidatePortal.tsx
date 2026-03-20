@@ -497,12 +497,13 @@ export default function CandidatePortal() {
                 <h3 className="text-lg font-semibold text-white mb-4">Vetting Checklist</h3>
                 <div className="space-y-3">
                   {[
-                    { label: "Identity Verification", key: "identity_verified", weight: "20%" },
-                    { label: "Right to Work", key: "right_to_work_valid", weight: "20%" },
-                    { label: "Enhanced DBS Check", key: "dbs_valid", weight: "25%" },
-                    { label: "Professional Registration", key: "registration_active", weight: "15%" },
-                    { label: "References (2 required)", key: "references_verified", weight: "15%" },
+                    { label: "Identity Verification", key: "identity_verified", weight: "15%" },
+                    { label: "Right to Work", key: "right_to_work_valid", weight: "15%" },
+                    { label: "Enhanced DBS Check", key: "dbs_valid", weight: "20%" },
                     { label: "CV Validation", key: "cv_validated", weight: "5%" },
+                    { label: "Employment Verification", key: "employment_verified", weight: "15%" },
+                    { label: "Professional Registration", key: "registration_active", weight: "10%" },
+                    { label: "References (2 required)", key: "references_verified", weight: "15%" },
                   ].map((item) => (
                     <div key={item.key} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
                       <div className="flex items-center gap-3">
