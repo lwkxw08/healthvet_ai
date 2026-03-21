@@ -1413,7 +1413,9 @@ export default function AdminPanel() {
                     ))}
                   </div>
                   <div className="mt-3"><span className={`text-sm font-medium ${candidateCompliance.cqc_ready ? "text-green-400" : "text-red-400"}`}>CQC Ready: {candidateCompliance.cqc_ready ? "YES" : "NO"}</span></div>
-                  {candidateCompliance.flags ? <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded text-xs text-amber-300">{String(candidateCompliance.flags)}</div> : null}
+                  {candidateCompliance.flags ? <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded text-xs text-amber-300">
+                    {Array.isArray(candidateCompliance.flags) ? (candidateCompliance.flags as string[]).map((flag, i) => <div key={i} className="py-0.5">• {flag}</div>) : <div>{String(candidateCompliance.flags)}</div>}
+                  </div> : null}
                 </div>
               )}
             </div>
