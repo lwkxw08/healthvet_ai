@@ -19,18 +19,6 @@ def get_connection():
 
 
 @contextmanager
-
-    CREATE TABLE IF NOT EXISTS subscription_tier_config (
-        id TEXT PRIMARY KEY,
-        tier_key TEXT UNIQUE NOT NULL,
-        name TEXT NOT NULL,
-        monthly_price REAL DEFAULT 0,
-        per_worker_price REAL DEFAULT 0,
-        max_workers INTEGER DEFAULT 0,
-        features TEXT DEFAULT '[]',
-        updated_at TEXT
-    );
-
 def get_db():
     conn = get_connection()
     try:
@@ -618,6 +606,17 @@ def init_db():
             completed_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS subscription_tier_config (
+            id TEXT PRIMARY KEY,
+            tier_key TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            monthly_price REAL DEFAULT 0,
+            per_worker_price REAL DEFAULT 0,
+            max_workers INTEGER DEFAULT 0,
+            features TEXT DEFAULT '[]',
+            updated_at TEXT
         );
     """)
 
