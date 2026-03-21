@@ -628,6 +628,43 @@ export default function AdminPanel() {
         {tab === "candidates" && (
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-white">All Candidates ({candidates.length})</h2>
+
+            {/* Inline Edit Panel */}
+            {editingCandidate && (
+              <div className="bg-slate-800/80 rounded-xl border border-blue-500/30 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-md font-semibold text-white flex items-center gap-2"><Edit size={16} className="text-blue-400" /> Editing: {String(editingCandidate.first_name)} {String(editingCandidate.last_name)}</h3>
+                  <button onClick={() => setEditingCandidate(null)} className="text-slate-400 hover:text-white text-xs">Cancel</button>
+                </div>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  {[
+                    { key: "first_name", label: "First Name" },
+                    { key: "last_name", label: "Last Name" },
+                    { key: "email", label: "Email" },
+                    { key: "profession", label: "Profession" },
+                    { key: "registration_body", label: "Registration Body" },
+                    { key: "registration_number", label: "Registration Number" },
+                  ].map((field) => (
+                    <div key={field.key}>
+                      <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                      <input
+                        value={editFields[field.key] || ""}
+                        onChange={(e) => setEditFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => handleSaveCandidateEdit()}
+                  disabled={savingEdit}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50 text-white px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
+                >
+                  <CheckCircle size={14} /> {savingEdit ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            )}
+
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
               <table className="w-full">
                 <thead><tr className="border-b border-slate-700">
@@ -635,7 +672,7 @@ export default function AdminPanel() {
                 </tr></thead>
                 <tbody>
                   {candidates.map((c) => (
-                    <tr key={c.id as string} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <tr key={c.id as string} className={`border-b border-slate-700/50 hover:bg-slate-700/30 ${editingCandidate && String(editingCandidate.id) === String(c.id) ? "bg-blue-500/10" : ""}`}>
                       <td className="px-4 py-3 text-sm text-white">{c.first_name as string} {c.last_name as string}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">{c.email as string}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">{(c.profession as string) || "N/A"}</td>
@@ -644,6 +681,17 @@ export default function AdminPanel() {
                       <td className="px-4 py-3"><StatusBadge status={c.compliance_status as string} /></td>
                       <td className="px-4 py-3"><div className="flex gap-2">
                         <button onClick={() => viewCandidate(c)} className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1"><Eye size={12} /> View</button>
+                        <button onClick={() => {
+                          setEditingCandidate(c);
+                          setEditFields({
+                            first_name: String(c.first_name || ""),
+                            last_name: String(c.last_name || ""),
+                            email: String(c.email || ""),
+                            profession: String(c.profession || ""),
+                            registration_body: String(c.registration_body || ""),
+                            registration_number: String(c.registration_number || ""),
+                          });
+                        }} className="text-amber-400 hover:text-amber-300 text-xs flex items-center gap-1"><Edit size={12} /> Edit</button>
                         <button onClick={() => evaluateCandidate(c.id as string)} className="text-purple-400 hover:text-purple-300 text-xs flex items-center gap-1"><RefreshCw size={12} /> Eval</button>
                       </div></td>
                     </tr>
