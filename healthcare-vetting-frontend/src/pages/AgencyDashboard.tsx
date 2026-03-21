@@ -1063,12 +1063,26 @@ export default function AgencyDashboard() {
                     </div>
                   ))}
                 </div>
-                {candidateCompliance.flags ? (
-                  <div className="mt-4">
-                    <p className="text-xs text-slate-400 mb-2">Flags:</p>
-                    <div className="text-sm text-amber-300">{String(candidateCompliance.flags)}</div>
-                  </div>
-                ) : null}
+                {candidateCompliance.flags ? (() => {
+                  let flagList: string[] = [];
+                  try {
+                    const raw = candidateCompliance.flags;
+                    if (Array.isArray(raw)) flagList = raw as string[];
+                    else if (typeof raw === "string") flagList = JSON.parse(raw as string);
+                  } catch { flagList = [String(candidateCompliance.flags)]; }
+                  return flagList.length > 0 ? (
+                    <div className="mt-4">
+                      <p className="text-xs text-slate-400 mb-2">Flags:</p>
+                      <ul className="space-y-1">
+                        {flagList.map((f, i) => (
+                          <li key={i} className="text-sm text-amber-300 flex items-start gap-2">
+                            <span className="mt-1">•</span><span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null;
+                })() : null}
                 <div className="mt-3">
                   <span className={`text-sm font-medium ${candidateCompliance.cqc_ready ? "text-green-400" : "text-slate-400"}`}>
                     CQC Ready: {candidateCompliance.cqc_ready ? "Yes" : "No"}
