@@ -103,7 +103,8 @@ def run_expiry_warnings():
                    JOIN candidates c ON r.candidate_id = c.id
                    LEFT JOIN agency_candidates ac ON c.id = ac.candidate_id
                    LEFT JOIN agencies a ON ac.agency_id = a.id
-                   WHERE r.visa_expiry IS NOT NULL AND r.verified = 1""",
+                   WHERE r.visa_expiry IS NOT NULL AND r.verified = 1
+                   AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             ).fetchall()
 
             expiry_notifications = []
@@ -133,7 +134,8 @@ def run_expiry_warnings():
                    JOIN candidates c ON d.candidate_id = c.id
                    LEFT JOIN agency_candidates ac ON c.id = ac.candidate_id
                    LEFT JOIN agencies a ON ac.agency_id = a.id
-                   WHERE d.next_renewal IS NOT NULL""",
+                   WHERE d.next_renewal IS NOT NULL
+                   AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             ).fetchall()
 
             for row in dbs_expiring:
@@ -162,7 +164,8 @@ def run_expiry_warnings():
                    JOIN candidates c ON r.candidate_id = c.id
                    LEFT JOIN agency_candidates ac ON c.id = ac.candidate_id
                    LEFT JOIN agencies a ON ac.agency_id = a.id
-                   WHERE r.next_check IS NOT NULL AND r.is_active = 1""",
+                   WHERE r.next_check IS NOT NULL AND r.is_active = 1
+                   AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             ).fetchall()
 
             for row in reg_expiring:
@@ -193,7 +196,8 @@ def run_expiry_warnings():
                        JOIN candidates c ON t.candidate_id = c.id
                        LEFT JOIN agency_candidates ac ON c.id = ac.candidate_id
                        LEFT JOIN agencies a ON ac.agency_id = a.id
-                       WHERE t.expiry_date IS NOT NULL AND t.status = 'valid'""",
+                       WHERE t.expiry_date IS NOT NULL AND t.status = 'valid'
+                       AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
                 ).fetchall()
 
                 for row in training_expiring:
