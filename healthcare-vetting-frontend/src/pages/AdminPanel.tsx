@@ -1413,9 +1413,18 @@ export default function AdminPanel() {
                     ))}
                   </div>
                   <div className="mt-3"><span className={`text-sm font-medium ${candidateCompliance.cqc_ready ? "text-green-400" : "text-red-400"}`}>CQC Ready: {candidateCompliance.cqc_ready ? "YES" : "NO"}</span></div>
-                  {candidateCompliance.flags ? <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded text-xs text-amber-300">
-                    {Array.isArray(candidateCompliance.flags) ? (candidateCompliance.flags as string[]).map((flag, i) => <div key={i} className="py-0.5">• {flag}</div>) : <div>{String(candidateCompliance.flags)}</div>}
-                  </div> : null}
+                  {candidateCompliance.flags ? (() => {
+                    let flagList: string[] = [];
+                    try {
+                      const raw = candidateCompliance.flags;
+                      if (Array.isArray(raw)) { flagList = raw as string[]; }
+                      else if (typeof raw === "string") { const parsed = JSON.parse(raw as string); flagList = Array.isArray(parsed) ? parsed : [String(raw)]; }
+                      else { flagList = [String(raw)]; }
+                    } catch { flagList = [String(candidateCompliance.flags)]; }
+                    return flagList.length > 0 ? <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded text-xs text-amber-300">
+                      {flagList.map((flag, i) => <div key={i} className="py-0.5">• {flag}</div>)}
+                    </div> : null;
+                  })() : null}
                 </div>
               )}
             </div>
