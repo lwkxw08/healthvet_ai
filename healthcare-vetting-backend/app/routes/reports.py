@@ -209,6 +209,47 @@ async def get_subscription_tiers():
     return BillingService.get_tiers()
 
 
+@router.put("/billing/tiers/{tier_key}")
+async def update_subscription_tier(tier_key: str, data: dict, user=Depends(get_current_admin)):
+    """Update a subscription tier's pricing and configuration (admin only)."""
+    from app.services.billing import SUBSCRIPTION_TIERS
+    if tier_key not in SUBSCRIPTION_TIERS:
+        raise HTTPException(status_code=404, detail=f"Tier not found: {tier_key}")
+
+    tier = SUBSCRIPTION_TIERS[tier_key]
+    if "name" in data:
+        tier["name"] = data["name"]
+    if "monthly_price" in data:
+        tier["monthly_price"] = float(data["monthly_price"])
+    if "per_worker_price" in data:
+        tier["per_worker_price"] = float(data["per_worker_price"])
+    if "max_workers" in data:
+        tier["max_workers"] = int(data["max_workers"])
+    if "features" in data and isinstance(data["features"], list):
+        tier["features"] = data["features"]
+
+    # Also persist to DB for durability
+    with get_db() as db:
+        now_str = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        existing = db.execute("SELECT id FROM subscription_tier_config WHERE tier_key=?", (tier_key,)).fetchone()
+        import json as _json
+        if existing:
+            db.execute(
+                "UPDATE subscription_tier_config SET name=?, monthly_price=?, per_worker_price=?, max_workers=?, features=?, updated_at=? WHERE tier_key=?",
+                (tier["name"], tier["monthly_price"], tier["per_worker_price"], tier["max_workers"],
+                 _json.dumps(tier["features"]), now_str, tier_key),
+            )
+        else:
+            from app.utils.auth import generate_id as _gen_id
+            db.execute(
+                "INSERT INTO subscription_tier_config (id, tier_key, name, monthly_price, per_worker_price, max_workers, features, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (_gen_id(), tier_key, tier["name"], tier["monthly_price"], tier["per_worker_price"],
+                 tier["max_workers"], _json.dumps(tier["features"]), now_str),
+            )
+
+    return {"tier_key": tier_key, **tier}
+
+
 @router.get("/billing/subscription/{agency_id}")
 async def get_agency_subscription(agency_id: str, user=Depends(get_current_user)):
     """Get current subscription for an agency."""

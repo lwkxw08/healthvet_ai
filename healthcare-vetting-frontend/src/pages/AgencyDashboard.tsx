@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
@@ -48,6 +48,14 @@ export default function AgencyDashboard() {
   const [downloadingBulkAudit, setDownloadingBulkAudit] = useState(false);
   const [downloadingSingleAudit, setDownloadingSingleAudit] = useState("");
 
+  // Re-vet state
+  const [revetModalOpen, setRevetModalOpen] = useState(false);
+  const [revetCandidate, setRevetCandidate] = useState<Record<string, unknown> | null>(null);
+  const [revetSections, setRevetSections] = useState<string[]>([]);
+  const [revetLoading, setRevetLoading] = useState(false);
+  const [revetResult, setRevetResult] = useState<Record<string, unknown> | null>(null);
+  const [revetRequests, setRevetRequests] = useState<Record<string, unknown>[]>([]);
+
   const loadData = useCallback(async () => {
     if (!token) return;
     try {
@@ -85,6 +93,11 @@ export default function AgencyDashboard() {
         const hist = await billingApi.getHistory(token, "me");
         setBillingHistory(hist);
       } catch { /* ignore */ }
+      // Load re-vet requests
+      try {
+        const rr = await agencyRevetApi.listRevetRequests(token);
+        setRevetRequests(rr);
+      } catch { /* ignore */ }
     } catch (err) {
       console.error("Failed to load data", err);
     }
@@ -106,6 +119,32 @@ export default function AgencyDashboard() {
       } catch {
         // ignore
       }
+    }
+  };
+
+  const openRevetModal = (candidate: Record<string, unknown>) => {
+    setRevetCandidate(candidate);
+    setRevetSections([]);
+    setRevetResult(null);
+    setRevetModalOpen(true);
+  };
+
+  const toggleRevetSection = (section: string) => {
+    setRevetSections(prev => prev.includes(section) ? prev.filter(s => s !== section) : [...prev, section]);
+  };
+
+  const submitRevetRequest = async () => {
+    if (!token || !revetCandidate || revetSections.length === 0) return;
+    setRevetLoading(true);
+    try {
+      const cId = (revetCandidate.id as string) || (revetCandidate.candidate_id as string);
+      const result = await agencyRevetApi.requestRevet(token, cId, revetSections);
+      setRevetResult(result);
+      await loadData();
+    } catch (err) {
+      console.error("Re-vet request failed", err);
+    } finally {
+      setRevetLoading(false);
     }
   };
 
@@ -317,6 +356,22 @@ export default function AgencyDashboard() {
   void _totalMargin;
 
   // Filter candidates by status and RAG
+
+  const REVET_SECTION_OPTIONS = [
+    { key: "identity", label: "Identity Verification", price: 15.00 },
+    { key: "rtw", label: "Right to Work", price: 10.00 },
+    { key: "dbs", label: "DBS Check", price: 25.00 },
+    { key: "cv", label: "CV Analysis", price: 8.00 },
+    { key: "registration", label: "Professional Registration", price: 12.00 },
+    { key: "references", label: "References", price: 10.00 },
+    { key: "training", label: "Training Certificates", price: 8.00 },
+  ];
+
+  const revetTotalCost = revetSections.reduce((sum, sec) => {
+    const opt = REVET_SECTION_OPTIONS.find(o => o.key === sec);
+    return sum + (opt?.price || 0);
+  }, 0);
+
   const filteredCandidates = candidatesWithStatus.filter((c) => {
     const empStatus = (c.employment_status as string) || "vetting";
     const passesStatus = statusFilter === "all" || empStatus === statusFilter;
@@ -706,13 +761,57 @@ export default function AgencyDashboard() {
                             </select>
                           </td>
                           <td className="px-4 py-3">
-                            <button onClick={() => viewCandidate(c)} className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1">
-                              <Eye size={14} /> View
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => viewCandidate(c)} className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1">
+                                <Eye size={14} /> View
+                              </button>
+                              <button onClick={() => openRevetModal(c)} className="text-amber-400 hover:text-amber-300 text-sm flex items-center gap-1">
+                                <RefreshCw size={14} /> Re-Vet
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
                     })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Re-Vet Requests History */}
+            {revetRequests.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-700">
+                  <h3 className="text-md font-semibold text-white flex items-center gap-2">
+                    <RefreshCw className="text-amber-400" size={18} /> Re-Vet Requests ({revetRequests.length})
+                  </h3>
+                </div>
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-700">
+                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Candidate</th>
+                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Sections</th>
+                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Status</th>
+                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Requested</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {revetRequests.map((rr) => (
+                      <tr key={rr.id as string} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                        <td className="px-4 py-3 text-sm text-white">{rr.candidate_name as string}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {(rr.sections as string[])?.map((sec: string) => (
+                              <span key={sec} className="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                                {sec.replace(/_/g, " ")}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3"><StatusBadge status={rr.status as string} /></td>
+                        <td className="px-4 py-3 text-sm text-slate-400">{(rr.created_at as string)?.split("T")[0]}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -1111,6 +1210,80 @@ export default function AgencyDashboard() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Re-Vet Modal */}
+        {revetModalOpen && revetCandidate && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <RefreshCw className="text-amber-400" size={20} /> Request Re-Vet
+                  </h3>
+                  <button onClick={() => setRevetModalOpen(false)} className="text-slate-400 hover:text-white text-xl bg-transparent border-none cursor-pointer">&times;</button>
+                </div>
+                <p className="text-slate-300 text-sm mb-1">
+                  Candidate: <span className="font-semibold text-white">{revetCandidate.first_name as string} {revetCandidate.last_name as string}</span>
+                </p>
+                <p className="text-slate-400 text-xs mb-4">Select the sections to re-vet. Each section will be billed separately.</p>
+
+                {revetResult ? (
+                  <div className="space-y-3">
+                    <div className="p-4 bg-green-500/20 border border-green-500/30 rounded-lg">
+                      <p className="text-green-300 font-semibold mb-1">Re-vet request submitted successfully</p>
+                      <p className="text-green-200 text-sm">Token: <code className="bg-slate-700 px-2 py-0.5 rounded text-xs">{revetResult.token as string}</code></p>
+                      <p className="text-green-200 text-sm mt-1">Link will be emailed to {revetResult.candidate_email as string}</p>
+                      <p className="text-green-200 text-sm mt-1">Total cost: <span className="font-bold">\u00a3{(revetResult.total_cost as number)?.toFixed(2)}</span></p>
+                    </div>
+                    <div className="space-y-1">
+                      {(revetResult.section_costs as {section: string; label: string; cost: number}[])?.map((sc) => (
+                        <div key={sc.section} className="flex justify-between p-2 bg-slate-700/50 rounded text-sm">
+                          <span className="text-slate-300">{sc.label}</span>
+                          <span className="text-white font-medium">\u00a3{sc.cost.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={() => setRevetModalOpen(false)} className="w-full bg-slate-600 hover:bg-slate-500 text-white rounded-lg py-2 text-sm font-medium border-none cursor-pointer">
+                      Close
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      {REVET_SECTION_OPTIONS.map((opt) => (
+                        <label key={opt.key} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg cursor-pointer hover:bg-slate-700/70 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={revetSections.includes(opt.key)}
+                              onChange={() => toggleRevetSection(opt.key)}
+                              className="w-4 h-4 rounded accent-amber-500"
+                            />
+                            <span className="text-slate-200 text-sm">{opt.label}</span>
+                          </div>
+                          <span className="text-amber-400 text-sm font-medium">\u00a3{opt.price.toFixed(2)}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-between items-center p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                      <span className="text-amber-300 font-semibold text-sm">Estimated Total</span>
+                      <span className="text-amber-400 font-bold text-lg">\u00a3{revetTotalCost.toFixed(2)}</span>
+                    </div>
+
+                    <button
+                      onClick={submitRevetRequest}
+                      disabled={revetSections.length === 0 || revetLoading}
+                      className="w-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-800 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium flex items-center justify-center gap-2 border-none cursor-pointer"
+                    >
+                      <RefreshCw size={14} /> {revetLoading ? "Submitting..." : `Submit Re-Vet Request (${revetSections.length} section${revetSections.length !== 1 ? "s" : ""})`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </main>

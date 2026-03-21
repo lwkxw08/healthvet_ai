@@ -299,14 +299,54 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
             (agency_id,),
         ).fetchone()
 
+        # Include re-vet requests in the breakdown
+        revet_rows = db.execute(
+            "SELECT rr.*, c.first_name, c.last_name FROM revet_requests rr JOIN candidates c ON rr.candidate_id = c.id WHERE rr.agency_id=?",
+            (agency_id,),
+        ).fetchall()
+
+        revet_items = []
+        revet_total = 0.0
+        import json as _json
+        for rr in revet_rows:
+            rd = dict(rr)
+            sections = _json.loads(rd["sections"]) if rd["sections"] else []
+            cand_name = f"{rd['first_name']} {rd['last_name']}"
+            for sec in sections:
+                price_row = db.execute(
+                    "SELECT sell_price, label FROM pricing_settings WHERE check_type=?", (sec,)
+                ).fetchone()
+                if price_row:
+                    pd = dict(price_row)
+                    cost = pd["sell_price"]
+                    revet_total += cost
+                    revet_items.append({
+                        "section": sec,
+                        "label": f"Re-vet: {pd['label']}",
+                        "candidate": cand_name,
+                        "cost": cost,
+                        "status": rd["status"],
+                        "created_at": rd["created_at"],
+                    })
+                    # Add to by_type
+                    ct_key = f"revet_{sec}"
+                    if ct_key not in by_type:
+                        by_type[ct_key] = {"description": f"Re-vet: {pd['label']}", "count": 0, "total": 0.0}
+                    by_type[ct_key]["count"] += 1
+                    by_type[ct_key]["total"] += cost
+
+        total_billed += revet_total
+
         return {
             "total_billed": round(total_billed, 2),
             "total_paid": round(total_paid, 2),
-            "total_outstanding": round(total_outstanding, 2),
+            "total_outstanding": round(total_billed - total_paid, 2),
             "invoice_count": len(invoices),
             "candidate_count": dict(cand_count)["cnt"] if cand_count else 0,
             "by_check_type": by_type,
             "invoices": invoices,
+            "revet_items": revet_items,
+            "revet_total": round(revet_total, 2),
         }
 
 

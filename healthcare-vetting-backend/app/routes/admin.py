@@ -460,4 +460,29 @@ async def generate_invoices_for_agency(
                     )
                     generated.append(inv_id)
 
+        # Re-vet requests (itemised per section)
+            revet_rows = db.execute(
+                "SELECT rr.* FROM revet_requests rr WHERE rr.agency_id=? AND rr.candidate_id=? AND rr.status IN ('completed', 'pending')",
+                (agency_id, c["id"]),
+            ).fetchall()
+            for rr in revet_rows:
+                rr_data = dict(rr)
+                import json as _json
+                sections = _json.loads(rr_data["sections"]) if rr_data["sections"] else []
+                for sec in sections:
+                    existing_revet = db.execute(
+                        "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type=? AND description LIKE '%Re-vet%'",
+                        (agency_id, c["id"], f"revet_{sec}"),
+                    ).fetchone()
+                    if not existing_revet and sec in pricing:
+                        p = pricing[sec]
+                        inv_id = generate_id()
+                        db.execute(
+                            """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                            (inv_id, agency_id, c["id"], f"revet_{sec}",
+                             f"Re-vet: {p['label']} - {cand_name}", p["cost_price"], p["sell_price"], now),
+                        )
+                        generated.append(inv_id)
+
         return {"generated": len(generated), "agency": agency_name, "invoice_ids": generated}

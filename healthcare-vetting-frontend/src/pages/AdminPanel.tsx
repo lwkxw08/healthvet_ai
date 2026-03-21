@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
@@ -80,6 +80,13 @@ export default function AdminPanel() {
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditFilter, setAuditFilter] = useState({ entity_type: "", action: "" });
   const [auditPage, setAuditPage] = useState(0);
+
+
+  // Subscription tier editing state
+  const [subTiers, setSubTiers] = useState<Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; features: string[]}>>({});
+  const [editingTier, setEditingTier] = useState<string | null>(null);
+  const [tierEditData, setTierEditData] = useState<{name: string; monthly_price: string; per_worker_price: string; max_workers: string; features: string}>({name: "", monthly_price: "", per_worker_price: "", max_workers: "", features: ""});
+  const [savingTier, setSavingTier] = useState(false);
 
   // Candidate full detail state (for overrides/editing check data)
   const [candidateDetail, setCandidateDetail] = useState<Record<string, unknown> | null>(null);
@@ -174,6 +181,15 @@ export default function AdminPanel() {
     if (!token) return;
     try { const s = await adminExtendedApi.getAlertSettings(token); setAlertSettings(s); } catch { /* ignore */ }
   }, [token]);
+
+
+  const loadSubscriptionTiers = async () => {
+    if (!token) return;
+    try {
+      const tiers = await billingApi.getTiers(token);
+      setSubTiers(tiers as Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; features: string[]}>);
+    } catch { /* ignore */ }
+  };
 
   const loadCandidateDetail = async (candidateId: string) => {
     if (!token) return;
@@ -403,6 +419,43 @@ export default function AdminPanel() {
       showMessage("Reference verification re-triggered");
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
     finally { setRetriggeringId(""); }
+  };
+
+
+  const saveTier = async (tierKey: string) => {
+    if (!token) return;
+    setSavingTier(true);
+    try {
+      const features = tierEditData.features.split("\n").map(f => f.trim()).filter(f => f.length > 0);
+      await billingApi.updateTier(token, tierKey, {
+        name: tierEditData.name,
+        monthly_price: parseFloat(tierEditData.monthly_price) || 0,
+        per_worker_price: parseFloat(tierEditData.per_worker_price) || 0,
+        max_workers: parseInt(tierEditData.max_workers) || 0,
+        features,
+      });
+      setEditingTier(null);
+      await loadSubscriptionTiers();
+      setMessage("Tier pricing updated successfully");
+      setTimeout(() => setMessage(""), 3000);
+    } catch (err) {
+      console.error("Failed to save tier", err);
+    } finally {
+      setSavingTier(false);
+    }
+  };
+
+  const startEditTier = (tierKey: string) => {
+    const tier = subTiers[tierKey];
+    if (!tier) return;
+    setEditingTier(tierKey);
+    setTierEditData({
+      name: tier.name,
+      monthly_price: tier.monthly_price.toString(),
+      per_worker_price: tier.per_worker_price.toString(),
+      max_workers: tier.max_workers.toString(),
+      features: tier.features.join("\n"),
+    });
   };
 
   const handleRetriggerEmployment = async (candidateId: string, verId: string) => {
@@ -987,25 +1040,93 @@ export default function AdminPanel() {
         {/* Subscriptions Tab */}
         {tab === "subscriptions" && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Agency Subscriptions</h2>
-            <p className="text-slate-400 text-sm">Manage agency subscription tiers and billing methods. Agencies can subscribe via Stripe card payment or recurring invoice.</p>
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Agency Subscriptions & Pricing</h2>
+            <p className="text-slate-400 text-sm">Manage agency subscription tiers, pricing models, and billing methods. Click Edit on any tier to update its pricing.</p>
+
+            {/* Editable Subscription Tiers */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-              <h3 className="text-md font-semibold text-white mb-4">Available Tiers</h3>
-              <div className="grid grid-cols-4 gap-4">
-                {[
-                  { name: "Starter", price: "\u00a3299/mo", workers: "Up to 50", color: "border-blue-500/30" },
-                  { name: "Growth", price: "\u00a3799/mo", workers: "Up to 200", color: "border-green-500/30" },
-                  { name: "Enterprise", price: "\u00a31,999/mo", workers: "Unlimited", color: "border-purple-500/30" },
-                  { name: "Per Worker", price: "\u00a35/worker/mo", workers: "Unlimited", color: "border-amber-500/30" },
-                ].map((tier) => (
-                  <div key={tier.name} className={`p-5 bg-slate-700/50 rounded-xl border ${tier.color}`}>
-                    <p className="text-white font-bold text-lg mb-1">{tier.name}</p>
-                    <p className="text-blue-400 text-xl font-bold mb-2">{tier.price}</p>
-                    <p className="text-slate-400 text-sm">{tier.workers}</p>
+              <h3 className="text-md font-semibold text-white mb-4">Subscription Plan Pricing</h3>
+              <div className="grid grid-cols-2 gap-4">
+                {Object.entries(subTiers).length > 0 ? Object.entries(subTiers).map(([tierKey, tier]) => {
+                  const colors: Record<string, string> = { starter: "border-blue-500/30", growth: "border-green-500/30", enterprise: "border-purple-500/30", per_worker: "border-amber-500/30" };
+                  const isEditing = editingTier === tierKey;
+                  return (
+                    <div key={tierKey} className={`p-5 bg-slate-700/50 rounded-xl border ${colors[tierKey] || "border-slate-600"}`}>
+                      {isEditing ? (
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">Tier Name</label>
+                            <input value={tierEditData.name} onChange={(e) => setTierEditData(prev => ({...prev, name: e.target.value}))}
+                              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Monthly Price (\u00a3)</label>
+                              <input type="number" step="0.01" value={tierEditData.monthly_price} onChange={(e) => setTierEditData(prev => ({...prev, monthly_price: e.target.value}))}
+                                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Per Worker Price (\u00a3)</label>
+                              <input type="number" step="0.01" value={tierEditData.per_worker_price} onChange={(e) => setTierEditData(prev => ({...prev, per_worker_price: e.target.value}))}
+                                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">Max Workers</label>
+                            <input type="number" value={tierEditData.max_workers} onChange={(e) => setTierEditData(prev => ({...prev, max_workers: e.target.value}))}
+                              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">Features (one per line)</label>
+                            <textarea value={tierEditData.features} onChange={(e) => setTierEditData(prev => ({...prev, features: e.target.value}))} rows={4}
+                              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm resize-none" />
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => saveTier(tierKey)} disabled={savingTier}
+                              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg py-2 text-xs font-medium border-none cursor-pointer">
+                              {savingTier ? "Saving..." : "Save Changes"}
+                            </button>
+                            <button onClick={() => setEditingTier(null)}
+                              className="flex-1 bg-slate-600 hover:bg-slate-500 text-white rounded-lg py-2 text-xs font-medium border-none cursor-pointer">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-white font-bold text-lg">{tier.name}</p>
+                            <button onClick={() => startEditTier(tierKey)}
+                              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 bg-transparent border-none cursor-pointer">
+                              <Edit size={12} /> Edit
+                            </button>
+                          </div>
+                          <p className="text-blue-400 text-xl font-bold mb-1">
+                            {tier.per_worker_price > 0 ? `\u00a3${tier.per_worker_price}/worker/mo` : `\u00a3${tier.monthly_price.toLocaleString()}/mo`}
+                          </p>
+                          <p className="text-slate-400 text-sm mb-3">
+                            {tier.max_workers >= 99999 ? "Unlimited workers" : `Up to ${tier.max_workers} workers`}
+                          </p>
+                          <div className="space-y-1">
+                            {tier.features.map((f: string, i: number) => (
+                              <p key={i} className="text-slate-300 text-xs flex items-center gap-1.5">
+                                <CheckCircle size={12} className="text-green-400" /> {f}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }) : (
+                  <div className="col-span-2 text-center py-8 text-slate-400">
+                    <p>Loading subscription tiers...</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
+
+            {/* Billing Methods */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
               <h3 className="text-md font-semibold text-white mb-4">Billing Methods</h3>
               <div className="grid grid-cols-2 gap-4">

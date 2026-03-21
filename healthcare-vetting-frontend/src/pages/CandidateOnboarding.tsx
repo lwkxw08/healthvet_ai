@@ -14,13 +14,18 @@ const SECTIONS = [
   { key: "training", label: "Training Certificates" },
 ];
 
-const CONSENT_STEP = 8;
+// CONSENT_STEP is now dynamically computed as activeSections.length
 
 interface SectionData {
   [key: string]: Record<string, unknown>;
 }
 interface SectionCompleted {
   [key: string]: boolean;
+}
+
+function getRevetTokenFromURL(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("revet");
 }
 
 export default function CandidateOnboarding() {
@@ -41,10 +46,43 @@ export default function CandidateOnboarding() {
   const [complianceScore, setComplianceScore] = useState(0);
   const [complianceStatus, setComplianceStatus] = useState("pending");
 
+  // Re-vet state
+  const [revetToken] = useState<string | null>(getRevetTokenFromURL());
+  const [revetInfo, setRevetInfo] = useState<{agency_name: string; sections: string[]; candidate_name: string} | null>(null);
+  const [revetSections, setRevetSections] = useState<{key: string; label: string}[]>([]);
+
   useEffect(() => {
-    loadSubmission();
+    if (revetToken) {
+      loadRevetInfo();
+    } else {
+      loadSubmission();
+    }
     loadCandidateInfo();
   }, []);
+
+  const loadRevetInfo = async () => {
+    try {
+      const info = await submissionsApi.getRevetInfo(revetToken as string);
+      const ri = info as {agency_name: string; sections: string[]; candidate_name: string};
+      setRevetInfo(ri);
+      const filteredSections = SECTIONS.filter(s => ri.sections.includes(s.key));
+      setRevetSections(filteredSections);
+      // Create a re-vet submission
+      if (token) {
+        const newSub = await submissionsApi.createSubmission(token, {
+          submission_type: "partial",
+          sections_requested: ri.sections,
+          revet_token: revetToken as string,
+        });
+        setSubmissionId(newSub.id as string);
+        setSubmissionStatus("draft");
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Invalid or expired re-vet link");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadCandidateInfo = async () => {
     try {
@@ -75,9 +113,9 @@ export default function CandidateOnboarding() {
           loadStatus(sub.id as string);
         }
       } else {
-        const newSub = await submissionsApi.createSubmission(token);
-        setSubmissionId(newSub.id as string);
-        setSubmissionStatus("draft");
+          const newSub = await submissionsApi.createSubmission(token, {});
+          setSubmissionId(newSub.id as string);
+          setSubmissionStatus("draft");
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load");
@@ -143,16 +181,19 @@ export default function CandidateOnboarding() {
     }
   };
 
+  const activeSections = revetToken && revetSections.length > 0 ? revetSections : SECTIONS;
+  const activeConsentStep = activeSections.length;
+
   const goNext = async () => {
-    const sec = SECTIONS[currentStep];
+    const sec = activeSections[currentStep];
     if (sec && sectionData[sec.key]) {
       await saveSection(sec.key, sectionData[sec.key], true);
     }
-    setCurrentStep(prev => Math.min(prev + 1, CONSENT_STEP));
+    setCurrentStep(prev => Math.min(prev + 1, activeConsentStep));
   };
 
   const goPrev = () => setCurrentStep(prev => Math.max(prev - 1, 0));
-  const goToStep = (step: number) => setCurrentStep(step);
+  const goToStep = (step: number) => setCurrentStep(Math.min(step, activeConsentStep));
 
   const updateField = (section: string, field: string, value: unknown) => {
     setSectionData(prev => ({
@@ -201,9 +242,18 @@ export default function CandidateOnboarding() {
         </div>
       </header>
 
+      {revetInfo && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-3">
+          <p className="text-amber-300 text-sm">
+            <strong>Re-Vet Request</strong> from <span className="text-white font-semibold">{revetInfo.agency_name}</span> — 
+            Please complete the following sections: {revetInfo.sections.map(s => s.replace(/_/g, ' ')).join(', ')}
+          </p>
+        </div>
+      )}
+
       <div className="bg-slate-800/50 border-b border-slate-700 px-6 py-3">
         <div className="flex gap-1 items-center overflow-x-auto">
-          {SECTIONS.map((s, i) => (
+          {activeSections.map((s, i) => (
             <div key={s.key} className="flex items-center gap-1">
               <button
                 onClick={() => goToStep(i)}
@@ -218,15 +268,15 @@ export default function CandidateOnboarding() {
                 {sectionCompleted[s.key] && currentStep !== i ? <span className="mr-1">&#10003;</span> : null}
                 {s.label}
               </button>
-              {i < SECTIONS.length - 1 && <ChevronRight size={14} className="text-slate-600" />}
+              {i < activeSections.length - 1 && <ChevronRight size={14} className="text-slate-600" />}
             </div>
           ))}
           <div className="flex items-center gap-1">
             <ChevronRight size={14} className="text-slate-600" />
             <button
-              onClick={() => goToStep(CONSENT_STEP)}
+              onClick={() => goToStep(activeConsentStep)}
               className={`px-3 py-1.5 rounded-full border-none cursor-pointer text-xs font-medium whitespace-nowrap transition-all ${
-                currentStep === CONSENT_STEP
+                currentStep === activeConsentStep
                   ? "bg-blue-600 text-white"
                   : "bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600"
               }`}
@@ -245,13 +295,13 @@ export default function CandidateOnboarding() {
       )}
 
       <div className="max-w-3xl mx-auto py-6 px-6">
-        {currentStep < SECTIONS.length ? (
+        {currentStep < activeSections.length ? (
           <SectionForm
-            section={SECTIONS[currentStep]}
-            data={sectionData[SECTIONS[currentStep].key] || {}}
+            section={activeSections[currentStep]}
+            data={sectionData[activeSections[currentStep].key] || {}}
             candidateInfo={candidateInfo}
-            onUpdate={(field, value) => updateField(SECTIONS[currentStep].key, field, value)}
-            onUpdateBulk={(data) => setSectionData(prev => ({ ...prev, [SECTIONS[currentStep].key]: { ...(prev[SECTIONS[currentStep].key] || {}), ...data } }))}
+            onUpdate={(field, value) => updateField(activeSections[currentStep].key, field, value)}
+            onUpdateBulk={(data) => setSectionData(prev => ({ ...prev, [activeSections[currentStep].key]: { ...(prev[activeSections[currentStep].key] || {}), ...data } }))}
           />
         ) : (
           <ConsentStep
@@ -265,7 +315,7 @@ export default function CandidateOnboarding() {
           />
         )}
 
-        {currentStep < CONSENT_STEP && (
+        {currentStep < activeConsentStep && (
           <div className="flex justify-between mt-6">
             <button
               onClick={goPrev}

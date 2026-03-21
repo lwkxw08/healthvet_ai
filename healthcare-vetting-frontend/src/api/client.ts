@@ -318,8 +318,8 @@ export const fraudApi = {
 
 // Billing & Subscriptions API
 export const billingApi = {
-  getTiers: () =>
-    apiRequest<Record<string, unknown>>("/api/billing/tiers", {}),
+  getTiers: (token?: string) =>
+    apiRequest<Record<string, unknown>>("/api/billing/tiers", token ? { token } : {}),
   getSubscription: (token: string, agencyId: string) =>
     apiRequest<Record<string, unknown>>(`/api/billing/subscription/${agencyId}`, { token }),
   subscribe: (token: string, data: { agency_id: string; tier: string; billing_method: string; stripe_payment_method_id?: string }) =>
@@ -332,6 +332,8 @@ export const billingApi = {
     apiRequest<Record<string, unknown>>(`/api/billing/pay/${invoiceId}`, { method: "POST", token }),
   generateRecurring: (token: string) =>
     apiRequest<Record<string, unknown>>("/api/billing/generate-recurring", { method: "POST", token }),
+  updateTier: (token: string, tierKey: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/billing/tiers/${tierKey}`, { method: "PUT", body: data, token }),
 };
 
 // Audit Pack & PDF Reports API
@@ -400,8 +402,8 @@ export const submissionsApi = {
     apiRequest<Record<string, unknown>>(`/api/submissions/${submissionId}/consent`, { method: "POST", body: data, token }),
   getStatus: (token: string, submissionId: string) =>
     apiRequest<Record<string, unknown>>(`/api/submissions/${submissionId}/status`, { token }),
-  getRevetInfo: (token: string) =>
-    apiRequest<Record<string, unknown>>("/api/submissions/revet-info", { token }),
+  getRevetInfo: (revetToken: string) =>
+    apiRequest<Record<string, unknown>>(`/api/submissions/revet-info/${revetToken}`, {}),
 };
 
 // Agency Re-vet API
