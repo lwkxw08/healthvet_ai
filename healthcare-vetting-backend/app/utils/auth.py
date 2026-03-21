@@ -58,6 +58,14 @@ def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials
     )
 
 
+def get_current_admin(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Get current user and verify they are an admin."""
+    user = get_current_user(request, credentials)
+    if user.get("type") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 def generate_id() -> str:
     return str(uuid.uuid4())
 

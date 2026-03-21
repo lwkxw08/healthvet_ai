@@ -231,6 +231,96 @@ export const agencyServicesApi = {
     }),
 };
 
+// Training Certificates API
+export const trainingApi = {
+  getStandards: () =>
+    apiRequest<Record<string, unknown>[]>("/api/training/standards", {}),
+  getCertificates: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>[]>(`/api/training/${candidateId}`, { token }),
+  addCertificate: (token: string, candidateId: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/training/${candidateId}`, { method: "POST", body: data, token }),
+  updateCertificate: (token: string, certId: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/training/cert/${certId}`, { method: "PUT", body: data, token }),
+  deleteCertificate: (token: string, certId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/training/cert/${certId}`, { method: "DELETE", token }),
+  getCompliance: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/training/${candidateId}/compliance`, { token }),
+};
+
+// Fraud Detection API
+export const fraudApi = {
+  runScan: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/fraud/scan", { method: "POST", token }),
+  getFlags: (token: string, candidateId?: string) =>
+    apiRequest<Record<string, unknown>[]>(`/api/fraud/flags${candidateId ? `?candidate_id=${candidateId}` : ""}`, { token }),
+  getSummary: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/fraud/summary", { token }),
+  resolveFlag: (token: string, flagId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/fraud/flags/${flagId}/resolve`, { method: "POST", token }),
+};
+
+// Billing & Subscriptions API
+export const billingApi = {
+  getTiers: () =>
+    apiRequest<Record<string, unknown>>("/api/billing/tiers", {}),
+  getSubscription: (token: string, agencyId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/billing/subscription/${agencyId}`, { token }),
+  subscribe: (token: string, data: { agency_id: string; tier: string; billing_method: string; stripe_payment_method_id?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/billing/subscribe", { method: "POST", body: data, token }),
+  cancel: (token: string, agencyId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/billing/cancel/${agencyId}`, { method: "POST", token }),
+  getHistory: (token: string, agencyId: string) =>
+    apiRequest<Record<string, unknown>[]>(`/api/billing/history/${agencyId}`, { token }),
+  payInvoice: (token: string, invoiceId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/billing/pay/${invoiceId}`, { method: "POST", token }),
+  generateRecurring: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/billing/generate-recurring", { method: "POST", token }),
+};
+
+// Audit Pack & PDF Reports API
+export const reportsApi = {
+  downloadCandidateAudit: (token: string, candidateId: string) => {
+    const headers: Record<string, string> = { "X-Auth-Token": token };
+    return fetch(`${API_URL}/api/audit/candidate/${candidateId}`, { headers });
+  },
+  downloadAgencyAudit: (token: string, agencyId: string) => {
+    const headers: Record<string, string> = { "X-Auth-Token": token };
+    return fetch(`${API_URL}/api/audit/agency/${agencyId}`, { headers });
+  },
+  downloadFinancialReport: (token: string, period?: string, dateFrom?: string, dateTo?: string) => {
+    const qs = new URLSearchParams();
+    if (period) qs.set("period", period);
+    if (dateFrom) qs.set("date_from", dateFrom);
+    if (dateTo) qs.set("date_to", dateTo);
+    const headers: Record<string, string> = { "X-Auth-Token": token };
+    return fetch(`${API_URL}/api/reports/financial?${qs.toString()}`, { headers });
+  },
+  downloadComplianceReport: (token: string, agencyId?: string) => {
+    const qs = agencyId ? `?agency_id=${agencyId}` : "";
+    const headers: Record<string, string> = { "X-Auth-Token": token };
+    return fetch(`${API_URL}/api/reports/compliance${qs}`, { headers });
+  },
+};
+
+// Notifications API
+export const notificationsApi = {
+  getNotifications: (token: string, recipientEmail?: string, notificationType?: string, limit?: number) => {
+    const qs = new URLSearchParams();
+    if (recipientEmail) qs.set("recipient_email", recipientEmail);
+    if (notificationType) qs.set("notification_type", notificationType);
+    if (limit) qs.set("limit", limit.toString());
+    return apiRequest<Record<string, unknown>[]>(`/api/notifications?${qs.toString()}`, { token });
+  },
+};
+
+// Scheduler API
+export const schedulerApi = {
+  getStatus: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/scheduler/status", { token }),
+  triggerJob: (token: string, jobName: string) =>
+    apiRequest<Record<string, unknown>>(`/api/scheduler/trigger/${jobName}`, { method: "POST", token }),
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   createInvite: (token: string, candidateEmail: string) =>

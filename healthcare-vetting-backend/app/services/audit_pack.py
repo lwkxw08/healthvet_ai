@@ -1,0 +1,550 @@
+"""
+CQC Audit Pack Generation Service
+Generates comprehensive audit packs for CQC inspections with full candidate
+compliance files, timestamped logs, verification evidence, and scoring history.
+"""
+import json
+import io
+from datetime import datetime, timezone
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    PageBreak, HRFlowable, Image
+)
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from app.database import get_db
+
+
+class AuditPackService:
+    """Generate CQC-ready audit packs."""
+
+    @staticmethod
+    def generate_candidate_audit(candidate_id: str) -> bytes:
+        """Generate a full audit pack PDF for a single candidate."""
+        with get_db() as db:
+            candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+            if not candidate:
+                raise ValueError("Candidate not found")
+            c = dict(candidate)
+
+            # Gather all check data
+            identity = db.execute(
+                "SELECT * FROM identity_checks WHERE candidate_id=? ORDER BY started_at DESC",
+                (candidate_id,),
+            ).fetchall()
+            rtw = db.execute(
+                "SELECT * FROM right_to_work_checks WHERE candidate_id=? ORDER BY checked_at DESC",
+                (candidate_id,),
+            ).fetchall()
+            dbs = db.execute(
+                "SELECT * FROM dbs_checks WHERE candidate_id=? ORDER BY submitted_at DESC",
+                (candidate_id,),
+            ).fetchall()
+            cv = db.execute(
+                "SELECT * FROM cv_analyses WHERE candidate_id=? ORDER BY analysed_at DESC",
+                (candidate_id,),
+            ).fetchall()
+            reg = db.execute(
+                "SELECT * FROM registration_checks WHERE candidate_id=? ORDER BY last_checked DESC",
+                (candidate_id,),
+            ).fetchall()
+            refs = db.execute(
+                "SELECT * FROM references_ WHERE candidate_id=?",
+                (candidate_id,),
+            ).fetchall()
+            emp_history = db.execute(
+                "SELECT * FROM employment_history WHERE candidate_id=? ORDER BY start_date DESC",
+                (candidate_id,),
+            ).fetchall()
+            emp_verifications = db.execute(
+                "SELECT * FROM employment_verifications WHERE candidate_id=?",
+                (candidate_id,),
+            ).fetchall()
+            compliance = db.execute(
+                "SELECT * FROM compliance_records WHERE candidate_id=?",
+                (candidate_id,),
+            ).fetchone()
+            audit_logs = db.execute(
+                "SELECT * FROM audit_logs WHERE entity_id=? ORDER BY created_at DESC",
+                (candidate_id,),
+            ).fetchall()
+            alerts = db.execute(
+                "SELECT * FROM monitoring_alerts WHERE candidate_id=? ORDER BY created_at DESC",
+                (candidate_id,),
+            ).fetchall()
+
+            # Try to get training certificates
+            training = []
+            try:
+                training = db.execute(
+                    "SELECT * FROM training_certificates WHERE candidate_id=?",
+                    (candidate_id,),
+                ).fetchall()
+            except Exception:
+                pass
+
+        # Build PDF
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4,
+                                topMargin=20*mm, bottomMargin=20*mm,
+                                leftMargin=15*mm, rightMargin=15*mm)
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle('Title2', parent=styles['Title'],
+                                      fontSize=20, textColor=colors.HexColor('#1e3a5f'))
+        heading_style = ParagraphStyle('Heading2a', parent=styles['Heading2'],
+                                        textColor=colors.HexColor('#1e3a5f'),
+                                        spaceAfter=6)
+        subheading_style = ParagraphStyle('Heading3a', parent=styles['Heading3'],
+                                           textColor=colors.HexColor('#2d5f8a'))
+        normal_style = styles['Normal']
+        small_style = ParagraphStyle('Small', parent=normal_style, fontSize=8,
+                                      textColor=colors.grey)
+
+        elements = []
+
+        # Cover page
+        elements.append(Spacer(1, 30*mm))
+        elements.append(Paragraph("HealthVet AI", title_style))
+        elements.append(Spacer(1, 5*mm))
+        elements.append(Paragraph("CQC Compliance Audit Pack", heading_style))
+        elements.append(Spacer(1, 10*mm))
+        elements.append(HRFlowable(width="80%", color=colors.HexColor('#1e3a5f')))
+        elements.append(Spacer(1, 10*mm))
+
+        # Candidate info table
+        candidate_name = f"{c.get('first_name', '')} {c.get('last_name', '')}"
+        comp = dict(compliance) if compliance else {}
+        info_data = [
+            ["Candidate Name:", candidate_name],
+            ["Email:", c.get("email", "N/A")],
+            ["Profession:", c.get("profession", "N/A")],
+            ["Registration:", f"{c.get('registration_body', 'N/A')} - {c.get('registration_number', 'N/A')}"],
+            ["Compliance Score:", f"{comp.get('score', 0)}%"],
+            ["Compliance Status:", comp.get("overall_status", "incomplete").upper()],
+            ["CQC Ready:", "YES" if comp.get("cqc_ready") else "NO"],
+            ["Report Generated:", datetime.now(timezone.utc).strftime("%d %B %Y at %H:%M UTC")],
+        ]
+        info_table = Table(info_data, colWidths=[45*mm, 120*mm])
+        info_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(info_table)
+        elements.append(PageBreak())
+
+        # Section 1: Identity Verification
+        elements.append(Paragraph("1. Identity Verification", heading_style))
+        elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+        elements.append(Spacer(1, 3*mm))
+        if identity:
+            for check in identity:
+                cd = dict(check)
+                data = [
+                    ["Provider:", cd.get("provider", "N/A")],
+                    ["Document Type:", cd.get("document_type", "N/A")],
+                    ["Result:", cd.get("result", "N/A").upper()],
+                    ["Facial Match:", f"{cd.get('facial_match_score', 0):.0f}%"],
+                    ["Liveness:", cd.get("liveness_check", "N/A")],
+                    ["Address Verified:", "Yes" if cd.get("address_verified") else "No"],
+                    ["Date:", cd.get("started_at", "N/A")],
+                ]
+                t = Table(data, colWidths=[40*mm, 125*mm])
+                t.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ]))
+                elements.append(t)
+                elements.append(Spacer(1, 3*mm))
+        else:
+            elements.append(Paragraph("No identity checks on record.", normal_style))
+        elements.append(Spacer(1, 5*mm))
+
+        # Section 2: Right to Work
+        elements.append(Paragraph("2. Right to Work Verification", heading_style))
+        elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+        elements.append(Spacer(1, 3*mm))
+        if rtw:
+            for check in rtw:
+                cd = dict(check)
+                data = [
+                    ["Method:", cd.get("verification_method", "share_code")],
+                    ["Nationality:", cd.get("nationality", "N/A")],
+                    ["Verified:", "Yes" if cd.get("verified") else "No"],
+                    ["Visa Type:", cd.get("visa_type", "N/A")],
+                    ["Visa Expiry:", cd.get("visa_expiry", "N/A")],
+                    ["Restrictions:", cd.get("work_restrictions", "None")],
+                    ["Date:", cd.get("checked_at", "N/A")],
+                ]
+                t = Table(data, colWidths=[40*mm, 125*mm])
+                t.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ]))
+                elements.append(t)
+                elements.append(Spacer(1, 3*mm))
+        else:
+            elements.append(Paragraph("No right to work checks on record.", normal_style))
+        elements.append(Spacer(1, 5*mm))
+
+        # Section 3: Enhanced DBS
+        elements.append(Paragraph("3. Enhanced DBS Check", heading_style))
+        elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+        elements.append(Spacer(1, 3*mm))
+        if dbs:
+            for check in dbs:
+                cd = dict(check)
+                data = [
+                    ["Provider:", cd.get("provider", "N/A")],
+                    ["Check Type:", cd.get("check_type", "enhanced")],
+                    ["Status:", cd.get("status", "N/A")],
+                    ["Result:", cd.get("result", "N/A").upper()],
+                    ["Certificate No:", cd.get("certificate_number", "N/A")],
+                    ["Issue Date:", cd.get("issue_date", "N/A")],
+                    ["Update Service:", "Registered" if cd.get("update_service_registered") else "Not Registered"],
+                    ["Next Renewal:", cd.get("next_renewal", "N/A")],
+                    ["Submitted:", cd.get("submitted_at", "N/A")],
+                ]
+                t = Table(data, colWidths=[40*mm, 125*mm])
+                t.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ]))
+                elements.append(t)
+                elements.append(Spacer(1, 3*mm))
+        else:
+            elements.append(Paragraph("No DBS checks on record.", normal_style))
+        elements.append(Spacer(1, 5*mm))
+
+        # Section 4: CV Analysis
+        elements.append(Paragraph("4. CV Analysis & Fraud Detection", heading_style))
+        elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+        elements.append(Spacer(1, 3*mm))
+        if cv:
+            for check in cv:
+                cd = dict(check)
+                data = [
+                    ["Fraud Risk Score:", f"{cd.get('fraud_risk_score', 0):.1%}"],
+                    ["Status:", cd.get("status", "N/A")],
+                    ["Analysis Date:", cd.get("analysed_at", "N/A")],
+                ]
+                gaps = cd.get("gap_analysis")
+                if gaps:
+                    try:
+                        gap_list = json.loads(gaps) if isinstance(gaps, str) else gaps
+                        if gap_list:
+                            data.append(["Gaps Found:", str(len(gap_list))])
+                    except Exception:
+                        pass
+                t = Table(data, colWidths=[40*mm, 125*mm])
+                t.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ]))
+                elements.append(t)
+                elements.append(Spacer(1, 3*mm))
+        else:
+            elements.append(Paragraph("No CV analysis on record.", normal_style))
+        elements.append(Spacer(1, 5*mm))
+
+        # Section 5: Employment History & Verification
+        elements.append(Paragraph("5. Employment History & Verification", heading_style))
+        elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+        elements.append(Spacer(1, 3*mm))
+        if emp_history:
+            emp_table_data = [["Employer", "Job Title", "Dates", "Verified"]]
+            emp_ver_map = {dict(v)["employment_id"]: dict(v) for v in emp_verifications}
+            for entry in emp_history:
+                e = dict(entry)
+                ver = emp_ver_map.get(e["id"])
+                verified = "Yes" if ver and ver.get("status") == "completed" else "No"
+                dates = f"{e.get('start_date', '?')} - {e.get('end_date', 'Present')}"
+                emp_table_data.append([
+                    e.get("employer_name", "N/A"),
+                    e.get("job_title", "N/A"),
+                    dates,
+                    verified,
+                ])
+            t = Table(emp_table_data, colWidths=[45*mm, 45*mm, 45*mm, 25*mm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            elements.append(t)
+        else:
+            elements.append(Paragraph("No employment history on record.", normal_style))
+        elements.append(Spacer(1, 5*mm))
+
+        # Section 6: Professional Registration
+        elements.append(Paragraph("6. Professional Registration", heading_style))
+        elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+        elements.append(Spacer(1, 3*mm))
+        if reg:
+            for check in reg:
+                cd = dict(check)
+                data = [
+                    ["Body:", cd.get("body", "N/A")],
+                    ["Registration No:", cd.get("registration_number", "N/A")],
+                    ["Active:", "Yes" if cd.get("is_active") else "No"],
+                    ["Sanctions:", cd.get("sanctions", "None")],
+                    ["Conditions:", cd.get("conditions", "None")],
+                    ["Last Checked:", cd.get("last_checked", "N/A")],
+                ]
+                t = Table(data, colWidths=[40*mm, 125*mm])
+                t.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ]))
+                elements.append(t)
+                elements.append(Spacer(1, 3*mm))
+        else:
+            elements.append(Paragraph("No registration checks on record.", normal_style))
+        elements.append(Spacer(1, 5*mm))
+
+        # Section 7: References
+        elements.append(Paragraph("7. References", heading_style))
+        elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+        elements.append(Spacer(1, 3*mm))
+        if refs:
+            ref_table_data = [["Referee", "Organisation", "Status", "Domain Verified", "Date"]]
+            for ref in refs:
+                r = dict(ref)
+                ref_table_data.append([
+                    r.get("referee_name", "N/A"),
+                    r.get("referee_organisation", "N/A"),
+                    r.get("status", "N/A").upper(),
+                    "Yes" if r.get("domain_verified") else "No",
+                    r.get("sent_at", "N/A")[:10] if r.get("sent_at") else "N/A",
+                ])
+            t = Table(ref_table_data, colWidths=[35*mm, 40*mm, 25*mm, 30*mm, 30*mm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            elements.append(t)
+        else:
+            elements.append(Paragraph("No references on record.", normal_style))
+        elements.append(Spacer(1, 5*mm))
+
+        # Section 8: Training Certificates
+        if training:
+            elements.append(Paragraph("8. Training Certificates", heading_style))
+            elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+            elements.append(Spacer(1, 3*mm))
+            train_data = [["Certificate", "Provider", "Issue Date", "Expiry", "Status"]]
+            for cert in training:
+                cd = dict(cert)
+                train_data.append([
+                    cd.get("certificate_name", "N/A"),
+                    cd.get("provider", "N/A"),
+                    cd.get("issue_date", "N/A"),
+                    cd.get("expiry_date", "N/A"),
+                    cd.get("status", "N/A").upper(),
+                ])
+            t = Table(train_data, colWidths=[40*mm, 35*mm, 30*mm, 30*mm, 25*mm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            elements.append(t)
+            elements.append(Spacer(1, 5*mm))
+
+        # Section: Monitoring Alerts History
+        elements.append(PageBreak())
+        section_num = 9 if training else 8
+        elements.append(Paragraph(f"{section_num}. Monitoring Alerts History", heading_style))
+        elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+        elements.append(Spacer(1, 3*mm))
+        if alerts:
+            alert_data = [["Type", "Severity", "Message", "Resolved", "Date"]]
+            for alert in alerts:
+                ad = dict(alert)
+                alert_data.append([
+                    ad.get("alert_type", "N/A").replace("_", " ").title(),
+                    ad.get("severity", "N/A").upper(),
+                    ad.get("message", "N/A")[:60],
+                    "Yes" if ad.get("is_resolved") else "No",
+                    ad.get("created_at", "N/A")[:10] if ad.get("created_at") else "N/A",
+                ])
+            t = Table(alert_data, colWidths=[30*mm, 20*mm, 65*mm, 20*mm, 25*mm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 7),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ]))
+            elements.append(t)
+        else:
+            elements.append(Paragraph("No monitoring alerts on record.", normal_style))
+        elements.append(Spacer(1, 5*mm))
+
+        # Section: Audit Trail
+        section_num += 1
+        elements.append(Paragraph(f"{section_num}. Audit Trail", heading_style))
+        elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+        elements.append(Spacer(1, 3*mm))
+        if audit_logs:
+            log_data = [["Action", "Actor", "Details", "Timestamp"]]
+            for log in audit_logs[:50]:  # Last 50 entries
+                ld = dict(log)
+                details = ld.get("details", "")
+                if details and len(details) > 80:
+                    details = details[:77] + "..."
+                log_data.append([
+                    ld.get("action", "N/A"),
+                    ld.get("actor", "N/A"),
+                    details,
+                    ld.get("created_at", "N/A")[:19] if ld.get("created_at") else "N/A",
+                ])
+            t = Table(log_data, colWidths=[30*mm, 30*mm, 70*mm, 35*mm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 7),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ]))
+            elements.append(t)
+        else:
+            elements.append(Paragraph("No audit log entries.", normal_style))
+
+        # Footer
+        elements.append(Spacer(1, 15*mm))
+        elements.append(HRFlowable(width="100%", color=colors.HexColor('#1e3a5f')))
+        elements.append(Spacer(1, 3*mm))
+        elements.append(Paragraph(
+            f"This audit pack was generated by HealthVet AI on "
+            f"{datetime.now(timezone.utc).strftime('%d %B %Y at %H:%M UTC')}. "
+            f"All data is verified and timestamped for CQC compliance purposes.",
+            small_style,
+        ))
+
+        doc.build(elements)
+        return buffer.getvalue()
+
+    @staticmethod
+    def generate_agency_audit(agency_id: str) -> bytes:
+        """Generate an agency-wide audit summary PDF."""
+        with get_db() as db:
+            agency = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
+            if not agency:
+                raise ValueError("Agency not found")
+            a = dict(agency)
+
+            candidates = db.execute(
+                """SELECT c.*, ac.employment_status FROM candidates c
+                   JOIN agency_candidates ac ON c.id = ac.candidate_id
+                   WHERE ac.agency_id=?""",
+                (agency_id,),
+            ).fetchall()
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4,
+                                topMargin=20*mm, bottomMargin=20*mm,
+                                leftMargin=15*mm, rightMargin=15*mm)
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle('Title2', parent=styles['Title'],
+                                      fontSize=20, textColor=colors.HexColor('#1e3a5f'))
+        heading_style = ParagraphStyle('Heading2a', parent=styles['Heading2'],
+                                        textColor=colors.HexColor('#1e3a5f'))
+        normal_style = styles['Normal']
+        small_style = ParagraphStyle('Small', parent=normal_style, fontSize=8,
+                                      textColor=colors.grey)
+
+        elements = []
+        elements.append(Spacer(1, 20*mm))
+        elements.append(Paragraph("HealthVet AI", title_style))
+        elements.append(Paragraph("Agency Compliance Summary", heading_style))
+        elements.append(Spacer(1, 10*mm))
+        elements.append(HRFlowable(width="80%", color=colors.HexColor('#1e3a5f')))
+        elements.append(Spacer(1, 10*mm))
+
+        info_data = [
+            ["Agency:", a.get("name", "N/A")],
+            ["Contact:", a.get("contact_name", "N/A")],
+            ["Email:", a.get("email", "N/A")],
+            ["Total Candidates:", str(len(candidates))],
+            ["Report Date:", datetime.now(timezone.utc).strftime("%d %B %Y")],
+        ]
+        t = Table(info_data, colWidths=[40*mm, 125*mm])
+        t.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(t)
+        elements.append(Spacer(1, 10*mm))
+
+        # Candidate summary table
+        if candidates:
+            elements.append(Paragraph("Candidate Compliance Summary", heading_style))
+            elements.append(Spacer(1, 5*mm))
+            cand_data = [["Name", "Profession", "Score", "Status", "CQC Ready"]]
+            for cand in candidates:
+                cd = dict(cand)
+                cand_data.append([
+                    f"{cd.get('first_name', '')} {cd.get('last_name', '')}",
+                    cd.get("profession", "N/A"),
+                    f"{cd.get('compliance_score', 0):.0f}%",
+                    cd.get("compliance_status", "incomplete").upper(),
+                    "Yes" if cd.get("compliance_status") == "compliant" else "No",
+                ])
+            t = Table(cand_data, colWidths=[40*mm, 30*mm, 25*mm, 35*mm, 25*mm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            elements.append(t)
+
+        elements.append(Spacer(1, 15*mm))
+        elements.append(HRFlowable(width="100%", color=colors.HexColor('#1e3a5f')))
+        elements.append(Spacer(1, 3*mm))
+        elements.append(Paragraph(
+            f"Generated by HealthVet AI on {datetime.now(timezone.utc).strftime('%d %B %Y at %H:%M UTC')}.",
+            small_style,
+        ))
+
+        doc.build(elements)
+        return buffer.getvalue()

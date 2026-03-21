@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
-  DollarSign, FileText, Briefcase,
+  DollarSign, FileText, Briefcase, CreditCard, Download,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type Tab = "dashboard" | "candidates" | "alerts" | "candidate-detail" | "invites";
+type Tab = "dashboard" | "candidates" | "alerts" | "candidate-detail" | "invites" | "billing";
 
 export default function AgencyDashboard() {
   const { token, logout } = useAuth();
@@ -32,6 +32,14 @@ export default function AgencyDashboard() {
   // Candidate status tracking
   const [candidatesWithStatus, setCandidatesWithStatus] = useState<Record<string, unknown>[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Billing state
+  const [subscription, setSubscription] = useState<Record<string, unknown> | null>(null);
+  const [billingHistory, setBillingHistory] = useState<Record<string, unknown>[]>([]);
+  const [selectedTier, setSelectedTier] = useState("starter");
+  const [selectedBillingMethod, setSelectedBillingMethod] = useState("stripe");
+  const [subscribing, setSubscribing] = useState(false);
+  const [downloadingAudit, setDownloadingAudit] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -62,6 +70,15 @@ export default function AgencyDashboard() {
         // fallback to regular candidates
         setCandidatesWithStatus(c);
       }
+      // Load billing data
+      try {
+        const sub = await billingApi.getSubscription(token, "me");
+        if (sub && sub.status !== "none") setSubscription(sub);
+      } catch { /* ignore */ }
+      try {
+        const hist = await billingApi.getHistory(token, "me");
+        setBillingHistory(hist);
+      } catch { /* ignore */ }
     } catch (err) {
       console.error("Failed to load data", err);
     }
@@ -129,6 +146,40 @@ export default function AgencyDashboard() {
       setCopiedCode(code);
       setTimeout(() => setCopiedCode(""), 2000);
     });
+  };
+
+  const subscribeToPlan = async () => {
+    if (!token) return;
+    setSubscribing(true);
+    try {
+      const result = await billingApi.subscribe(token, { agency_id: "me", tier: selectedTier, billing_method: selectedBillingMethod });
+      setSubscription(result);
+      loadData();
+    } catch (err) { console.error("Failed to subscribe", err); }
+    finally { setSubscribing(false); }
+  };
+
+  const cancelSubscription = async () => {
+    if (!token) return;
+    try {
+      await billingApi.cancel(token, "me");
+      setSubscription(null);
+      loadData();
+    } catch (err) { console.error("Failed to cancel", err); }
+  };
+
+  const downloadAgencyAudit = async () => {
+    if (!token) return;
+    setDownloadingAudit(true);
+    try {
+      const resp = await reportsApi.downloadAgencyAudit(token, "me");
+      if (!resp.ok) throw new Error("Failed");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "agency_audit_pack.pdf"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { console.error("Download failed", err); }
+    finally { setDownloadingAudit(false); }
   };
 
   const updateCandidateStatus = async (candidateId: string, newStatus: string) => {
@@ -235,6 +286,7 @@ export default function AgencyDashboard() {
             { key: "candidates" as Tab, label: "Candidates", icon: <Users size={16} /> },
             { key: "invites" as Tab, label: `Invites (${invites.length})`, icon: <Mail size={16} /> },
             { key: "alerts" as Tab, label: `Alerts (${alerts.length})`, icon: <Bell size={16} /> },
+            { key: "billing" as Tab, label: "Billing", icon: <CreditCard size={16} /> },
           ].map((item) => (
             <button key={item.key} onClick={() => setTab(item.key)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
@@ -644,6 +696,103 @@ export default function AgencyDashboard() {
                             )}
                           </div>
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {/* Billing Tab */}
+        {tab === "billing" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Subscription & Billing</h2>
+              <button onClick={downloadAgencyAudit} disabled={downloadingAudit}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                <Download size={16} /> {downloadingAudit ? "Generating..." : "Download CQC Audit Pack"}
+              </button>
+            </div>
+
+            {/* Current Subscription */}
+            {subscription && subscription.status !== "none" ? (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-4">Current Subscription</h3>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                    <p className="text-slate-400 text-xs mb-1">Plan</p>
+                    <p className="text-xl font-bold text-white capitalize">{String(subscription.tier)}</p>
+                  </div>
+                  <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                    <p className="text-slate-400 text-xs mb-1">Monthly Amount</p>
+                    <p className="text-xl font-bold text-green-400">\u00a3{Number(subscription.monthly_amount).toFixed(2)}</p>
+                  </div>
+                  <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                    <p className="text-slate-400 text-xs mb-1">Billing Method</p>
+                    <p className="text-xl font-bold text-blue-400 capitalize">{String(subscription.billing_method)}</p>
+                  </div>
+                  <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                    <p className="text-slate-400 text-xs mb-1">Max Workers</p>
+                    <p className="text-xl font-bold text-amber-400">{subscription.max_workers === -1 ? "Unlimited" : String(subscription.max_workers)}</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-slate-400 text-sm">Next billing: {String(subscription.next_billing_date || "N/A")}</p>
+                  <button onClick={cancelSubscription} className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-4 py-2 rounded-full hover:bg-red-600/30">Cancel Subscription</button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-4">Choose a Plan</h3>
+                <div className="grid grid-cols-4 gap-4 mb-6">
+                  {[
+                    { key: "starter", name: "Starter", price: "\u00a3299/mo", workers: "Up to 50 workers", color: "border-blue-500/30" },
+                    { key: "growth", name: "Growth", price: "\u00a3799/mo", workers: "Up to 200 workers", color: "border-green-500/30" },
+                    { key: "enterprise", name: "Enterprise", price: "\u00a31,999/mo", workers: "Unlimited workers", color: "border-purple-500/30" },
+                    { key: "per_worker", name: "Per Worker", price: "\u00a35/worker/mo", workers: "Unlimited workers", color: "border-amber-500/30" },
+                  ].map((tier) => (
+                    <div key={tier.key} onClick={() => setSelectedTier(tier.key)}
+                      className={`p-5 bg-slate-700/50 rounded-xl border cursor-pointer transition-all ${selectedTier === tier.key ? "border-blue-400 ring-2 ring-blue-400/30" : tier.color + " hover:border-slate-500"}`}>
+                      <p className="text-white font-bold text-lg mb-1">{tier.name}</p>
+                      <p className="text-blue-400 text-xl font-bold mb-2">{tier.price}</p>
+                      <p className="text-slate-400 text-sm">{tier.workers}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-4">
+                  <select value={selectedBillingMethod} onChange={(e) => setSelectedBillingMethod(e.target.value)}
+                    className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="stripe">Stripe (Card Payment)</option>
+                    <option value="invoice">Recurring Invoice</option>
+                  </select>
+                  <button onClick={subscribeToPlan} disabled={subscribing}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-6 py-2.5 rounded-lg text-sm font-medium">
+                    {subscribing ? "Subscribing..." : "Subscribe Now"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Billing History */}
+            {billingHistory.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-4">Billing History</h3>
+                <table className="w-full">
+                  <thead><tr className="border-b border-slate-700">
+                    {["Description", "Amount", "Status", "Date"].map((h) => (
+                      <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {billingHistory.map((item, i) => (
+                      <tr key={i} className="border-b border-slate-700/50">
+                        <td className="px-4 py-3 text-sm text-white">{String(item.description || item.tier || "Invoice")}</td>
+                        <td className="px-4 py-3 text-sm text-green-400">\u00a3{Number(item.amount || item.monthly_amount || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3"><StatusBadge status={String(item.status || "pending")} /></td>
+                        <td className="px-4 py-3 text-sm text-slate-400">{String(item.created_at || item.date || "").split("T")[0]}</td>
                       </tr>
                     ))}
                   </tbody>

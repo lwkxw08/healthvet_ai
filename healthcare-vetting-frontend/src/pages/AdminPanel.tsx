@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, fraudApi, schedulerApi, reportsApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
-  DollarSign, FileText, TrendingUp,
+  DollarSign, FileText, TrendingUp, ShieldAlert, Zap, Download, CreditCard,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type Tab = "overview" | "candidates" | "alerts" | "monitoring" | "candidate-detail" | "settings" | "analytics";
+type Tab = "overview" | "candidates" | "alerts" | "monitoring" | "candidate-detail" | "settings" | "analytics" | "fraud" | "scheduler" | "subscriptions";
 
 export default function AdminPanel() {
   const { token, logout } = useAuth();
@@ -37,6 +37,16 @@ export default function AdminPanel() {
   const [invoices, setInvoices] = useState<Record<string, unknown>[]>([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [generatingInvoices, setGeneratingInvoices] = useState("");
+
+  // Fraud detection state
+  const [fraudFlags, setFraudFlags] = useState<Record<string, unknown>[]>([]);
+  const [fraudSummary, setFraudSummary] = useState<Record<string, unknown> | null>(null);
+  const [runningFraudScan, setRunningFraudScan] = useState(false);
+
+  // Scheduler state
+  const [schedulerStatus, setSchedulerStatus] = useState<Record<string, unknown> | null>(null);
+  const [triggeringJob, setTriggeringJob] = useState("");
+
 
   // Monitoring revenue state
   const [monRevenuePeriod, setMonRevenuePeriod] = useState("ytd");
@@ -90,6 +100,24 @@ export default function AdminPanel() {
     finally { setAnalyticsLoading(false); }
   }, [token, revenuePeriod, customFrom, customTo]);
 
+  const loadFraudData = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [flags, summary] = await Promise.all([
+        fraudApi.getFlags(token).catch(() => []),
+        fraudApi.getSummary(token).catch(() => null),
+      ]);
+      setFraudFlags(flags); setFraudSummary(summary);
+    } catch { /* ignore */ }
+  }, [token]);
+
+  const loadSchedulerStatus = useCallback(async () => {
+    if (!token) return;
+    try { const s = await schedulerApi.getStatus(token); setSchedulerStatus(s); } catch { /* ignore */ }
+  }, [token]);
+
+  useEffect(() => { if (tab === "fraud") loadFraudData(); }, [tab, loadFraudData]);
+  useEffect(() => { if (tab === "scheduler") loadSchedulerStatus(); }, [tab, loadSchedulerStatus]);
   useEffect(() => { if (tab === "settings") loadPricing(); }, [tab, loadPricing]);
   useEffect(() => { if (tab === "analytics") loadAnalytics(); }, [tab, loadAnalytics]);
   useEffect(() => { if (tab === "monitoring") loadMonitoringRevenue(); }, [tab, loadMonitoringRevenue]);
@@ -141,6 +169,53 @@ export default function AdminPanel() {
       await loadAnalytics();
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
     finally { setGeneratingInvoices(""); }
+  };
+
+  const runFraudScan = async () => {
+    if (!token) return;
+    setRunningFraudScan(true);
+    try {
+      await fraudApi.runScan(token);
+      showMessage("Fraud scan completed");
+      loadFraudData();
+    } catch (err) { showMessage("Error: " + (err instanceof Error ? err.message : "Failed")); }
+    finally { setRunningFraudScan(false); }
+  };
+
+  const resolveFraudFlag = async (flagId: string) => {
+    if (!token) return;
+    try { await fraudApi.resolveFlag(token, flagId); showMessage("Flag resolved"); loadFraudData(); } catch { /* ignore */ }
+  };
+
+  const triggerJob = async (jobName: string) => {
+    if (!token) return;
+    setTriggeringJob(jobName);
+    try { await schedulerApi.triggerJob(token, jobName); showMessage(`Job '${jobName}' completed`); loadSchedulerStatus(); } catch (err) { showMessage("Error: " + (err instanceof Error ? err.message : "Failed")); }
+    finally { setTriggeringJob(""); }
+  };
+
+  const downloadFinancialReport = async () => {
+    if (!token) return;
+    try {
+      const resp = await reportsApi.downloadFinancialReport(token, revenuePeriod, customFrom, customTo);
+      if (!resp.ok) throw new Error("Failed");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "financial_report.pdf"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { showMessage("Error: " + (err instanceof Error ? err.message : "Download failed")); }
+  };
+
+  const downloadComplianceReport = async () => {
+    if (!token) return;
+    try {
+      const resp = await reportsApi.downloadComplianceReport(token);
+      if (!resp.ok) throw new Error("Failed");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "compliance_report.pdf"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { showMessage("Error: " + (err instanceof Error ? err.message : "Download failed")); }
   };
 
   const markInvoicePaid = async (invoiceId: string) => {
@@ -272,6 +347,9 @@ export default function AdminPanel() {
             { key: "alerts" as Tab, label: `Alerts (${alerts.length})`, icon: <Bell size={16} /> },
             { key: "monitoring" as Tab, label: "Monitoring", icon: <Eye size={16} /> },
             { key: "analytics" as Tab, label: "Analytics", icon: <TrendingUp size={16} /> },
+            { key: "fraud" as Tab, label: "Fraud Detection", icon: <ShieldAlert size={16} /> },
+            { key: "scheduler" as Tab, label: "Scheduler", icon: <Zap size={16} /> },
+            { key: "subscriptions" as Tab, label: "Subscriptions", icon: <CreditCard size={16} /> },
             { key: "settings" as Tab, label: "Settings", icon: <Settings size={16} /> },
           ]).map((item) => (
             <button key={item.key} onClick={() => setTab(item.key)}
@@ -458,6 +536,10 @@ export default function AdminPanel() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><TrendingUp className="text-blue-400" size={22} /> Analytics & Reports</h2>
+              <div className="flex gap-2">
+                <button onClick={downloadFinancialReport} className="bg-green-600/20 text-green-400 border border-green-600/30 px-3 py-1.5 rounded-lg text-xs hover:bg-green-600/30 flex items-center gap-1"><Download size={14} /> Financial PDF</button>
+                <button onClick={downloadComplianceReport} className="bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-600/30 flex items-center gap-1"><Download size={14} /> Compliance PDF</button>
+              </div>
               <PeriodFilter period={revenuePeriod} setPeriodFn={setRevenuePeriod} cFrom={customFrom} setCFrom={setCustomFrom} cTo={customTo} setCTo={setCustomTo} onApply={loadAnalytics} />
             </div>
             {analyticsLoading && <p className="text-slate-400 text-sm">Loading analytics...</p>}
@@ -561,6 +643,134 @@ export default function AdminPanel() {
           </div>
         )}
 
+        {/* Fraud Detection Tab */}
+        {tab === "fraud" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><ShieldAlert className="text-red-400" size={22} /> Cross-Candidate Fraud Detection</h2>
+              <button onClick={runFraudScan} disabled={runningFraudScan}
+                className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 text-white px-6 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
+                <Play size={16} /> {runningFraudScan ? "Scanning..." : "Run Full Scan"}
+              </button>
+            </div>
+            {fraudSummary && (
+              <div className="grid grid-cols-5 gap-4">
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5 text-center"><p className="text-slate-400 text-xs mb-1">Total Flags</p><p className="text-2xl font-bold text-white">{fraudSummary.total_flags as number}</p></div>
+                <div className="bg-slate-800/80 rounded-xl border border-red-500/30 p-5 text-center"><p className="text-slate-400 text-xs mb-1">Critical</p><p className="text-2xl font-bold text-red-400">{(fraudSummary.by_severity as Record<string, number>)?.critical || 0}</p></div>
+                <div className="bg-slate-800/80 rounded-xl border border-orange-500/30 p-5 text-center"><p className="text-slate-400 text-xs mb-1">High</p><p className="text-2xl font-bold text-orange-400">{(fraudSummary.by_severity as Record<string, number>)?.high || 0}</p></div>
+                <div className="bg-slate-800/80 rounded-xl border border-yellow-500/30 p-5 text-center"><p className="text-slate-400 text-xs mb-1">Medium</p><p className="text-2xl font-bold text-yellow-400">{(fraudSummary.by_severity as Record<string, number>)?.medium || 0}</p></div>
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5 text-center"><p className="text-slate-400 text-xs mb-1">Unresolved</p><p className="text-2xl font-bold text-amber-400">{fraudSummary.unresolved as number}</p></div>
+              </div>
+            )}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-4">Fraud Flags ({fraudFlags.length})</h3>
+              {fraudFlags.length === 0 ? <p className="text-slate-400 text-sm">No fraud flags detected. Run a scan to check.</p> : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {fraudFlags.map((flag) => (
+                    <div key={flag.id as string} className={`p-4 rounded-lg border ${flag.severity === "critical" ? "bg-red-500/10 border-red-500/30" : flag.severity === "high" ? "bg-orange-500/10 border-orange-500/30" : "bg-yellow-500/10 border-yellow-500/30"}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <StatusBadge status={flag.severity as string} />
+                          <span className="text-xs text-slate-400 bg-slate-700/50 px-2 py-0.5 rounded">{String(flag.flag_type)}</span>
+                          {flag.is_resolved ? <span className="text-xs text-green-400">Resolved</span> : null}
+                        </div>
+                        {!flag.is_resolved && <button onClick={() => resolveFraudFlag(flag.id as string)} className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-3 py-1 rounded-full hover:bg-green-600/30">Resolve</button>}
+                      </div>
+                      <p className="text-white text-sm">{String(flag.message)}</p>
+                      {flag.details ? <p className="text-slate-400 text-xs mt-1">{String(flag.details)}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Scheduler Tab */}
+        {tab === "scheduler" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><Zap className="text-yellow-400" size={22} /> Background Scheduler</h2>
+            {schedulerStatus && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className={`w-3 h-3 rounded-full ${schedulerStatus.running ? "bg-green-400" : "bg-red-400"}`} />
+                  <span className="text-white text-sm font-medium">{schedulerStatus.running ? "Scheduler Running" : "Scheduler Stopped"}</span>
+                </div>
+                <h3 className="text-md font-semibold text-white mb-3">Scheduled Jobs</h3>
+                <div className="space-y-2">
+                  {(schedulerStatus.jobs as Record<string, unknown>[])?.map((job) => (
+                    <div key={job.id as string} className="p-4 bg-slate-700/50 rounded-lg flex items-center justify-between">
+                      <div>
+                        <p className="text-white text-sm font-medium">{job.name as string}</p>
+                        <p className="text-slate-400 text-xs">Trigger: {job.trigger as string}</p>
+                        <p className="text-slate-400 text-xs">Next run: {job.next_run ? (job.next_run as string).split(".")[0] : "N/A"}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-4">Manual Triggers</h3>
+              <p className="text-slate-400 text-sm mb-4">Run scheduled jobs manually for immediate results.</p>
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { key: "monitoring", label: "Run Monitoring Checks", desc: "DBS updates, visa expiry, registration renewal, sanctions" },
+                  { key: "expiry_warnings", label: "Send Expiry Warnings", desc: "Email notifications for expiring documents/registrations" },
+                  { key: "fraud_scan", label: "Run Fraud Scan", desc: "Cross-candidate duplicate detection and pattern analysis" },
+                ].map((job) => (
+                  <div key={job.key} className="p-4 bg-slate-700/50 rounded-lg">
+                    <p className="text-white text-sm font-medium mb-1">{job.label}</p>
+                    <p className="text-slate-400 text-xs mb-3">{job.desc}</p>
+                    <button onClick={() => triggerJob(job.key)} disabled={triggeringJob === job.key}
+                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 w-full justify-center">
+                      <Play size={14} /> {triggeringJob === job.key ? "Running..." : "Run Now"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Subscriptions Tab */}
+        {tab === "subscriptions" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Agency Subscriptions</h2>
+            <p className="text-slate-400 text-sm">Manage agency subscription tiers and billing methods. Agencies can subscribe via Stripe card payment or recurring invoice.</p>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-4">Available Tiers</h3>
+              <div className="grid grid-cols-4 gap-4">
+                {[
+                  { name: "Starter", price: "\u00a3299/mo", workers: "Up to 50", color: "border-blue-500/30" },
+                  { name: "Growth", price: "\u00a3799/mo", workers: "Up to 200", color: "border-green-500/30" },
+                  { name: "Enterprise", price: "\u00a31,999/mo", workers: "Unlimited", color: "border-purple-500/30" },
+                  { name: "Per Worker", price: "\u00a35/worker/mo", workers: "Unlimited", color: "border-amber-500/30" },
+                ].map((tier) => (
+                  <div key={tier.name} className={`p-5 bg-slate-700/50 rounded-xl border ${tier.color}`}>
+                    <p className="text-white font-bold text-lg mb-1">{tier.name}</p>
+                    <p className="text-blue-400 text-xl font-bold mb-2">{tier.price}</p>
+                    <p className="text-slate-400 text-sm">{tier.workers}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-4">Billing Methods</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-700/50 rounded-lg">
+                  <p className="text-white font-medium mb-1">Stripe Card Payment</p>
+                  <p className="text-slate-400 text-sm">Automatic monthly billing via Stripe. Agencies add a payment method and are charged automatically each billing cycle.</p>
+                </div>
+                <div className="p-4 bg-slate-700/50 rounded-lg">
+                  <p className="text-white font-medium mb-1">Recurring Invoice</p>
+                  <p className="text-slate-400 text-sm">Monthly invoices generated automatically. Agencies receive email notifications and can pay by bank transfer or other methods.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Settings Tab */}
         {tab === "settings" && (
           <div className="space-y-6">
@@ -624,7 +834,7 @@ export default function AdminPanel() {
                 <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                   <h3 className="text-md font-semibold text-white mb-3">Compliance Breakdown</h3>
                   <div className="space-y-2">
-                    {[{ label: "Identity", key: "identity_verified" },{ label: "Right to Work", key: "right_to_work_valid" },{ label: "DBS Check", key: "dbs_valid" },{ label: "Registration", key: "registration_active" },{ label: "References", key: "references_verified" },{ label: "CV Validated", key: "cv_validated" }].map((item) => (
+                    {[{ label: "Identity", key: "identity_verified" },{ label: "Right to Work", key: "right_to_work_valid" },{ label: "DBS Check", key: "dbs_valid" },{ label: "Registration", key: "registration_active" },{ label: "Employment", key: "employment_verified" },{ label: "References", key: "references_verified" },{ label: "CV Validated", key: "cv_validated" }].map((item) => (
                       <div key={item.key} className="flex items-center gap-2 p-2 bg-slate-700/50 rounded"><CheckIcon passed={candidateCompliance[item.key] as boolean} /><span className="text-slate-200 text-sm">{item.label}</span></div>
                     ))}
                   </div>

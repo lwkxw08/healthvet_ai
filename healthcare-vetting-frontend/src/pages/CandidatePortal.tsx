@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, checksApi, complianceApi, monitoringApi, agencyInvitesApi } from "../api/client";
+import { candidatesApi, checksApi, complianceApi, monitoringApi, agencyInvitesApi, trainingApi, reportsApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Upload,
   FileText, UserCheck, Fingerprint, Search, Send, LogOut, RefreshCw, ChevronRight,
-  Camera, ScanFace, Loader2, ArrowRight, ArrowLeft, Eye, Briefcase, Plus, Trash2, Edit3, Building2,
+  Camera, ScanFace, Loader2, ArrowRight, ArrowLeft, Eye, Briefcase, Plus, Trash2, Edit3, Building2, GraduationCap, Download,
 } from "lucide-react";
 
-type Tab = "overview" | "identity" | "rtw" | "dbs" | "cv" | "employment" | "registration" | "references";
+type Tab = "overview" | "identity" | "rtw" | "dbs" | "cv" | "employment" | "registration" | "references" | "training";
 
 export default function CandidatePortal() {
   const { token, userId, logout } = useAuth();
@@ -45,6 +45,18 @@ export default function CandidatePortal() {
   const [dbsChecks, setDbsChecks] = useState<Record<string, unknown>[]>([]);
   const [cvAnalyses, setCvAnalyses] = useState<Record<string, unknown>[]>([]);
   const [regChecks, setRegChecks] = useState<Record<string, unknown>[]>([]);
+
+  // Training certificates
+  const [trainingCerts, setTrainingCerts] = useState<Record<string, unknown>[]>([]);
+  const [trainingStandards, setTrainingStandards] = useState<Record<string, unknown>[]>([]);
+  const [trainingCompliance, setTrainingCompliance] = useState<Record<string, unknown> | null>(null);
+  const [newCertName, setNewCertName] = useState("");
+  const [newCertCategory, setNewCertCategory] = useState("mandatory");
+  const [newCertProvider, setNewCertProvider] = useState("");
+  const [newCertIssueDate, setNewCertIssueDate] = useState("");
+  const [newCertExpiryDate, setNewCertExpiryDate] = useState("");
+  const [newCertRef, setNewCertRef] = useState("");
+  const [downloadingAudit, setDownloadingAudit] = useState(false);
 
   // Agency affiliation
   const [myAgencies, setMyAgencies] = useState<Record<string, unknown>[]>([]);
@@ -90,6 +102,23 @@ export default function CandidatePortal() {
   }, [token, userId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (!token || !userId || tab !== "training") return;
+    const loadTraining = async () => {
+      try {
+        const [certs, standards, comp] = await Promise.all([
+          trainingApi.getCertificates(token, userId),
+          trainingApi.getStandards(),
+          trainingApi.getCompliance(token, userId),
+        ]);
+        setTrainingCerts(certs);
+        setTrainingStandards(standards);
+        setTrainingCompliance(comp);
+      } catch (err) { console.error("Failed to load training data", err); }
+    };
+    loadTraining();
+  }, [token, userId, tab]);
 
   const loadCheckData = useCallback(async () => {
     if (!token || !userId) return;
@@ -336,6 +365,49 @@ export default function CandidatePortal() {
     } finally { setLoading(false); }
   };
 
+  const addTrainingCert = async () => {
+    if (!token || !userId || !newCertName) return;
+    setLoading(true);
+    try {
+      await trainingApi.addCertificate(token, userId, {
+        certificate_name: newCertName,
+        category: newCertCategory,
+        provider: newCertProvider || undefined,
+        issue_date: newCertIssueDate || undefined,
+        expiry_date: newCertExpiryDate || undefined,
+        certificate_ref: newCertRef || undefined,
+      });
+      setNewCertName(""); setNewCertProvider(""); setNewCertIssueDate(""); setNewCertExpiryDate(""); setNewCertRef("");
+      showMessage("Training certificate added");
+      loadCheckData();
+    } catch (err) { showMessage("Error: " + (err instanceof Error ? err.message : "Failed")); }
+    finally { setLoading(false); }
+  };
+
+  const deleteTrainingCert = async (certId: string) => {
+    if (!token) return;
+    try {
+      await trainingApi.deleteCertificate(token, certId);
+      showMessage("Certificate deleted");
+      loadCheckData();
+    } catch (err) { showMessage("Error: " + (err instanceof Error ? err.message : "Failed")); }
+  };
+
+  const downloadAuditPack = async () => {
+    if (!token || !userId) return;
+    setDownloadingAudit(true);
+    try {
+      const resp = await reportsApi.downloadCandidateAudit(token, userId);
+      if (!resp.ok) throw new Error("Failed to download");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "audit_pack.pdf"; a.click();
+      URL.revokeObjectURL(url);
+      showMessage("Audit pack downloaded");
+    } catch (err) { showMessage("Error: " + (err instanceof Error ? err.message : "Failed")); }
+    finally { setDownloadingAudit(false); }
+  };
+
   const StatusBadge = ({ status }: { status: string }) => {
     const colors: Record<string, string> = {
       clear: "bg-green-500/20 text-green-400 border-green-500/30",
@@ -377,6 +449,7 @@ export default function CandidatePortal() {
     { key: "employment", label: "Employment", icon: <Briefcase size={18} /> },
     { key: "registration", label: "Registration", icon: <CheckCircle size={18} /> },
     { key: "references", label: "References", icon: <Send size={18} /> },
+    { key: "training", label: "Training", icon: <GraduationCap size={18} /> },
   ];
 
   const complianceScore = compliance ? (compliance.score as number) : 0;
@@ -1489,8 +1562,119 @@ export default function CandidatePortal() {
               )}
             </div>
           )}
+
+          {/* Training Certificates Tab */}
+          {tab === "training" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2"><GraduationCap size={22} className="text-blue-400" /> Training Certificates</h2>
+                <button onClick={downloadAuditPack} disabled={downloadingAudit}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                  <Download size={16} /> {downloadingAudit ? "Generating..." : "Download CQC Audit Pack"}
+                </button>
+              </div>
+
+              {/* Training Compliance Summary */}
+              {trainingCompliance && (
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                  <h3 className="text-md font-semibold text-white mb-3">Compliance Summary</h3>
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                      <p className="text-slate-400 text-xs mb-1">Total Certs</p>
+                      <p className="text-2xl font-bold text-white">{trainingCompliance.total_certificates as number}</p>
+                    </div>
+                    <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                      <p className="text-slate-400 text-xs mb-1">Valid</p>
+                      <p className="text-2xl font-bold text-green-400">{trainingCompliance.valid as number}</p>
+                    </div>
+                    <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                      <p className="text-slate-400 text-xs mb-1">Expired</p>
+                      <p className="text-2xl font-bold text-red-400">{trainingCompliance.expired as number}</p>
+                    </div>
+                    <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                      <p className="text-slate-400 text-xs mb-1">Compliance Rate</p>
+                      <p className="text-2xl font-bold text-blue-400">{trainingCompliance.compliance_rate as number}%</p>
+                    </div>
+                  </div>
+                  {(trainingCompliance.missing_mandatory as string[])?.length > 0 && (
+                    <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                      <p className="text-amber-300 text-sm font-medium mb-1">Missing Mandatory Certificates:</p>
+                      <p className="text-amber-200 text-xs">{(trainingCompliance.missing_mandatory as string[]).join(", ")}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Add New Certificate */}
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">Add Training Certificate</h3>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <select value={newCertName} onChange={(e) => setNewCertName(e.target.value)}
+                    className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">Select certificate...</option>
+                    {trainingStandards.map((s) => (
+                      <option key={s.name as string} value={s.name as string}>{s.name as string} ({s.category as string})</option>
+                    ))}
+                    <option value="__custom">Other (custom)</option>
+                  </select>
+                  <select value={newCertCategory} onChange={(e) => setNewCertCategory(e.target.value)}
+                    className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="mandatory">Mandatory</option>
+                    <option value="recommended">Recommended</option>
+                    <option value="role_specific">Role-Specific</option>
+                  </select>
+                  <input type="text" placeholder="Provider" value={newCertProvider} onChange={(e) => setNewCertProvider(e.target.value)}
+                    className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="text" placeholder="Certificate Reference" value={newCertRef} onChange={(e) => setNewCertRef(e.target.value)}
+                    className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <div>
+                    <label className="text-slate-400 text-xs mb-1 block">Issue Date</label>
+                    <input type="date" value={newCertIssueDate} onChange={(e) => setNewCertIssueDate(e.target.value)}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 text-xs mb-1 block">Expiry Date</label>
+                    <input type="date" value={newCertExpiryDate} onChange={(e) => setNewCertExpiryDate(e.target.value)}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                <button onClick={addTrainingCert} disabled={loading || !newCertName || newCertName === "__custom"}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-6 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
+                  <Plus size={16} /> {loading ? "Adding..." : "Add Certificate"}
+                </button>
+              </div>
+
+              {/* Existing Certificates */}
+              {trainingCerts.length > 0 && (
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                  <h3 className="text-md font-semibold text-white mb-3">Your Certificates ({trainingCerts.length})</h3>
+                  <div className="space-y-2">
+                    {trainingCerts.map((cert) => (
+                      <div key={cert.id as string} className="p-4 bg-slate-700/50 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <span className="text-white text-sm font-medium">{cert.certificate_name as string}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${cert.category === "mandatory" ? "bg-red-500/20 text-red-300" : cert.category === "recommended" ? "bg-blue-500/20 text-blue-300" : "bg-purple-500/20 text-purple-300"}`}>{String(cert.category)}</span>
+                            <StatusBadge status={cert.status as string} />
+                          </div>
+                          <button onClick={() => deleteTrainingCert(cert.id as string)} className="text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          {cert.provider ? <div><span className="text-slate-400">Provider:</span> <span className="text-slate-300">{String(cert.provider)}</span></div> : null}
+                          {cert.issue_date ? <div><span className="text-slate-400">Issued:</span> <span className="text-slate-300">{String(cert.issue_date)}</span></div> : null}
+                          {cert.expiry_date ? <div><span className="text-slate-400">Expires:</span> <span className={`${cert.status === "expired" ? "text-red-400" : "text-slate-300"}`}>{String(cert.expiry_date)}</span></div> : null}
+                          {cert.certificate_ref ? <div><span className="text-slate-400">Ref:</span> <span className="text-slate-300">{String(cert.certificate_ref)}</span></div> : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </main>
       </div>
     </div>
   );
 }
+

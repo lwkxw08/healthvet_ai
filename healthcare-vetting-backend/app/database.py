@@ -482,6 +482,67 @@ def init_db():
             paid_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
+
+        CREATE TABLE IF NOT EXISTS email_notifications (
+            id TEXT PRIMARY KEY,
+            recipient_email TEXT NOT NULL,
+            recipient_name TEXT,
+            subject TEXT NOT NULL,
+            body TEXT,
+            notification_type TEXT,
+            related_id TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS training_certificates (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            certificate_name TEXT NOT NULL,
+            category TEXT DEFAULT 'mandatory',
+            provider TEXT,
+            issue_date TEXT,
+            expiry_date TEXT,
+            certificate_ref TEXT,
+            file_name TEXT,
+            status TEXT DEFAULT 'valid',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS fraud_flags (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT,
+            flag_type TEXT NOT NULL,
+            severity TEXT DEFAULT 'medium',
+            message TEXT NOT NULL,
+            details TEXT,
+            is_resolved INTEGER DEFAULT 0,
+            resolved_by TEXT,
+            resolved_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS agency_subscriptions (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            billing_method TEXT DEFAULT 'stripe',
+            monthly_amount REAL DEFAULT 0.0,
+            per_worker_amount REAL DEFAULT 0.0,
+            max_workers INTEGER DEFAULT 50,
+            stripe_payment_method_id TEXT,
+            stripe_subscription_id TEXT,
+            status TEXT DEFAULT 'active',
+            current_period_start TEXT,
+            current_period_end TEXT,
+            next_billing_date TEXT,
+            cancelled_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
     """)
 
     conn.commit()
