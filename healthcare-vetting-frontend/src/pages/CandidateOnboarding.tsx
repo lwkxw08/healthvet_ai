@@ -632,7 +632,16 @@ function ConsentStep({ sectionCompleted, consentChecked, onConsentChange, valida
   onSubmit: () => void;
   submitting: boolean;
 }) {
+  const [validationPassed, setValidationPassed] = useState(false);
+  const [validating, setValidating] = useState(false);
   const completedCount = SECTIONS.filter(s => sectionCompleted[s.key]).length;
+
+  const handleValidate = async () => {
+    setValidating(true);
+    const passed = await onValidate();
+    setValidationPassed(passed);
+    setValidating(false);
+  };
 
   return (
     <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
@@ -681,14 +690,24 @@ function ConsentStep({ sectionCompleted, consentChecked, onConsentChange, valida
       </div>
 
       <div className="flex gap-3">
-        <button onClick={() => onValidate()} className="flex-1 px-6 py-3 rounded-lg border border-slate-600 bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer font-medium text-sm transition-all">
-          Validate Application
+        <button
+          onClick={handleValidate}
+          disabled={validating || validationPassed}
+          className={`flex-1 px-6 py-3 rounded-lg border font-medium text-sm transition-all ${
+            validationPassed
+              ? "border-green-500/30 bg-green-500/10 text-green-400 cursor-default"
+              : validating
+                ? "border-slate-600 bg-slate-700 text-slate-400 cursor-wait"
+                : "border-slate-600 bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer"
+          }`}
+        >
+          {validating ? "Validating..." : validationPassed ? "✓ Validation Passed" : "Validate Application"}
         </button>
         <button
           onClick={onSubmit}
-          disabled={!consentChecked || submitting}
+          disabled={!consentChecked || !validationPassed || submitting}
           className={`flex-1 px-6 py-3 rounded-lg border-none text-white font-bold text-sm transition-all ${
-            consentChecked ? "bg-emerald-600 hover:bg-emerald-700 cursor-pointer" : "bg-slate-600 cursor-not-allowed"
+            consentChecked && validationPassed ? "bg-emerald-600 hover:bg-emerald-700 cursor-pointer" : "bg-slate-600 text-slate-500 cursor-not-allowed"
           }`}
         >
           {submitting ? "Submitting..." : "Submit Application"}
