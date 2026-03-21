@@ -85,6 +85,9 @@ if STATIC_DIR.exists():
     @app.get("/{full_path:path}")
     async def serve_frontend(request: Request, full_path: str):
         """Serve the React SPA for any non-API route."""
+        # Never intercept API routes
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API route not found")
         # Try to serve a specific static file first
         file_path = STATIC_DIR / full_path
         if full_path and file_path.exists() and file_path.is_file():
