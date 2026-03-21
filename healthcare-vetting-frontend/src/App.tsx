@@ -1,6 +1,6 @@
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
-import CandidatePortal from "./pages/CandidatePortal";
+import CandidateOnboarding from "./pages/CandidateOnboarding";
 import AgencyDashboard from "./pages/AgencyDashboard";
 import AdminPanel from "./pages/AdminPanel";
 
@@ -19,7 +19,7 @@ function AppContent() {
 
   switch (userType) {
     case "candidate":
-      return <CandidatePortal />;
+      return <CandidateOnboarding />;
     case "agency":
       return <AgencyDashboard />;
     case "admin":

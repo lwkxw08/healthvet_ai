@@ -382,6 +382,38 @@ export const schedulerApi = {
     apiRequest<Record<string, unknown>>(`/api/scheduler/trigger/${jobName}`, { method: "POST", token }),
 };
 
+// Submissions API (new candidate onboarding flow)
+export const submissionsApi = {
+  createSubmission: (token: string, data?: { submission_type?: string; sections_requested?: string[]; revet_token?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/submissions/create", { method: "POST", body: data || {}, token }),
+  getCurrent: (token: string) =>
+    apiRequest<Record<string, unknown> | null>("/api/submissions/current", { token }),
+  getSubmission: (token: string, submissionId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/submissions/${submissionId}`, { token }),
+  saveSection: (token: string, submissionId: string, section: string, data: Record<string, unknown>, completed: boolean) =>
+    apiRequest<Record<string, unknown>>(`/api/submissions/${submissionId}/section/${section}`, {
+      method: "PUT", body: { data, completed }, token,
+    }),
+  validate: (token: string, submissionId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/submissions/${submissionId}/validate`, { method: "POST", token }),
+  submitWithConsent: (token: string, submissionId: string, data: { consent_given: boolean; privacy_policy_version?: string; terms_version?: string }) =>
+    apiRequest<Record<string, unknown>>(`/api/submissions/${submissionId}/consent`, { method: "POST", body: data, token }),
+  getStatus: (token: string, submissionId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/submissions/${submissionId}/status`, { token }),
+  getRevetInfo: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/submissions/revet-info", { token }),
+};
+
+// Agency Re-vet API
+export const agencyRevetApi = {
+  requestRevet: (token: string, candidateId: string, sections: string[]) =>
+    apiRequest<Record<string, unknown>>(`/api/agencies/candidates/${candidateId}/request-revet`, {
+      method: "POST", body: { sections }, token,
+    }),
+  listRevetRequests: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/agencies/revet-requests", { token }),
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   createInvite: (token: string, candidateEmail: string) =>

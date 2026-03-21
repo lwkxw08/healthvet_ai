@@ -310,6 +310,116 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
         }
 
 
+# ── Partial Re-vetting ────────────────────────────────────────────
+
+class RevetRequest(BaseModel):
+    sections: list[str]  # e.g. ["dbs"], ["dbs", "training"]
+
+
+@router.post("/candidates/{candidate_id}/request-revet")
+async def request_revet(
+    candidate_id: str,
+    data: RevetRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Agency requests partial re-vetting for a hired candidate."""
+    if current_user["type"] != "agency":
+        raise HTTPException(status_code=403, detail="Agencies only")
+
+    valid_sections = {"identity", "rtw", "dbs", "cv", "registration", "references", "training"}
+    for s in data.sections:
+        if s not in valid_sections:
+            raise HTTPException(status_code=400, detail=f"Invalid section: {s}. Valid: {', '.join(valid_sections)}")
+
+    agency_id = current_user["sub"]
+    now = datetime.now(timezone.utc).isoformat()
+    token = secrets.token_urlsafe(24)
+
+    import json
+    with get_db() as db:
+        # Verify agency owns the candidate
+        row = db.execute(
+            "SELECT * FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+            (agency_id, candidate_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Candidate not found in your agency")
+
+        # Get candidate info
+        cand = db.execute("SELECT first_name, last_name, email FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        cand_data = dict(cand) if cand else {}
+
+        # Get agency name
+        agency = db.execute("SELECT name FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        agency_name = dict(agency)["name"] if agency else "Unknown"
+
+        # Get pricing for the sections
+        total_cost = 0.0
+        section_costs = []
+        for section in data.sections:
+            price_row = db.execute(
+                "SELECT sell_price, label FROM pricing_settings WHERE check_type=?", (section,)
+            ).fetchone()
+            if price_row:
+                pd = dict(price_row)
+                section_costs.append({"section": section, "label": pd["label"], "cost": pd["sell_price"]})
+                total_cost += pd["sell_price"]
+
+        revet_id = generate_id()
+        db.execute(
+            """INSERT INTO revet_requests (id, agency_id, candidate_id, sections, token, status, created_at)
+               VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
+            (revet_id, agency_id, candidate_id, json.dumps(data.sections), token, now),
+        )
+
+        # Audit log
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (?, 'revet_request', ?, 'created', ?, ?, ?)""",
+            (generate_id(), revet_id, agency_id,
+             json.dumps({"sections": data.sections, "candidate_id": candidate_id}), now),
+        )
+
+    return {
+        "id": revet_id,
+        "token": token,
+        "candidate_name": f"{cand_data.get('first_name', '')} {cand_data.get('last_name', '')}".strip(),
+        "candidate_email": cand_data.get("email"),
+        "agency_name": agency_name,
+        "sections": data.sections,
+        "section_costs": section_costs,
+        "total_cost": round(total_cost, 2),
+        "status": "pending",
+        "created_at": now,
+    }
+
+
+@router.get("/revet-requests")
+async def list_revet_requests(current_user: dict = Depends(get_current_user)):
+    """List all re-vet requests for this agency."""
+    if current_user["type"] != "agency":
+        raise HTTPException(status_code=403, detail="Agencies only")
+
+    import json
+    agency_id = current_user["sub"]
+    with get_db() as db:
+        rows = db.execute(
+            """SELECT rr.*, c.first_name, c.last_name, c.email
+               FROM revet_requests rr
+               JOIN candidates c ON rr.candidate_id = c.id
+               WHERE rr.agency_id=?
+               ORDER BY rr.created_at DESC""",
+            (agency_id,),
+        ).fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            d["sections"] = json.loads(d["sections"]) if d["sections"] else []
+            d["candidate_name"] = f"{d['first_name']} {d['last_name']}"
+            results.append(d)
+        return results
+
+
 @router.get("/candidates-with-status")
 async def get_candidates_with_status(current_user: dict = Depends(get_current_user)):
     """Get all agency candidates with their employment status."""

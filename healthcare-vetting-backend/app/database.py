@@ -550,6 +550,63 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
+
+        CREATE TABLE IF NOT EXISTS candidate_submissions (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            submission_type TEXT DEFAULT 'full',
+            sections_requested TEXT,
+            status TEXT DEFAULT 'draft',
+            consent_given INTEGER DEFAULT 0,
+            consent_timestamp TEXT,
+            consent_ip_address TEXT,
+            privacy_policy_version TEXT DEFAULT '1.0',
+            terms_version TEXT DEFAULT '1.0',
+            submitted_at TEXT,
+            processing_started_at TEXT,
+            processing_completed_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS candidate_draft_data (
+            id TEXT PRIMARY KEY,
+            submission_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            section TEXT NOT NULL,
+            data TEXT NOT NULL,
+            completed INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (submission_id) REFERENCES candidate_submissions(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS consent_logs (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            submission_id TEXT,
+            consent_type TEXT NOT NULL,
+            consent_given INTEGER NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT,
+            privacy_policy_version TEXT,
+            terms_version TEXT,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS revet_requests (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            sections TEXT NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'pending',
+            submission_id TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (agency_id) REFERENCES agencies(id),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
     """)
 
     conn.commit()
