@@ -192,7 +192,10 @@ export default function AdminPanel() {
 
   const viewCandidate = async (candidate: Record<string, unknown>) => {
     setSelectedCandidate(candidate); setTab("candidate-detail");
-    if (token) { try { const comp = await complianceApi.get(token, candidate.id as string).catch(() => null); setCandidateCompliance(comp); } catch { /* ignore */ } }
+    if (token) {
+      try { const comp = await complianceApi.get(token, candidate.id as string).catch(() => null); setCandidateCompliance(comp); } catch { /* ignore */ }
+      loadCandidateDetail(candidate.id as string);
+    }
   };
 
   const evaluateCandidate = async (candidateId: string) => {
@@ -418,11 +421,19 @@ export default function AdminPanel() {
       clear: "bg-green-500/20 text-green-400 border-green-500/30",
       active: "bg-green-500/20 text-green-400 border-green-500/30",
       valid: "bg-green-500/20 text-green-400 border-green-500/30",
+      verified: "bg-green-500/20 text-green-400 border-green-500/30",
+      completed: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       paid: "bg-green-500/20 text-green-400 border-green-500/30",
+      sent: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+      processing: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       pending: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
       in_progress: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
       pending_review: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+      disputed: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+      has_information: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+      consider: "bg-red-500/20 text-red-400 border-red-500/30",
       flagged: "bg-red-500/20 text-red-400 border-red-500/30",
+      failed: "bg-red-500/20 text-red-400 border-red-500/30",
       critical: "bg-red-500/20 text-red-400 border-red-500/30",
       high: "bg-orange-500/20 text-orange-400 border-orange-500/30",
       medium: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
@@ -1383,7 +1394,19 @@ export default function AdminPanel() {
         )}
 
         {/* Candidate Detail */}
-        {tab === "candidate-detail" && selectedCandidate && (
+        {tab === "candidate-detail" && selectedCandidate && (() => {
+          const detail = candidateDetail || {} as Record<string, unknown>;
+          const idChecks = (detail.identity_checks || []) as Record<string, unknown>[];
+          const rtwChecks = (detail.right_to_work_checks || []) as Record<string, unknown>[];
+          const dbsChecks = (detail.dbs_checks || []) as Record<string, unknown>[];
+          const cvAnalyses = (detail.cv_analyses || []) as Record<string, unknown>[];
+          const regChecks = (detail.registration_checks || []) as Record<string, unknown>[];
+          const detailRefs = (detail.references || []) as Record<string, unknown>[];
+          const empHistory = (detail.employment_history || []) as Record<string, unknown>[];
+          const empVerifications = (detail.employment_verifications || []) as Record<string, unknown>[];
+          const trainingCerts = (detail.training_certificates || []) as Record<string, unknown>[];
+
+          return (
           <div className="space-y-6">
             <button onClick={() => setTab("candidates")} className="text-blue-400 hover:text-blue-300 text-sm">&larr; Back</button>
             <div className="flex items-center justify-between">
@@ -1428,8 +1451,321 @@ export default function AdminPanel() {
                 </div>
               )}
             </div>
+
+            {/* ── Identity Verification History ── */}
+            {idChecks.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">Verification History</h3>
+                {idChecks.map((check) => {
+                  let details: Record<string, unknown> = {};
+                  try { details = JSON.parse(check.details as string || "{}"); } catch { /* ignore */ }
+                  const reports = details.reports as Record<string, Record<string, unknown>> | undefined;
+                  return (
+                    <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <StatusBadge status={check.result as string} />
+                          {typeof check.document_type === "string" && check.document_type && (
+                            <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/30">
+                              {(details.document_type_label as string) || (check.document_type as string).replace(/_/g, " ")}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-500">{check.started_at as string}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div><span className="text-slate-400">Document:</span> <span className="text-white">{check.document_authenticity as string}</span></div>
+                        <div><span className="text-slate-400">Facial Match:</span> <span className="text-white">{((check.facial_match_score as number) * 100).toFixed(0)}%</span></div>
+                        <div><span className="text-slate-400">Liveness:</span> <span className="text-white">{check.liveness_check as string}</span></div>
+                        <div><span className="text-slate-400">Address:</span> <span className="text-white">{check.address_verified ? "Verified" : "Not Verified"}</span></div>
+                      </div>
+                      {reports && (
+                        <div className="mt-3 pt-3 border-t border-slate-600/50">
+                          <p className="text-xs text-slate-500 mb-2">Onfido Report Details</p>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            {reports.document && (
+                              <div className="bg-slate-800/50 rounded p-2">
+                                <span className="text-slate-400 block mb-1">Document Report</span>
+                                <span className={`font-medium ${(reports.document as Record<string, unknown>).mrz_check === "clear" ? "text-green-400" : "text-amber-400"}`}>
+                                  MRZ: {(reports.document as Record<string, unknown>).mrz_check as string}
+                                </span>
+                              </div>
+                            )}
+                            {reports.facial_similarity && (
+                              <div className="bg-slate-800/50 rounded p-2">
+                                <span className="text-slate-400 block mb-1">Facial Report</span>
+                                <span className={`font-medium ${(reports.facial_similarity as Record<string, unknown>).face_match_result === "clear" ? "text-green-400" : "text-amber-400"}`}>
+                                  Match: {(reports.facial_similarity as Record<string, unknown>).face_match_result as string}
+                                </span>
+                              </div>
+                            )}
+                            {reports.liveness && (
+                              <div className="bg-slate-800/50 rounded p-2">
+                                <span className="text-slate-400 block mb-1">Liveness Report</span>
+                                <span className={`font-medium ${(reports.liveness as Record<string, unknown>).liveness_result === "clear" ? "text-green-400" : "text-amber-400"}`}>
+                                  Result: {(reports.liveness as Record<string, unknown>).liveness_result as string}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ── Right to Work History ── */}
+            {rtwChecks.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">Right to Work History</h3>
+                {rtwChecks.map((check) => (
+                  <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={check.result as string} />
+                        {(check.verification_method as string) === "uk_citizen" && (
+                          <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                            {(check.nationality as string) === "irish" ? "Irish" : "UK"} Citizen
+                          </span>
+                        )}
+                        {(check.verification_method as string) === "share_code" && (
+                          <span className="text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full">
+                            Share Code
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-500">{check.checked_at as string}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="text-slate-400">Status:</span> <span className="text-white">{(check.visa_type as string) || "N/A"}</span></div>
+                      <div><span className="text-slate-400">Expiry:</span> <span className="text-white">{(check.visa_expiry as string) || "No expiry"}</span></div>
+                      <div><span className="text-slate-400">Restrictions:</span> <span className="text-white">{(check.work_restrictions as string) || "None"}</span></div>
+                      {(check.verification_method as string) === "uk_citizen" && (check.document_type as string) && (
+                        <div><span className="text-slate-400">Document:</span> <span className="text-white">{(check.document_type as string).replace(/_/g, " ")}</span></div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── DBS Check History ── */}
+            {dbsChecks.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">DBS Check History</h3>
+                {dbsChecks.map((check) => (
+                  <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <StatusBadge status={check.result as string} />
+                      <span className="text-xs text-slate-500">{check.submitted_at as string}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="text-slate-400">Certificate:</span> <span className="text-white">{(check.certificate_number as string) || "Pending"}</span></div>
+                      <div><span className="text-slate-400">Ref:</span> <span className="text-white">{check.application_ref as string}</span></div>
+                      <div><span className="text-slate-400">Type:</span> <span className="text-white">{check.check_type as string}</span></div>
+                      <div><span className="text-slate-400">Renewal:</span> <span className="text-white">{(check.next_renewal as string)?.split("T")[0] || "N/A"}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── CV Analysis Results ── */}
+            {cvAnalyses.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">CV Analysis Results</h3>
+                {cvAnalyses.map((analysis) => {
+                  let gapDisplay = analysis.gap_analysis as string;
+                  let qualDisplay = analysis.qualification_flags as string;
+                  try {
+                    const gapParsed = typeof gapDisplay === "string" ? JSON.parse(gapDisplay) : gapDisplay;
+                    if (Array.isArray(gapParsed)) {
+                      gapDisplay = gapParsed.length === 0 ? "No gaps detected" : gapParsed.map((g: Record<string, unknown>) =>
+                        `${g.from_year || "?"}-${g.to_year || "?"}: ${g.gap_months || "?"}mo gap${g.note ? ` (${g.note})` : ""}`
+                      ).join("; ");
+                    }
+                  } catch { /* keep as-is */ }
+                  try {
+                    const qualParsed = typeof qualDisplay === "string" ? JSON.parse(qualDisplay) : qualDisplay;
+                    if (Array.isArray(qualParsed)) {
+                      qualDisplay = qualParsed.map((q: Record<string, unknown>) =>
+                        `${q.qualification || q.note || "Unknown"} (${q.status || q.severity || "unknown"})`
+                      ).join("; ");
+                    }
+                  } catch { /* keep as-is */ }
+                  return (
+                    <div key={analysis.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-3">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-200 text-sm font-medium">Fraud Risk Score:</span>
+                          <span className={`text-lg font-bold ${
+                            (analysis.fraud_risk_score as number) < 0.3 ? "text-green-400" :
+                            (analysis.fraud_risk_score as number) < 0.6 ? "text-amber-400" : "text-red-400"
+                          }`}>{((analysis.fraud_risk_score as number) * 100).toFixed(0)}%</span>
+                        </div>
+                        <span className="text-xs text-slate-500">{analysis.analysed_at as string}</span>
+                      </div>
+                      <p className="text-slate-300 text-sm mb-3">{analysis.ai_summary as string}</p>
+                      <div className="grid grid-cols-1 gap-2 text-sm">
+                        <div className="p-2 bg-slate-600/50 rounded"><span className="text-slate-400">Gaps:</span> <span className="text-slate-200">{gapDisplay}</span></div>
+                        <div className="p-2 bg-slate-600/50 rounded"><span className="text-slate-400">Qualifications:</span> <span className="text-slate-200">{qualDisplay}</span></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ── Employment History ── */}
+            {empHistory.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">Employment History ({empHistory.length})</h3>
+                {empHistory.map((entry) => {
+                  const entryId = entry.id as string;
+                  const verification = empVerifications.find((v) => v.employment_id === entryId);
+                  return (
+                    <div key={entryId} className="p-4 bg-slate-700/50 rounded-lg mb-3">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h4 className="text-white font-semibold text-sm">{entry.employer_name as string}</h4>
+                          <p className="text-blue-400 text-sm">{entry.job_title as string}</p>
+                          <p className="text-slate-400 text-xs mt-0.5">
+                            {entry.start_date as string || "?"} — {entry.is_current ? "Present" : (entry.end_date as string || "?")}
+                            {entry.source === "cv_extracted" && (
+                              <span className="ml-2 bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0 rounded text-xs">
+                                Extracted from CV
+                              </span>
+                            )}
+                          </p>
+                          {typeof entry.reason_for_leaving === "string" && entry.reason_for_leaving && (
+                            <p className="text-slate-500 text-xs mt-0.5">Reason: {entry.reason_for_leaving}</p>
+                          )}
+                        </div>
+                        {verification && <StatusBadge status={verification.status as string} />}
+                      </div>
+
+                      {verification && (
+                        <div className="mt-3 p-3 bg-slate-600/30 rounded-lg text-sm">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-slate-400">Verified by:</span>
+                            <span className="text-white font-medium">{verification.verifier_name as string}</span>
+                            <span className="text-slate-500">({verification.verifier_email as string})</span>
+                            {verification.domain_verified ? (
+                              <span className="text-xs bg-green-500/20 text-green-400 border border-green-500/30 px-1.5 py-0 rounded">Domain OK</span>
+                            ) : (
+                              <span className="text-xs bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0 rounded">Domain Mismatch</span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div><span className="text-slate-400">Job Title Confirmed:</span> <span className={verification.job_title_confirmed ? "text-green-400" : "text-red-400"}>{verification.job_title_confirmed ? "Yes" : "No"}</span></div>
+                            <div><span className="text-slate-400">Dates Confirmed:</span> <span className={verification.dates_confirmed ? "text-green-400" : "text-red-400"}>{verification.dates_confirmed ? "Yes" : "No"}</span></div>
+                            {typeof verification.reason_for_leaving_confirmed === "string" && verification.reason_for_leaving_confirmed && (
+                              <div className="col-span-2"><span className="text-slate-400">Reason for Leaving:</span> <span className="text-slate-300">{verification.reason_for_leaving_confirmed}</span></div>
+                            )}
+                            {typeof verification.additional_comments === "string" && verification.additional_comments && (
+                              <div className="col-span-2"><span className="text-slate-400">Comments:</span> <span className="text-slate-300">{verification.additional_comments}</span></div>
+                            )}
+                            {typeof verification.fraud_flags === "string" && verification.fraud_flags && (
+                              <div className="col-span-2"><span className="text-red-400">Fraud Flags:</span> <span className="text-red-300">{verification.fraud_flags}</span></div>
+                            )}
+                          </div>
+                          <div className="mt-2">
+                            <button onClick={() => handleRetriggerEmployment(selectedCandidate.id as string, verification.id as string)}
+                              disabled={retriggeringId === (verification.id as string)}
+                              className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-0.5 rounded hover:bg-blue-600/30">
+                              {retriggeringId === (verification.id as string) ? "Re-triggering..." : "Re-trigger Verification"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {!verification && (
+                        <div className="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs text-yellow-300">
+                          No verification request sent yet
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ── Registration Check History ── */}
+            {regChecks.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">Registration History</h3>
+                {regChecks.map((check) => (
+                  <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <StatusBadge status={check.result as string} />
+                      <span className="text-xs text-slate-500">{check.last_checked as string}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="text-slate-400">Body:</span> <span className="text-white">{check.body as string}</span></div>
+                      <div><span className="text-slate-400">Active:</span> <span className="text-white">{check.is_active ? "Yes" : "No"}</span></div>
+                      <div><span className="text-slate-400">Sanctions:</span> <span className="text-white">{(check.sanctions as string) || "None"}</span></div>
+                      <div><span className="text-slate-400">Next Check:</span> <span className="text-white">{(check.next_check as string)?.split("T")[0] || "N/A"}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── References ── */}
+            {detailRefs.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">References ({detailRefs.length})</h3>
+                {detailRefs.map((ref) => (
+                  <div key={ref.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-white text-sm font-medium">{ref.referee_name as string}</span>
+                      <StatusBadge status={ref.status as string} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div><span className="text-slate-400">Email:</span> <span className="text-slate-300">{ref.referee_email as string}</span></div>
+                      <div><span className="text-slate-400">Domain Verified:</span> <span className="text-slate-300">{ref.domain_verified ? "Yes" : "No"}</span></div>
+                      <div><span className="text-slate-400">Reminders:</span> <span className="text-slate-300">{ref.reminder_count as number}</span></div>
+                      {ref.sentiment_score !== null && ref.sentiment_score !== undefined && (
+                        <div><span className="text-slate-400">Sentiment:</span> <span className={`font-medium ${(ref.sentiment_score as number) > 0.7 ? "text-green-400" : (ref.sentiment_score as number) > 0.4 ? "text-amber-400" : "text-red-400"}`}>{((ref.sentiment_score as number) * 100).toFixed(0)}%</span></div>
+                      )}
+                    </div>
+                    <div className="mt-2">
+                      <button onClick={() => handleRetriggerReference(selectedCandidate.id as string, ref.id as string)}
+                        disabled={retriggeringId === (ref.id as string)}
+                        className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-0.5 rounded hover:bg-blue-600/30">
+                        {retriggeringId === (ref.id as string) ? "Re-triggering..." : "Re-trigger Verification"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── Training Certificates ── */}
+            {trainingCerts.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">Training Certificates ({trainingCerts.length})</h3>
+                {trainingCerts.map((cert) => (
+                  <div key={cert.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-white text-sm font-medium">{cert.certificate_name as string}</span>
+                      <StatusBadge status={cert.status as string || "pending"} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div><span className="text-slate-400">Category:</span> <span className="text-slate-300">{(cert.category as string) || "N/A"}</span></div>
+                      <div><span className="text-slate-400">Provider:</span> <span className="text-slate-300">{(cert.provider as string) || "N/A"}</span></div>
+                      <div><span className="text-slate-400">Issued:</span> <span className="text-slate-300">{(cert.issue_date as string) || "N/A"}</span></div>
+                      <div><span className="text-slate-400">Expires:</span> <span className={`${cert.expiry_date ? "text-slate-300" : "text-slate-500"}`}>{(cert.expiry_date as string) || "No expiry"}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+          );
+        })()}
       </main>
     </div>
   );

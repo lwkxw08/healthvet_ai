@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { submissionsApi, candidatesApi } from "../api/client";
+import { Shield, LogOut, RefreshCw, ChevronRight, CheckCircle, XCircle, Clock, AlertTriangle, Loader2 } from "lucide-react";
 
 const SECTIONS = [
-  { key: "personal", label: "Personal Details", icon: "\u{1F464}" },
-  { key: "identity", label: "Identity Documents", icon: "\u{1FAAA}" },
-  { key: "rtw", label: "Right to Work", icon: "\u{1F3DB}\uFE0F" },
-  { key: "dbs", label: "DBS Information", icon: "\u{1F50D}" },
-  { key: "cv", label: "CV / Work History", icon: "\u{1F4C4}" },
-  { key: "registration", label: "Professional Registration", icon: "\u{1F3E5}" },
-  { key: "references", label: "References", icon: "\u{1F4DD}" },
-  { key: "training", label: "Training Certificates", icon: "\u{1F393}" },
+  { key: "personal", label: "Personal Details" },
+  { key: "identity", label: "Identity Documents" },
+  { key: "rtw", label: "Right to Work" },
+  { key: "dbs", label: "DBS Information" },
+  { key: "cv", label: "CV / Work History" },
+  { key: "registration", label: "Professional Registration" },
+  { key: "references", label: "References" },
+  { key: "training", label: "Training Certificates" },
 ];
 
 const CONSENT_STEP = 8;
@@ -162,10 +163,10 @@ export default function CandidateOnboarding() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#f8fafc" }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>Loading...</div>
-          <p style={{ color: "#64748b" }}>Loading your application...</p>
+      <div className="flex items-center justify-center min-h-screen bg-slate-900">
+        <div className="text-center">
+          <Loader2 className="text-blue-400 animate-spin mx-auto mb-4" size={48} />
+          <p className="text-slate-400">Loading your application...</p>
         </div>
       </div>
     );
@@ -183,46 +184,52 @@ export default function CandidateOnboarding() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f8fafc" }}>
-      <div style={{ background: "#1e293b", color: "white", padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>HealthVet AI</h1>
-          <p style={{ fontSize: 12, margin: 0, color: "#94a3b8" }}>Candidate Vetting Application</p>
+    <div className="min-h-screen bg-slate-900">
+      <header className="bg-slate-800/80 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Shield className="text-blue-400" size={28} />
+          <div>
+            <h1 className="text-xl font-bold text-white">HealthVet AI</h1>
+            <p className="text-xs text-slate-400">Candidate Vetting Application</p>
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          {saving && <span style={{ fontSize: 12, color: "#fbbf24" }}>Saving...</span>}
-          <button onClick={logout} style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 13 }}>Sign Out</button>
+        <div className="flex items-center gap-4">
+          {saving && <span className="text-xs text-yellow-400 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Saving...</span>}
+          <button onClick={logout} className="bg-red-600 hover:bg-red-700 text-white border-none rounded-lg px-4 py-1.5 cursor-pointer text-sm flex items-center gap-1">
+            <LogOut size={14} /> Sign Out
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div style={{ background: "white", borderBottom: "1px solid #e2e8f0", padding: "12px 24px" }}>
-        <div style={{ display: "flex", gap: 4, alignItems: "center", overflowX: "auto" }}>
+      <div className="bg-slate-800/50 border-b border-slate-700 px-6 py-3">
+        <div className="flex gap-1 items-center overflow-x-auto">
           {SECTIONS.map((s, i) => (
-            <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div key={s.key} className="flex items-center gap-1">
               <button
                 onClick={() => goToStep(i)}
-                style={{
-                  padding: "6px 12px", borderRadius: 16, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 500,
-                  background: currentStep === i ? "#3b82f6" : sectionCompleted[s.key] ? "#10b981" : "#e2e8f0",
-                  color: currentStep === i || sectionCompleted[s.key] ? "white" : "#64748b",
-                  whiteSpace: "nowrap",
-                }}
+                className={`px-3 py-1.5 rounded-full border-none cursor-pointer text-xs font-medium whitespace-nowrap transition-all ${
+                  currentStep === i
+                    ? "bg-blue-600 text-white"
+                    : sectionCompleted[s.key]
+                    ? "bg-emerald-600/30 text-emerald-300"
+                    : "bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600"
+                }`}
               >
-                {s.icon} {s.label}
+                {sectionCompleted[s.key] && currentStep !== i ? <span className="mr-1">&#10003;</span> : null}
+                {s.label}
               </button>
-              {i < SECTIONS.length - 1 && <span style={{ color: "#cbd5e1" }}>{"\u2192"}</span>}
+              {i < SECTIONS.length - 1 && <ChevronRight size={14} className="text-slate-600" />}
             </div>
           ))}
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ color: "#cbd5e1" }}>{"\u2192"}</span>
+          <div className="flex items-center gap-1">
+            <ChevronRight size={14} className="text-slate-600" />
             <button
               onClick={() => goToStep(CONSENT_STEP)}
-              style={{
-                padding: "6px 12px", borderRadius: 16, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 500,
-                background: currentStep === CONSENT_STEP ? "#3b82f6" : "#e2e8f0",
-                color: currentStep === CONSENT_STEP ? "white" : "#64748b",
-                whiteSpace: "nowrap",
-              }}
+              className={`px-3 py-1.5 rounded-full border-none cursor-pointer text-xs font-medium whitespace-nowrap transition-all ${
+                currentStep === CONSENT_STEP
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600"
+              }`}
             >
               Consent & Submit
             </button>
@@ -231,13 +238,13 @@ export default function CandidateOnboarding() {
       </div>
 
       {error && (
-        <div style={{ margin: "16px 24px", padding: 12, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, color: "#dc2626", fontSize: 14 }}>
-          {error}
-          <button onClick={() => setError("")} style={{ float: "right", background: "none", border: "none", cursor: "pointer", color: "#dc2626" }}>X</button>
+        <div className="mx-6 mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError("")} className="text-red-400 hover:text-red-300 bg-transparent border-none cursor-pointer text-sm">&#10005;</button>
         </div>
       )}
 
-      <div style={{ maxWidth: 800, margin: "24px auto", padding: "0 24px" }}>
+      <div className="max-w-3xl mx-auto py-6 px-6">
         {currentStep < SECTIONS.length ? (
           <SectionForm
             section={SECTIONS[currentStep]}
@@ -259,17 +266,21 @@ export default function CandidateOnboarding() {
         )}
 
         {currentStep < CONSENT_STEP && (
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
+          <div className="flex justify-between mt-6">
             <button
               onClick={goPrev}
               disabled={currentStep === 0}
-              style={{ padding: "10px 24px", borderRadius: 8, border: "1px solid #e2e8f0", background: "white", cursor: currentStep === 0 ? "not-allowed" : "pointer", color: "#64748b" }}
+              className={`px-6 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                currentStep === 0
+                  ? "border-slate-700 bg-slate-800 text-slate-600 cursor-not-allowed"
+                  : "border-slate-600 bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer"
+              }`}
             >
               Previous
             </button>
             <button
               onClick={goNext}
-              style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: "#3b82f6", color: "white", cursor: "pointer", fontWeight: 600 }}
+              className="px-6 py-2.5 rounded-lg border-none bg-blue-600 hover:bg-blue-700 text-white cursor-pointer font-semibold text-sm transition-all"
             >
               Save & Next
             </button>
@@ -288,57 +299,74 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
   onRefresh: () => void;
   onLogout: () => void;
 }) {
-  const statusColor = (s: string) => {
-    if (s === "verified") return { bg: "#dcfce7", color: "#166534", icon: "OK" };
-    if (s === "processing") return { bg: "#fef3c7", color: "#92400e", icon: "..." };
-    if (s === "review") return { bg: "#fee2e2", color: "#991b1b", icon: "!" };
-    return { bg: "#f1f5f9", color: "#475569", icon: "o" };
+  const StatusIcon = ({ status }: { status: string }) => {
+    if (status === "verified") return <CheckCircle size={18} className="text-green-400" />;
+    if (status === "processing") return <Clock size={18} className="text-yellow-400 animate-pulse" />;
+    if (status === "review") return <AlertTriangle size={18} className="text-red-400" />;
+    return <Clock size={18} className="text-slate-500" />;
   };
 
-  const overallColor = complianceStatus === "compliant" ? "#10b981" : complianceStatus === "flagged" ? "#ef4444" : "#f59e0b";
+  const statusBadgeClass = (status: string) => {
+    if (status === "verified") return "bg-green-500/20 text-green-400 border-green-500/30";
+    if (status === "processing") return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+    if (status === "review") return "bg-red-500/20 text-red-400 border-red-500/30";
+    return "bg-slate-700 text-slate-400 border-slate-600";
+  };
+
+  const overallColor = complianceStatus === "compliant" ? "text-green-400" : complianceStatus === "flagged" ? "text-red-400" : "text-yellow-400";
+  const overallBg = complianceStatus === "compliant" ? "bg-green-500/20 border-green-500/30 text-green-400" : complianceStatus === "flagged" ? "bg-red-500/20 border-red-500/30 text-red-400" : "bg-yellow-500/20 border-yellow-500/30 text-yellow-400";
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f8fafc" }}>
-      <div style={{ background: "#1e293b", color: "white", padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>HealthVet AI</h1>
-          <p style={{ fontSize: 12, margin: 0, color: "#94a3b8" }}>Application Status</p>
+    <div className="min-h-screen bg-slate-900">
+      <header className="bg-slate-800/80 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Shield className="text-blue-400" size={28} />
+          <div>
+            <h1 className="text-xl font-bold text-white">HealthVet AI</h1>
+            <p className="text-xs text-slate-400">Application Status</p>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
-          <button onClick={onRefresh} style={{ background: "#3b82f6", color: "white", border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 13 }}>Refresh</button>
-          <button onClick={onLogout} style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 13 }}>Sign Out</button>
+        <div className="flex gap-3">
+          <button onClick={onRefresh} className="bg-blue-600 hover:bg-blue-700 text-white border-none rounded-lg px-4 py-1.5 cursor-pointer text-sm flex items-center gap-1">
+            <RefreshCw size={14} /> Refresh
+          </button>
+          <button onClick={onLogout} className="bg-red-600 hover:bg-red-700 text-white border-none rounded-lg px-4 py-1.5 cursor-pointer text-sm flex items-center gap-1">
+            <LogOut size={14} /> Sign Out
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div style={{ maxWidth: 700, margin: "32px auto", padding: "0 24px" }}>
-        <div style={{ background: submissionStatus === "completed" ? "#dcfce7" : "#eff6ff", border: "1px solid " + (submissionStatus === "completed" ? "#86efac" : "#bfdbfe"), borderRadius: 12, padding: 24, marginBottom: 24, textAlign: "center" }}>
-          <h2 style={{ margin: "0 0 4px 0", fontSize: 18, color: "#1e293b" }}>
+      <div className="max-w-2xl mx-auto py-8 px-6">
+        <div className={`rounded-xl border p-6 mb-6 text-center ${
+          submissionStatus === "completed" ? "bg-green-500/10 border-green-500/30" : "bg-blue-500/10 border-blue-500/30"
+        }`}>
+          <h2 className="text-lg font-bold text-white mb-1">
             {submissionStatus === "completed" ? "Application Complete" : submissionStatus === "processing" ? "Application Processing" : "Application Submitted"}
           </h2>
-          <p style={{ margin: 0, color: "#64748b", fontSize: 14 }}>
+          <p className="text-slate-400 text-sm">
             {submissionStatus === "completed" ? "All checks have been processed. Your results are being reviewed." : "Your vetting checks are running automatically. Check back for updates."}
           </p>
         </div>
 
-        <div style={{ background: "white", borderRadius: 12, padding: 20, marginBottom: 24, border: "1px solid #e2e8f0", textAlign: "center" }}>
-          <h3 style={{ margin: "0 0 12px 0", fontSize: 16, color: "#1e293b" }}>Compliance Score</h3>
-          <div style={{ fontSize: 48, fontWeight: 700, color: overallColor }}>{complianceScore}%</div>
-          <div style={{ display: "inline-block", marginTop: 8, padding: "4px 16px", borderRadius: 20, background: overallColor + "20", color: overallColor, fontWeight: 600, fontSize: 13, textTransform: "capitalize" as const }}>
+        <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6 mb-6 text-center">
+          <h3 className="text-md font-semibold text-white mb-3">Compliance Score</h3>
+          <div className={`text-5xl font-bold ${overallColor}`}>{complianceScore}%</div>
+          <div className={`inline-block mt-3 px-4 py-1 rounded-full border text-sm font-semibold capitalize ${overallBg}`}>
             {complianceStatus}
           </div>
         </div>
 
-        <div style={{ background: "white", borderRadius: 12, padding: 20, border: "1px solid #e2e8f0" }}>
-          <h3 style={{ margin: "0 0 16px 0", fontSize: 16, color: "#1e293b" }}>Check Status</h3>
-          <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
+        <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+          <h3 className="text-md font-semibold text-white mb-4">Check Status</h3>
+          <div className="flex flex-col gap-2">
             {SECTIONS.map(s => {
               const check = checkStatuses[s.key] || { status: "pending", label: s.label + " Pending" };
-              const sc = statusColor(check.status);
               return (
-                <div key={s.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderRadius: 8, background: "#f8fafc" }}>
-                  <span style={{ fontWeight: 500, color: "#334155" }}>{s.icon} {s.label}</span>
-                  <span style={{ padding: "4px 12px", borderRadius: 12, background: sc.bg, color: sc.color, fontSize: 13, fontWeight: 500 }}>
-                    {sc.icon} {check.label}
+                <div key={s.key} className="flex justify-between items-center p-3 rounded-lg bg-slate-700/50">
+                  <span className="text-sm font-medium text-slate-200">{s.label}</span>
+                  <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium ${statusBadgeClass(check.status)}`}>
+                    <StatusIcon status={check.status} />
+                    {check.label}
                   </span>
                 </div>
               );
@@ -346,7 +374,7 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
           </div>
         </div>
 
-        <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 12, marginTop: 24 }}>
+        <p className="text-center text-slate-500 text-xs mt-6">
           Statuses update automatically. Click Refresh to check for the latest updates.
         </p>
       </div>
@@ -355,14 +383,14 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
 }
 
 function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
-  section: { key: string; label: string; icon: string };
+  section: { key: string; label: string };
   data: Record<string, unknown>;
   candidateInfo: Record<string, unknown>;
   onUpdate: (field: string, value: unknown) => void;
   onUpdateBulk: (data: Record<string, unknown>) => void;
 }) {
-  const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, boxSizing: "border-box" };
-  const labelStyle: React.CSSProperties = { display: "block", fontWeight: 500, marginBottom: 4, color: "#334155", fontSize: 14 };
+  const inputClass = "w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+  const labelClass = "block text-slate-400 text-xs mb-1.5 font-medium";
 
   useEffect(() => {
     if (section.key === "personal" && candidateInfo && Object.keys(data).length === 0) {
@@ -379,22 +407,22 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
       case "personal":
         return (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div><label style={labelStyle}>First Name *</label><input style={inputStyle} value={(data.first_name as string) || ""} onChange={e => onUpdate("first_name", e.target.value)} /></div>
-              <div><label style={labelStyle}>Last Name *</label><input style={inputStyle} value={(data.last_name as string) || ""} onChange={e => onUpdate("last_name", e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className={labelClass}>First Name *</label><input className={inputClass} value={(data.first_name as string) || ""} onChange={e => onUpdate("first_name", e.target.value)} /></div>
+              <div><label className={labelClass}>Last Name *</label><input className={inputClass} value={(data.last_name as string) || ""} onChange={e => onUpdate("last_name", e.target.value)} /></div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-              <div><label style={labelStyle}>Phone</label><input style={inputStyle} value={(data.phone as string) || ""} onChange={e => onUpdate("phone", e.target.value)} /></div>
-              <div><label style={labelStyle}>Date of Birth</label><input type="date" style={inputStyle} value={(data.date_of_birth as string) || ""} onChange={e => onUpdate("date_of_birth", e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div><label className={labelClass}>Phone</label><input className={inputClass} value={(data.phone as string) || ""} onChange={e => onUpdate("phone", e.target.value)} /></div>
+              <div><label className={labelClass}>Date of Birth</label><input type="date" className={inputClass} value={(data.date_of_birth as string) || ""} onChange={e => onUpdate("date_of_birth", e.target.value)} /></div>
             </div>
-            <div style={{ marginTop: 16 }}><label style={labelStyle}>Address Line 1</label><input style={inputStyle} value={(data.address_line1 as string) || ""} onChange={e => onUpdate("address_line1", e.target.value)} /></div>
-            <div style={{ marginTop: 16 }}><label style={labelStyle}>Address Line 2</label><input style={inputStyle} value={(data.address_line2 as string) || ""} onChange={e => onUpdate("address_line2", e.target.value)} /></div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-              <div><label style={labelStyle}>City</label><input style={inputStyle} value={(data.city as string) || ""} onChange={e => onUpdate("city", e.target.value)} /></div>
-              <div><label style={labelStyle}>Postcode</label><input style={inputStyle} value={(data.postcode as string) || ""} onChange={e => onUpdate("postcode", e.target.value)} /></div>
+            <div className="mt-4"><label className={labelClass}>Address Line 1</label><input className={inputClass} value={(data.address_line1 as string) || ""} onChange={e => onUpdate("address_line1", e.target.value)} /></div>
+            <div className="mt-4"><label className={labelClass}>Address Line 2</label><input className={inputClass} value={(data.address_line2 as string) || ""} onChange={e => onUpdate("address_line2", e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div><label className={labelClass}>City</label><input className={inputClass} value={(data.city as string) || ""} onChange={e => onUpdate("city", e.target.value)} /></div>
+              <div><label className={labelClass}>Postcode</label><input className={inputClass} value={(data.postcode as string) || ""} onChange={e => onUpdate("postcode", e.target.value)} /></div>
             </div>
-            <div style={{ marginTop: 16 }}><label style={labelStyle}>Profession</label>
-              <select style={inputStyle} value={(data.profession as string) || ""} onChange={e => onUpdate("profession", e.target.value)}>
+            <div className="mt-4"><label className={labelClass}>Profession</label>
+              <select className={inputClass} value={(data.profession as string) || ""} onChange={e => onUpdate("profession", e.target.value)}>
                 <option value="">Select profession...</option>
                 <option value="Nurse">Nurse</option><option value="Doctor">Doctor</option><option value="Healthcare Assistant">Healthcare Assistant</option>
                 <option value="Midwife">Midwife</option><option value="Physiotherapist">Physiotherapist</option><option value="Paramedic">Paramedic</option>
@@ -407,8 +435,8 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
       case "identity":
         return (
           <>
-            <div><label style={labelStyle}>Document Type *</label>
-              <select style={inputStyle} value={(data.document_type as string) || ""} onChange={e => onUpdate("document_type", e.target.value)}>
+            <div><label className={labelClass}>Document Type *</label>
+              <select className={inputClass} value={(data.document_type as string) || ""} onChange={e => onUpdate("document_type", e.target.value)}>
                 <option value="">Select document type...</option>
                 <option value="passport">Passport</option>
                 <option value="driving_licence">Driving Licence</option>
@@ -416,20 +444,20 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
                 <option value="residence_permit">Residence Permit</option>
               </select>
             </div>
-            <div style={{ marginTop: 16 }}><label style={labelStyle}>Upload Identity Document *</label>
-              <div style={{ border: "2px dashed #d1d5db", borderRadius: 8, padding: 32, textAlign: "center", cursor: "pointer", background: "#f8fafc" }}
+            <div className="mt-4"><label className={labelClass}>Upload Identity Document *</label>
+              <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${data.document_file_name ? "border-green-500/50 bg-green-500/10" : "border-slate-600 bg-slate-800/50 hover:border-blue-500/50 hover:bg-slate-800"}`}
                 onClick={() => onUpdate("document_file_name", "uploaded_document_" + Date.now() + ".pdf")}>
                 {data.document_file_name
-                  ? <><span style={{ color: "#10b981", fontSize: 24 }}>OK</span><p style={{ margin: "8px 0 0 0", color: "#10b981" }}>Document uploaded: {data.document_file_name as string}</p></>
-                  : <><p style={{ margin: "8px 0 0 0", color: "#64748b" }}>Click to upload your identity document (PDF, JPG, PNG)</p></>}
+                  ? <><CheckCircle className="text-green-400 mx-auto mb-2" size={24} /><p className="text-green-400 text-sm">Document uploaded: {data.document_file_name as string}</p></>
+                  : <p className="text-slate-400 text-sm">Click to upload your identity document (PDF, JPG, PNG)</p>}
               </div>
             </div>
-            <div style={{ marginTop: 16 }}><label style={labelStyle}>Take / Upload Selfie *</label>
-              <div style={{ border: "2px dashed #d1d5db", borderRadius: 8, padding: 32, textAlign: "center", cursor: "pointer", background: "#f8fafc" }}
+            <div className="mt-4"><label className={labelClass}>Take / Upload Selfie *</label>
+              <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${data.selfie_file_name ? "border-green-500/50 bg-green-500/10" : "border-slate-600 bg-slate-800/50 hover:border-blue-500/50 hover:bg-slate-800"}`}
                 onClick={() => onUpdate("selfie_file_name", "selfie_" + Date.now() + ".jpg")}>
                 {data.selfie_file_name
-                  ? <><span style={{ color: "#10b981", fontSize: 24 }}>OK</span><p style={{ margin: "8px 0 0 0", color: "#10b981" }}>Selfie captured</p></>
-                  : <><p style={{ margin: "8px 0 0 0", color: "#64748b" }}>Click to take or upload a selfie photo</p></>}
+                  ? <><CheckCircle className="text-green-400 mx-auto mb-2" size={24} /><p className="text-green-400 text-sm">Selfie captured</p></>
+                  : <p className="text-slate-400 text-sm">Click to take or upload a selfie photo</p>}
               </div>
             </div>
           </>
@@ -438,20 +466,24 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
       case "rtw":
         return (
           <>
-            <div><label style={labelStyle}>Are you a UK or Irish citizen?</label>
-              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-                <button onClick={() => onUpdate("method", "uk_citizen")} style={{ flex: 1, padding: 14, borderRadius: 8, border: "2px solid " + (data.method === "uk_citizen" ? "#3b82f6" : "#e2e8f0"), background: data.method === "uk_citizen" ? "#eff6ff" : "white", cursor: "pointer", fontWeight: 500 }}>
+            <div><label className={labelClass}>Are you a UK or Irish citizen?</label>
+              <div className="flex gap-3 mt-2">
+                <button onClick={() => onUpdate("method", "uk_citizen")} className={`flex-1 px-4 py-3 rounded-lg border-2 cursor-pointer font-medium text-sm transition-all ${
+                  data.method === "uk_citizen" ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-600 bg-slate-800 text-slate-400 hover:border-slate-500"
+                }`}>
                   Yes - UK/Irish Citizen
                 </button>
-                <button onClick={() => onUpdate("method", "share_code")} style={{ flex: 1, padding: 14, borderRadius: 8, border: "2px solid " + (data.method === "share_code" ? "#3b82f6" : "#e2e8f0"), background: data.method === "share_code" ? "#eff6ff" : "white", cursor: "pointer", fontWeight: 500 }}>
+                <button onClick={() => onUpdate("method", "share_code")} className={`flex-1 px-4 py-3 rounded-lg border-2 cursor-pointer font-medium text-sm transition-all ${
+                  data.method === "share_code" ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-600 bg-slate-800 text-slate-400 hover:border-slate-500"
+                }`}>
                   No - I have a visa/share code
                 </button>
               </div>
             </div>
             {data.method === "uk_citizen" && (
               <>
-                <div style={{ marginTop: 16 }}><label style={labelStyle}>Document Type</label>
-                  <select style={inputStyle} value={(data.document_type as string) || ""} onChange={e => onUpdate("document_type", e.target.value)}>
+                <div className="mt-4"><label className={labelClass}>Document Type</label>
+                  <select className={inputClass} value={(data.document_type as string) || ""} onChange={e => onUpdate("document_type", e.target.value)}>
                     <option value="">Select...</option>
                     <option value="uk_passport">UK Passport</option>
                     <option value="irish_passport">Irish Passport</option>
@@ -459,21 +491,21 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
                     <option value="naturalisation_certificate">Naturalisation Certificate</option>
                   </select>
                 </div>
-                <div style={{ marginTop: 16 }}><label style={labelStyle}>Nationality</label>
-                  <select style={inputStyle} value={(data.nationality as string) || "british"} onChange={e => onUpdate("nationality", e.target.value)}>
+                <div className="mt-4"><label className={labelClass}>Nationality</label>
+                  <select className={inputClass} value={(data.nationality as string) || "british"} onChange={e => onUpdate("nationality", e.target.value)}>
                     <option value="british">British</option><option value="irish">Irish</option>
                   </select>
                 </div>
-                <div style={{ marginTop: 16 }}><label style={labelStyle}>National Insurance Number</label>
-                  <input style={inputStyle} placeholder="e.g. AB 12 34 56 C" value={(data.ni_number as string) || ""} onChange={e => onUpdate("ni_number", e.target.value)} />
+                <div className="mt-4"><label className={labelClass}>National Insurance Number</label>
+                  <input className={inputClass} placeholder="e.g. AB 12 34 56 C" value={(data.ni_number as string) || ""} onChange={e => onUpdate("ni_number", e.target.value)} />
                 </div>
               </>
             )}
             {data.method === "share_code" && (
-              <div style={{ marginTop: 16 }}>
-                <label style={labelStyle}>Home Office Share Code *</label>
-                <input style={inputStyle} placeholder="Enter your 9-character share code" value={(data.share_code as string) || ""} onChange={e => onUpdate("share_code", e.target.value)} />
-                <p style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Get your share code from gov.uk/prove-right-to-work</p>
+              <div className="mt-4">
+                <label className={labelClass}>Home Office Share Code *</label>
+                <input className={inputClass} placeholder="Enter your 9-character share code" value={(data.share_code as string) || ""} onChange={e => onUpdate("share_code", e.target.value)} />
+                <p className="text-xs text-slate-500 mt-1">Get your share code from gov.uk/prove-right-to-work</p>
               </div>
             )}
           </>
@@ -482,24 +514,28 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
       case "dbs":
         return (
           <>
-            <div><label style={labelStyle}>DBS Check Type</label>
-              <select style={inputStyle} value={(data.check_type as string) || "enhanced"} onChange={e => onUpdate("check_type", e.target.value)}>
+            <div><label className={labelClass}>DBS Check Type</label>
+              <select className={inputClass} value={(data.check_type as string) || "enhanced"} onChange={e => onUpdate("check_type", e.target.value)}>
                 <option value="enhanced">Enhanced DBS Check</option>
                 <option value="enhanced_barred">Enhanced DBS with Barred List</option>
                 <option value="standard">Standard DBS Check</option>
                 <option value="basic">Basic DBS Check</option>
               </select>
             </div>
-            <div style={{ marginTop: 16 }}><label style={labelStyle}>Existing DBS Certificate Number (if any)</label>
-              <input style={inputStyle} placeholder="Enter existing certificate number" value={(data.certificate_number as string) || ""} onChange={e => onUpdate("certificate_number", e.target.value)} />
+            <div className="mt-4"><label className={labelClass}>Existing DBS Certificate Number (if any)</label>
+              <input className={inputClass} placeholder="Enter existing certificate number" value={(data.certificate_number as string) || ""} onChange={e => onUpdate("certificate_number", e.target.value)} />
             </div>
-            <div style={{ marginTop: 16 }}><label style={labelStyle}>Registered on DBS Update Service?</label>
-              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-                <button onClick={() => onUpdate("update_service", true)} style={{ padding: "10px 24px", borderRadius: 8, border: "2px solid " + (data.update_service === true ? "#10b981" : "#e2e8f0"), background: data.update_service === true ? "#dcfce7" : "white", cursor: "pointer" }}>Yes</button>
-                <button onClick={() => onUpdate("update_service", false)} style={{ padding: "10px 24px", borderRadius: 8, border: "2px solid " + (data.update_service === false ? "#ef4444" : "#e2e8f0"), background: data.update_service === false ? "#fee2e2" : "white", cursor: "pointer" }}>No</button>
+            <div className="mt-4"><label className={labelClass}>Registered on DBS Update Service?</label>
+              <div className="flex gap-3 mt-2">
+                <button onClick={() => onUpdate("update_service", true)} className={`px-6 py-2.5 rounded-lg border-2 cursor-pointer text-sm font-medium transition-all ${
+                  data.update_service === true ? "border-green-500 bg-green-500/10 text-green-400" : "border-slate-600 bg-slate-800 text-slate-400 hover:border-slate-500"
+                }`}>Yes</button>
+                <button onClick={() => onUpdate("update_service", false)} className={`px-6 py-2.5 rounded-lg border-2 cursor-pointer text-sm font-medium transition-all ${
+                  data.update_service === false ? "border-red-500 bg-red-500/10 text-red-400" : "border-slate-600 bg-slate-800 text-slate-400 hover:border-slate-500"
+                }`}>No</button>
               </div>
             </div>
-            <div style={{ marginTop: 16, padding: 16, background: "#eff6ff", borderRadius: 8, fontSize: 13, color: "#1e40af" }}>
+            <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg text-sm text-blue-300">
               <strong>Note:</strong> An Enhanced DBS check will be submitted automatically when you complete this application. You will receive a certificate by post within 2-6 weeks.
             </div>
           </>
@@ -508,20 +544,20 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
       case "cv":
         return (
           <>
-            <div><label style={labelStyle}>Upload CV (PDF, DOCX, TXT)</label>
-              <div style={{ border: "2px dashed #d1d5db", borderRadius: 8, padding: 32, textAlign: "center", cursor: "pointer", background: "#f8fafc" }}
+            <div><label className={labelClass}>Upload CV (PDF, DOCX, TXT)</label>
+              <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${data.cv_file_name ? "border-green-500/50 bg-green-500/10" : "border-slate-600 bg-slate-800/50 hover:border-blue-500/50 hover:bg-slate-800"}`}
                 onClick={() => onUpdate("cv_file_name", "cv_upload_" + Date.now() + ".pdf")}>
                 {data.cv_file_name
-                  ? <><span style={{ color: "#10b981", fontSize: 24 }}>OK</span><p style={{ margin: "8px 0 0 0", color: "#10b981" }}>CV uploaded: {data.cv_file_name as string}</p></>
-                  : <p style={{ margin: "8px 0 0 0", color: "#64748b" }}>Click to upload your CV</p>}
+                  ? <><CheckCircle className="text-green-400 mx-auto mb-2" size={24} /><p className="text-green-400 text-sm">CV uploaded: {data.cv_file_name as string}</p></>
+                  : <p className="text-slate-400 text-sm">Click to upload your CV</p>}
               </div>
             </div>
-            <div style={{ marginTop: 16 }}><label style={labelStyle}>Or paste CV text</label>
-              <textarea style={{ ...inputStyle, minHeight: 120, fontFamily: "inherit" }} placeholder="Paste your CV content here..." value={(data.cv_text as string) || ""} onChange={e => onUpdate("cv_text", e.target.value)} />
+            <div className="mt-4"><label className={labelClass}>Or paste CV text</label>
+              <textarea className={`${inputClass} min-h-[120px] font-inherit`} placeholder="Paste your CV content here..." value={(data.cv_text as string) || ""} onChange={e => onUpdate("cv_text", e.target.value)} />
             </div>
-            <div style={{ marginTop: 24 }}>
-              <h4 style={{ margin: "0 0 12px 0", color: "#334155" }}>Employment History (Last 5 Years)</h4>
-              <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 12px 0" }}>Add your employment history. Include verifier details for each employer.</p>
+            <div className="mt-6">
+              <h4 className="text-white text-sm font-semibold mb-3">Employment History (Last 5 Years)</h4>
+              <p className="text-slate-400 text-xs mb-3">Add your employment history. Include verifier details for each employer.</p>
               <EmploymentEntries entries={(data.employment_entries as Record<string, unknown>[]) || []} onChange={(entries) => onUpdate("employment_entries", entries)} />
             </div>
           </>
@@ -530,8 +566,8 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
       case "registration":
         return (
           <>
-            <div><label style={labelStyle}>Registration Body *</label>
-              <select style={inputStyle} value={(data.registration_body as string) || ""} onChange={e => onUpdate("registration_body", e.target.value)}>
+            <div><label className={labelClass}>Registration Body *</label>
+              <select className={inputClass} value={(data.registration_body as string) || ""} onChange={e => onUpdate("registration_body", e.target.value)}>
                 <option value="">Select registration body...</option>
                 <option value="NMC">NMC - Nursing and Midwifery Council</option>
                 <option value="GMC">GMC - General Medical Council</option>
@@ -539,10 +575,10 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
                 <option value="GPhC">GPhC - General Pharmaceutical Council</option>
               </select>
             </div>
-            <div style={{ marginTop: 16 }}><label style={labelStyle}>Registration / PIN Number *</label>
-              <input style={inputStyle} placeholder="Enter your registration number" value={(data.registration_number as string) || ""} onChange={e => onUpdate("registration_number", e.target.value)} />
+            <div className="mt-4"><label className={labelClass}>Registration / PIN Number *</label>
+              <input className={inputClass} placeholder="Enter your registration number" value={(data.registration_number as string) || ""} onChange={e => onUpdate("registration_number", e.target.value)} />
             </div>
-            <div style={{ marginTop: 16, padding: 16, background: "#eff6ff", borderRadius: 8, fontSize: 13, color: "#1e40af" }}>
+            <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg text-sm text-blue-300">
               <strong>Note:</strong> Your registration will be verified against the public register automatically.
             </div>
           </>
@@ -551,7 +587,7 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
       case "references":
         return (
           <>
-            <p style={{ fontSize: 14, color: "#64748b", margin: "0 0 16px 0" }}>Provide at least 2 professional references. Reference requests will be sent automatically.</p>
+            <p className="text-slate-400 text-sm mb-4">Provide at least 2 professional references. Reference requests will be sent automatically.</p>
             <RefereeEntries referees={(data.referees as Record<string, unknown>[]) || []} onChange={(refs) => onUpdate("referees", refs)} />
           </>
         );
@@ -559,20 +595,20 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk }: {
       case "training":
         return (
           <>
-            <p style={{ fontSize: 14, color: "#64748b", margin: "0 0 16px 0" }}>Add your training certificates (mandatory training, CPD, specialist certifications).</p>
+            <p className="text-slate-400 text-sm mb-4">Add your training certificates (mandatory training, CPD, specialist certifications).</p>
             <CertificateEntries certificates={(data.certificates as Record<string, unknown>[]) || []} onChange={(certs) => onUpdate("certificates", certs)} />
           </>
         );
 
       default:
-        return <p>Unknown section</p>;
+        return <p className="text-slate-400">Unknown section</p>;
     }
   };
 
   return (
-    <div style={{ background: "white", borderRadius: 12, padding: 24, border: "1px solid #e2e8f0" }}>
-      <h2 style={{ margin: "0 0 4px 0", fontSize: 20, color: "#1e293b" }}>{section.icon} {section.label}</h2>
-      <p style={{ margin: "0 0 20px 0", fontSize: 14, color: "#64748b" }}>
+    <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+      <h2 className="text-lg font-bold text-white mb-1">{section.label}</h2>
+      <p className="text-slate-400 text-sm mb-5">
         {section.key === "personal" && "Enter your personal details below."}
         {section.key === "identity" && "Upload your identity document and a selfie for verification."}
         {section.key === "rtw" && "Provide evidence of your right to work in the UK."}
@@ -599,59 +635,61 @@ function ConsentStep({ sectionCompleted, consentChecked, onConsentChange, valida
   const completedCount = SECTIONS.filter(s => sectionCompleted[s.key]).length;
 
   return (
-    <div style={{ background: "white", borderRadius: 12, padding: 24, border: "1px solid #e2e8f0" }}>
-      <h2 style={{ margin: "0 0 16px 0", fontSize: 20, color: "#1e293b" }}>Review & Consent</h2>
+    <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+      <h2 className="text-lg font-bold text-white mb-4">Review & Consent</h2>
 
-      <div style={{ marginBottom: 24 }}>
-        <h3 style={{ fontSize: 15, color: "#334155", margin: "0 0 12px 0" }}>Sections Completed: {completedCount}/{SECTIONS.length}</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+      <div className="mb-6">
+        <h3 className="text-sm font-semibold text-slate-300 mb-3">Sections Completed: {completedCount}/{SECTIONS.length}</h3>
+        <div className="grid grid-cols-2 gap-2">
           {SECTIONS.map(s => (
-            <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, background: sectionCompleted[s.key] ? "#dcfce7" : "#fef2f2" }}>
-              <span>{sectionCompleted[s.key] ? "OK" : "o"}</span>
-              <span style={{ fontSize: 13, color: sectionCompleted[s.key] ? "#166534" : "#991b1b" }}>{s.icon} {s.label}</span>
+            <div key={s.key} className={`flex items-center gap-2 p-2.5 rounded-lg ${sectionCompleted[s.key] ? "bg-green-500/10 border border-green-500/20" : "bg-red-500/10 border border-red-500/20"}`}>
+              {sectionCompleted[s.key] ? <CheckCircle size={16} className="text-green-400" /> : <XCircle size={16} className="text-red-400" />}
+              <span className={`text-xs ${sectionCompleted[s.key] ? "text-green-400" : "text-red-400"}`}>{s.label}</span>
             </div>
           ))}
         </div>
       </div>
 
       {validationErrors.length > 0 && (
-        <div style={{ marginBottom: 20, padding: 16, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8 }}>
-          <h4 style={{ margin: "0 0 8px 0", color: "#dc2626", fontSize: 14 }}>Please fix the following before submitting:</h4>
+        <div className="mb-5 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+          <h4 className="text-red-400 text-sm font-semibold mb-2">Please fix the following before submitting:</h4>
           {validationErrors.map((e, i) => (
-            <div key={i} style={{ fontSize: 13, color: "#991b1b", padding: "4px 0" }}>- [{e.section}] {e.message}</div>
+            <div key={i} className="text-xs text-red-300 py-1">- [{e.section}] {e.message}</div>
           ))}
         </div>
       )}
 
-      <div style={{ marginBottom: 20, padding: 16, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", maxHeight: 200, overflowY: "auto" as const }}>
-        <h4 style={{ margin: "0 0 8px 0", fontSize: 14, color: "#1e293b" }}>Privacy Policy & Terms of Service (v1.0)</h4>
-        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
-          <p><strong>Data Processing:</strong> By submitting this application, you consent to HealthVet AI processing your personal data for the purpose of employment vetting and compliance checks. This includes identity verification, DBS checks, right to work verification, reference collection, and professional registration verification.</p>
-          <p><strong>Data Controller:</strong> The agency that invited you to complete this vetting process acts as the data controller. HealthVet AI acts as the data processor on behalf of the agency.</p>
-          <p><strong>Data Retention:</strong> Your data will be retained for the duration required by CQC regulations and applicable employment law. You may request deletion of your data at any time, subject to legal retention requirements.</p>
-          <p><strong>Your Rights:</strong> Under GDPR, you have the right to: access your data, request correction of inaccurate data, request deletion (right to be forgotten), data portability, and to lodge a complaint with the ICO.</p>
-          <p><strong>Third Parties:</strong> Your data may be shared with: Onfido (identity verification), DBS providers (criminal record checks), the Home Office (right to work), professional registration bodies (NMC, GMC, HCPC), and your referees/former employers.</p>
-          <p><strong>DBS Consent:</strong> By proceeding, you specifically consent to an Enhanced DBS check being carried out, which may include checks against the children and/or adults barred lists as required by the role.</p>
+      <div className="mb-5 p-4 bg-slate-700/50 rounded-lg border border-slate-600 max-h-48 overflow-y-auto">
+        <h4 className="text-sm font-semibold text-white mb-2">Privacy Policy & Terms of Service (v1.0)</h4>
+        <div className="text-xs text-slate-400 leading-relaxed space-y-2">
+          <p><strong className="text-slate-300">Data Processing:</strong> By submitting this application, you consent to HealthVet AI processing your personal data for the purpose of employment vetting and compliance checks. This includes identity verification, DBS checks, right to work verification, reference collection, and professional registration verification.</p>
+          <p><strong className="text-slate-300">Data Controller:</strong> The agency that invited you to complete this vetting process acts as the data controller. HealthVet AI acts as the data processor on behalf of the agency.</p>
+          <p><strong className="text-slate-300">Data Retention:</strong> Your data will be retained for the duration required by CQC regulations and applicable employment law. You may request deletion of your data at any time, subject to legal retention requirements.</p>
+          <p><strong className="text-slate-300">Your Rights:</strong> Under GDPR, you have the right to: access your data, request correction of inaccurate data, request deletion (right to be forgotten), data portability, and to lodge a complaint with the ICO.</p>
+          <p><strong className="text-slate-300">Third Parties:</strong> Your data may be shared with: Onfido (identity verification), DBS providers (criminal record checks), the Home Office (right to work), professional registration bodies (NMC, GMC, HCPC), and your referees/former employers.</p>
+          <p><strong className="text-slate-300">DBS Consent:</strong> By proceeding, you specifically consent to an Enhanced DBS check being carried out, which may include checks against the children and/or adults barred lists as required by the role.</p>
         </div>
       </div>
 
-      <div style={{ marginBottom: 24, padding: 16, background: "#eff6ff", borderRadius: 8, border: "1px solid #bfdbfe" }}>
-        <label style={{ display: "flex", gap: 12, cursor: "pointer", alignItems: "flex-start" }}>
-          <input type="checkbox" checked={consentChecked} onChange={e => onConsentChange(e.target.checked)} style={{ marginTop: 4, width: 20, height: 20, accentColor: "#3b82f6" }} />
-          <span style={{ fontSize: 14, color: "#1e293b", lineHeight: 1.5 }}>
-            <strong>I confirm that:</strong> All information provided is accurate and complete. I have read and agree to the Privacy Policy and Terms of Service. I consent to the processing of my personal data for employment vetting purposes, including DBS checks, identity verification, and all other compliance checks listed above. I understand my rights under GDPR.
+      <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+        <label className="flex gap-3 cursor-pointer items-start">
+          <input type="checkbox" checked={consentChecked} onChange={e => onConsentChange(e.target.checked)} className="mt-1 w-5 h-5 accent-blue-500" />
+          <span className="text-sm text-slate-300 leading-relaxed">
+            <strong className="text-white">I confirm that:</strong> All information provided is accurate and complete. I have read and agree to the Privacy Policy and Terms of Service. I consent to the processing of my personal data for employment vetting purposes, including DBS checks, identity verification, and all other compliance checks listed above. I understand my rights under GDPR.
           </span>
         </label>
       </div>
 
-      <div style={{ display: "flex", gap: 12 }}>
-        <button onClick={() => onValidate()} style={{ flex: 1, padding: "12px 24px", borderRadius: 8, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", fontWeight: 500 }}>
+      <div className="flex gap-3">
+        <button onClick={() => onValidate()} className="flex-1 px-6 py-3 rounded-lg border border-slate-600 bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer font-medium text-sm transition-all">
           Validate Application
         </button>
         <button
           onClick={onSubmit}
           disabled={!consentChecked || submitting}
-          style={{ flex: 1, padding: "12px 24px", borderRadius: 8, border: "none", background: consentChecked ? "#10b981" : "#d1d5db", color: "white", cursor: consentChecked ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 15 }}
+          className={`flex-1 px-6 py-3 rounded-lg border-none text-white font-bold text-sm transition-all ${
+            consentChecked ? "bg-emerald-600 hover:bg-emerald-700 cursor-pointer" : "bg-slate-600 cursor-not-allowed"
+          }`}
         >
           {submitting ? "Submitting..." : "Submit Application"}
         </button>
@@ -661,7 +699,7 @@ function ConsentStep({ sectionCompleted, consentChecked, onConsentChange, valida
 }
 
 function EmploymentEntries({ entries, onChange }: { entries: Record<string, unknown>[]; onChange: (e: Record<string, unknown>[]) => void }) {
-  const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" };
+  const inputClass = "w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500";
   const addEntry = () => onChange([...entries, { employer_name: "", job_title: "", start_date: "", end_date: "", reason_for_leaving: "", verifier_name: "", verifier_email: "", verifier_job_title: "" }]);
   const updateEntry = (i: number, field: string, value: string) => { const e = [...entries]; e[i] = { ...e[i], [field]: value }; onChange(e); };
   const removeEntry = (i: number) => onChange(entries.filter((_, idx) => idx !== i));
@@ -669,29 +707,29 @@ function EmploymentEntries({ entries, onChange }: { entries: Record<string, unkn
   return (
     <div>
       {entries.map((entry, i) => (
-        <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 12, background: "#fafafa" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <strong style={{ fontSize: 14 }}>Employment {i + 1}</strong>
-            <button onClick={() => removeEntry(i)} style={{ background: "#fee2e2", color: "#dc2626", border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>Remove</button>
+        <div key={i} className="border border-slate-600 rounded-lg p-4 mb-3 bg-slate-700/30">
+          <div className="flex justify-between items-center mb-3">
+            <strong className="text-white text-sm">Employment {i + 1}</strong>
+            <button onClick={() => removeEntry(i)} className="bg-red-500/20 text-red-400 border border-red-500/30 rounded px-2 py-1 cursor-pointer text-xs hover:bg-red-500/30">Remove</button>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Employer Name</label><input style={inputStyle} value={(entry.employer_name as string) || ""} onChange={e => updateEntry(i, "employer_name", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Job Title</label><input style={inputStyle} value={(entry.job_title as string) || ""} onChange={e => updateEntry(i, "job_title", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Start Date</label><input type="date" style={inputStyle} value={(entry.start_date as string) || ""} onChange={e => updateEntry(i, "start_date", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>End Date</label><input type="date" style={inputStyle} value={(entry.end_date as string) || ""} onChange={e => updateEntry(i, "end_date", e.target.value)} /></div>
-            <div style={{ gridColumn: "1 / -1" }}><label style={{ fontSize: 12, color: "#64748b" }}>Reason for Leaving</label><input style={inputStyle} value={(entry.reason_for_leaving as string) || ""} onChange={e => updateEntry(i, "reason_for_leaving", e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs text-slate-400">Employer Name</label><input className={inputClass} value={(entry.employer_name as string) || ""} onChange={e => updateEntry(i, "employer_name", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Job Title</label><input className={inputClass} value={(entry.job_title as string) || ""} onChange={e => updateEntry(i, "job_title", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Start Date</label><input type="date" className={inputClass} value={(entry.start_date as string) || ""} onChange={e => updateEntry(i, "start_date", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">End Date</label><input type="date" className={inputClass} value={(entry.end_date as string) || ""} onChange={e => updateEntry(i, "end_date", e.target.value)} /></div>
+            <div className="col-span-2"><label className="text-xs text-slate-400">Reason for Leaving</label><input className={inputClass} value={(entry.reason_for_leaving as string) || ""} onChange={e => updateEntry(i, "reason_for_leaving", e.target.value)} /></div>
           </div>
-          <div style={{ marginTop: 12, padding: 12, background: "#eff6ff", borderRadius: 6 }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: "#1e40af", margin: "0 0 8px 0" }}>Employer Verifier Details</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-              <div><label style={{ fontSize: 12, color: "#64748b" }}>Verifier Name</label><input style={inputStyle} value={(entry.verifier_name as string) || ""} onChange={e => updateEntry(i, "verifier_name", e.target.value)} /></div>
-              <div><label style={{ fontSize: 12, color: "#64748b" }}>Verifier Email</label><input style={inputStyle} value={(entry.verifier_email as string) || ""} onChange={e => updateEntry(i, "verifier_email", e.target.value)} /></div>
-              <div><label style={{ fontSize: 12, color: "#64748b" }}>Verifier Job Title</label><input style={inputStyle} value={(entry.verifier_job_title as string) || ""} onChange={e => updateEntry(i, "verifier_job_title", e.target.value)} /></div>
+          <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <p className="text-xs font-semibold text-blue-300 mb-2">Employer Verifier Details</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div><label className="text-xs text-slate-400">Verifier Name</label><input className={inputClass} value={(entry.verifier_name as string) || ""} onChange={e => updateEntry(i, "verifier_name", e.target.value)} /></div>
+              <div><label className="text-xs text-slate-400">Verifier Email</label><input className={inputClass} value={(entry.verifier_email as string) || ""} onChange={e => updateEntry(i, "verifier_email", e.target.value)} /></div>
+              <div><label className="text-xs text-slate-400">Verifier Job Title</label><input className={inputClass} value={(entry.verifier_job_title as string) || ""} onChange={e => updateEntry(i, "verifier_job_title", e.target.value)} /></div>
             </div>
           </div>
         </div>
       ))}
-      <button onClick={addEntry} style={{ width: "100%", padding: 12, borderRadius: 8, border: "2px dashed #d1d5db", background: "white", cursor: "pointer", color: "#3b82f6", fontWeight: 500, fontSize: 14 }}>
+      <button onClick={addEntry} className="w-full p-3 rounded-lg border-2 border-dashed border-slate-600 bg-transparent hover:border-blue-500/50 hover:bg-slate-800 cursor-pointer text-blue-400 font-medium text-sm transition-all">
         + Add Employment Entry
       </button>
     </div>
@@ -699,7 +737,7 @@ function EmploymentEntries({ entries, onChange }: { entries: Record<string, unkn
 }
 
 function RefereeEntries({ referees, onChange }: { referees: Record<string, unknown>[]; onChange: (r: Record<string, unknown>[]) => void }) {
-  const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" };
+  const inputClass = "w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500";
   const addRef = () => onChange([...referees, { name: "", email: "", organisation: "", job_title: "" }]);
   const updateRef = (i: number, field: string, value: string) => { const r = [...referees]; r[i] = { ...r[i], [field]: value }; onChange(r); };
   const removeRef = (i: number) => onChange(referees.filter((_, idx) => idx !== i));
@@ -713,20 +751,20 @@ function RefereeEntries({ referees, onChange }: { referees: Record<string, unkno
   return (
     <div>
       {referees.map((ref, i) => (
-        <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 12, background: "#fafafa" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <strong style={{ fontSize: 14 }}>Reference {i + 1} {i < 2 ? "*" : ""}</strong>
-            {i >= 2 && <button onClick={() => removeRef(i)} style={{ background: "#fee2e2", color: "#dc2626", border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>Remove</button>}
+        <div key={i} className="border border-slate-600 rounded-lg p-4 mb-3 bg-slate-700/30">
+          <div className="flex justify-between items-center mb-3">
+            <strong className="text-white text-sm">Reference {i + 1} {i < 2 ? "*" : ""}</strong>
+            {i >= 2 && <button onClick={() => removeRef(i)} className="bg-red-500/20 text-red-400 border border-red-500/30 rounded px-2 py-1 cursor-pointer text-xs hover:bg-red-500/30">Remove</button>}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Referee Name *</label><input style={inputStyle} value={(ref.name as string) || ""} onChange={e => updateRef(i, "name", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Referee Email *</label><input type="email" style={inputStyle} value={(ref.email as string) || ""} onChange={e => updateRef(i, "email", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Organisation</label><input style={inputStyle} value={(ref.organisation as string) || ""} onChange={e => updateRef(i, "organisation", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Job Title</label><input style={inputStyle} value={(ref.job_title as string) || ""} onChange={e => updateRef(i, "job_title", e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs text-slate-400">Referee Name *</label><input className={inputClass} value={(ref.name as string) || ""} onChange={e => updateRef(i, "name", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Referee Email *</label><input type="email" className={inputClass} value={(ref.email as string) || ""} onChange={e => updateRef(i, "email", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Organisation</label><input className={inputClass} value={(ref.organisation as string) || ""} onChange={e => updateRef(i, "organisation", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Job Title</label><input className={inputClass} value={(ref.job_title as string) || ""} onChange={e => updateRef(i, "job_title", e.target.value)} /></div>
           </div>
         </div>
       ))}
-      <button onClick={addRef} style={{ width: "100%", padding: 12, borderRadius: 8, border: "2px dashed #d1d5db", background: "white", cursor: "pointer", color: "#3b82f6", fontWeight: 500, fontSize: 14 }}>
+      <button onClick={addRef} className="w-full p-3 rounded-lg border-2 border-dashed border-slate-600 bg-transparent hover:border-blue-500/50 hover:bg-slate-800 cursor-pointer text-blue-400 font-medium text-sm transition-all">
         + Add Another Reference
       </button>
     </div>
@@ -734,7 +772,7 @@ function RefereeEntries({ referees, onChange }: { referees: Record<string, unkno
 }
 
 function CertificateEntries({ certificates, onChange }: { certificates: Record<string, unknown>[]; onChange: (c: Record<string, unknown>[]) => void }) {
-  const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" };
+  const inputClass = "w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500";
   const addCert = () => onChange([...certificates, { certificate_name: "", category: "mandatory", provider: "", issue_date: "", expiry_date: "", certificate_ref: "" }]);
   const updateCert = (i: number, field: string, value: string) => { const c = [...certificates]; c[i] = { ...c[i], [field]: value }; onChange(c); };
   const removeCert = (i: number) => onChange(certificates.filter((_, idx) => idx !== i));
@@ -742,26 +780,26 @@ function CertificateEntries({ certificates, onChange }: { certificates: Record<s
   return (
     <div>
       {certificates.map((cert, i) => (
-        <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 16, marginBottom: 12, background: "#fafafa" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <strong style={{ fontSize: 14 }}>Certificate {i + 1}</strong>
-            <button onClick={() => removeCert(i)} style={{ background: "#fee2e2", color: "#dc2626", border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>Remove</button>
+        <div key={i} className="border border-slate-600 rounded-lg p-4 mb-3 bg-slate-700/30">
+          <div className="flex justify-between items-center mb-3">
+            <strong className="text-white text-sm">Certificate {i + 1}</strong>
+            <button onClick={() => removeCert(i)} className="bg-red-500/20 text-red-400 border border-red-500/30 rounded px-2 py-1 cursor-pointer text-xs hover:bg-red-500/30">Remove</button>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Certificate Name *</label><input style={inputStyle} value={(cert.certificate_name as string) || ""} onChange={e => updateCert(i, "certificate_name", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Category</label>
-              <select style={inputStyle} value={(cert.category as string) || "mandatory"} onChange={e => updateCert(i, "category", e.target.value)}>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs text-slate-400">Certificate Name *</label><input className={inputClass} value={(cert.certificate_name as string) || ""} onChange={e => updateCert(i, "certificate_name", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Category</label>
+              <select className={inputClass} value={(cert.category as string) || "mandatory"} onChange={e => updateCert(i, "category", e.target.value)}>
                 <option value="mandatory">Mandatory Training</option><option value="specialist">Specialist</option><option value="cpd">CPD</option><option value="other">Other</option>
               </select>
             </div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Provider</label><input style={inputStyle} value={(cert.provider as string) || ""} onChange={e => updateCert(i, "provider", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Certificate Ref</label><input style={inputStyle} value={(cert.certificate_ref as string) || ""} onChange={e => updateCert(i, "certificate_ref", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Issue Date</label><input type="date" style={inputStyle} value={(cert.issue_date as string) || ""} onChange={e => updateCert(i, "issue_date", e.target.value)} /></div>
-            <div><label style={{ fontSize: 12, color: "#64748b" }}>Expiry Date</label><input type="date" style={inputStyle} value={(cert.expiry_date as string) || ""} onChange={e => updateCert(i, "expiry_date", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Provider</label><input className={inputClass} value={(cert.provider as string) || ""} onChange={e => updateCert(i, "provider", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Certificate Ref</label><input className={inputClass} value={(cert.certificate_ref as string) || ""} onChange={e => updateCert(i, "certificate_ref", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Issue Date</label><input type="date" className={inputClass} value={(cert.issue_date as string) || ""} onChange={e => updateCert(i, "issue_date", e.target.value)} /></div>
+            <div><label className="text-xs text-slate-400">Expiry Date</label><input type="date" className={inputClass} value={(cert.expiry_date as string) || ""} onChange={e => updateCert(i, "expiry_date", e.target.value)} /></div>
           </div>
         </div>
       ))}
-      <button onClick={addCert} style={{ width: "100%", padding: 12, borderRadius: 8, border: "2px dashed #d1d5db", background: "white", cursor: "pointer", color: "#3b82f6", fontWeight: 500, fontSize: 14 }}>
+      <button onClick={addCert} className="w-full p-3 rounded-lg border-2 border-dashed border-slate-600 bg-transparent hover:border-blue-500/50 hover:bg-slate-800 cursor-pointer text-blue-400 font-medium text-sm transition-all">
         + Add Training Certificate
       </button>
     </div>
