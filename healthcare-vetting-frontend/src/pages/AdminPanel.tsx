@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, fraudApi, schedulerApi, reportsApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
   DollarSign, FileText, TrendingUp, ShieldAlert, Zap, Download, CreditCard,
+  Edit, Trash2, UserPlus, Ban, History, Send, PlusCircle,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type Tab = "overview" | "candidates" | "alerts" | "monitoring" | "candidate-detail" | "settings" | "analytics" | "fraud" | "scheduler" | "subscriptions";
+type Tab = "overview" | "candidates" | "alerts" | "monitoring" | "candidate-detail" | "settings" | "analytics" | "fraud" | "scheduler" | "subscriptions" | "overrides" | "user-management" | "audit-logs" | "agencies";
 
 export default function AdminPanel() {
   const { token, logout } = useAuth();
@@ -46,6 +47,43 @@ export default function AdminPanel() {
   // Scheduler state
   const [schedulerStatus, setSchedulerStatus] = useState<Record<string, unknown> | null>(null);
   const [triggeringJob, setTriggeringJob] = useState("");
+
+  // Override state
+  const [overrideCandId, setOverrideCandId] = useState("");
+  const [overrideCheckType, setOverrideCheckType] = useState("identity");
+  const [overrideStatus, setOverrideStatus] = useState("completed");
+  const [overrideNotes, setOverrideNotes] = useState("");
+  const [overriding, setOverriding] = useState(false);
+
+  // User management state
+  const [agencies, setAgencies] = useState<Record<string, unknown>[]>([]);
+  const [newAgency, setNewAgency] = useState({ name: "", email: "", password: "", contact_name: "", phone: "" });
+  const [newCandidate, setNewCandidate] = useState({ email: "", password: "", first_name: "", last_name: "", profession: "" });
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
+
+  // Agency suspension state
+  const [suspendReason, setSuspendReason] = useState("");
+
+  // Candidate editing state
+  const [editingCandidate, setEditingCandidate] = useState<Record<string, unknown> | null>(null);
+  const [editFields, setEditFields] = useState<Record<string, string>>({});
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Alert settings state
+  const [alertSettings, setAlertSettings] = useState<Record<string, unknown>>({});
+  const [editAlertSettings, setEditAlertSettings] = useState<Record<string, string>>({});
+  const [savingAlertSettings, setSavingAlertSettings] = useState(false);
+
+  // Audit logs state
+  const [auditLogs, setAuditLogs] = useState<Record<string, unknown>[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditFilter, setAuditFilter] = useState({ entity_type: "", action: "" });
+  const [auditPage, setAuditPage] = useState(0);
+
+  // Candidate full detail state (for overrides/editing check data)
+  const [candidateDetail, setCandidateDetail] = useState<Record<string, unknown> | null>(null);
+  const [retriggeringId, setRetriggeringId] = useState("");
 
 
   // Monitoring revenue state
@@ -116,11 +154,39 @@ export default function AdminPanel() {
     try { const s = await schedulerApi.getStatus(token); setSchedulerStatus(s); } catch { /* ignore */ }
   }, [token]);
 
+  const loadAgencies = useCallback(async () => {
+    if (!token) return;
+    try { const a = await adminExtendedApi.listAgencies(token); setAgencies(a); } catch { /* ignore */ }
+  }, [token]);
+
+  const loadAuditLogs = useCallback(async () => {
+    if (!token) return;
+    try {
+      const params: Record<string, unknown> = { limit: 50, offset: auditPage * 50 };
+      if (auditFilter.entity_type) params.entity_type = auditFilter.entity_type;
+      if (auditFilter.action) params.action = auditFilter.action;
+      const result = await adminExtendedApi.getAuditLogs(token, params as Record<string, string>);
+      setAuditLogs(result.logs); setAuditTotal(result.total);
+    } catch { /* ignore */ }
+  }, [token, auditPage, auditFilter]);
+
+  const loadAlertSettings = useCallback(async () => {
+    if (!token) return;
+    try { const s = await adminExtendedApi.getAlertSettings(token); setAlertSettings(s); } catch { /* ignore */ }
+  }, [token]);
+
+  const loadCandidateDetail = async (candidateId: string) => {
+    if (!token) return;
+    try { const d = await adminExtendedApi.getCandidateFullDetail(token, candidateId); setCandidateDetail(d); } catch { /* ignore */ }
+  };
+
   useEffect(() => { if (tab === "fraud") loadFraudData(); }, [tab, loadFraudData]);
   useEffect(() => { if (tab === "scheduler") loadSchedulerStatus(); }, [tab, loadSchedulerStatus]);
-  useEffect(() => { if (tab === "settings") loadPricing(); }, [tab, loadPricing]);
+  useEffect(() => { if (tab === "settings") { loadPricing(); loadAlertSettings(); } }, [tab, loadPricing, loadAlertSettings]);
   useEffect(() => { if (tab === "analytics") loadAnalytics(); }, [tab, loadAnalytics]);
   useEffect(() => { if (tab === "monitoring") loadMonitoringRevenue(); }, [tab, loadMonitoringRevenue]);
+  useEffect(() => { if (tab === "agencies" || tab === "user-management") loadAgencies(); }, [tab, loadAgencies]);
+  useEffect(() => { if (tab === "audit-logs") loadAuditLogs(); }, [tab, loadAuditLogs]);
 
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
@@ -222,6 +288,128 @@ export default function AdminPanel() {
     if (!token) return;
     try { await adminApi.markInvoicePaid(token, invoiceId); showMessage("Invoice marked as paid"); await loadAnalytics(); }
     catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  // Override a check result
+  const handleOverride = async () => {
+    if (!token || !overrideCandId) return;
+    setOverriding(true);
+    try {
+      await adminExtendedApi.overrideCheck(token, overrideCandId, { check_type: overrideCheckType, status: overrideStatus, notes: overrideNotes });
+      showMessage("Check result overridden successfully");
+      setOverrideNotes("");
+      await loadData();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setOverriding(false); }
+  };
+
+  // Suspend/activate agency
+  const handleAgencyStatus = async (agencyId: string, status: string) => {
+    if (!token) return;
+    try {
+      await adminExtendedApi.updateAgencyStatus(token, agencyId, { status, reason: suspendReason });
+      showMessage(`Agency ${status === "suspended" ? "suspended" : "activated"} successfully`);
+      setSuspendReason("");
+      await loadAgencies();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  // Create agency
+  const handleCreateAgency = async () => {
+    if (!token) return;
+    setCreatingUser(true);
+    try {
+      await adminExtendedApi.createAgency(token, newAgency);
+      showMessage("Agency created successfully");
+      setNewAgency({ name: "", email: "", password: "", contact_name: "", phone: "" });
+      await loadAgencies();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setCreatingUser(false); }
+  };
+
+  // Create candidate
+  const handleCreateCandidate = async () => {
+    if (!token) return;
+    setCreatingUser(true);
+    try {
+      await adminExtendedApi.createCandidate(token, newCandidate);
+      showMessage("Candidate created successfully");
+      setNewCandidate({ email: "", password: "", first_name: "", last_name: "", profession: "" });
+      await loadData();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setCreatingUser(false); }
+  };
+
+  // Delete agency
+  const handleDeleteAgency = async (agencyId: string) => {
+    if (!token || !confirm("Delete this agency and all associated data?")) return;
+    setDeletingId(agencyId);
+    try {
+      await adminExtendedApi.deleteAgency(token, agencyId);
+      showMessage("Agency deleted"); await loadAgencies();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setDeletingId(""); }
+  };
+
+  // Delete candidate
+  const handleDeleteCandidate = async (candidateId: string) => {
+    if (!token || !confirm("Delete this candidate and all associated data?")) return;
+    setDeletingId(candidateId);
+    try {
+      await adminExtendedApi.deleteCandidate(token, candidateId);
+      showMessage("Candidate deleted"); await loadData();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setDeletingId(""); }
+  };
+
+  // Save candidate profile edit
+  const handleSaveCandidateEdit = async () => {
+    if (!token || !editingCandidate) return;
+    setSavingEdit(true);
+    try {
+      await adminExtendedApi.editCandidate(token, editingCandidate.id as string, editFields);
+      showMessage("Candidate profile updated");
+      setEditingCandidate(null);
+      setEditFields({});
+      await loadData();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setSavingEdit(false); }
+  };
+
+  // Save alert settings
+  const handleSaveAlertSettings = async () => {
+    if (!token) return;
+    setSavingAlertSettings(true);
+    try {
+      const settings: Record<string, number> = {};
+      Object.entries(editAlertSettings).forEach(([k, v]) => { settings[k] = parseInt(v) || 0; });
+      await adminExtendedApi.updateAlertSettings(token, { settings });
+      showMessage("Alert settings saved");
+      await loadAlertSettings();
+      setEditAlertSettings({});
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setSavingAlertSettings(false); }
+  };
+
+  // Re-trigger verification
+  const handleRetriggerReference = async (candidateId: string, refId: string) => {
+    if (!token) return;
+    setRetriggeringId(refId);
+    try {
+      await adminExtendedApi.retriggerReference(token, candidateId, refId);
+      showMessage("Reference verification re-triggered");
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setRetriggeringId(""); }
+  };
+
+  const handleRetriggerEmployment = async (candidateId: string, verId: string) => {
+    if (!token) return;
+    setRetriggeringId(verId);
+    try {
+      await adminExtendedApi.retriggerEmployment(token, candidateId, verId);
+      showMessage("Employment verification re-triggered");
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setRetriggeringId(""); }
   };
 
   const StatusBadge = ({ status }: { status: string }) => {
@@ -349,6 +537,10 @@ export default function AdminPanel() {
             { key: "analytics" as Tab, label: "Analytics", icon: <TrendingUp size={16} /> },
             { key: "fraud" as Tab, label: "Fraud Detection", icon: <ShieldAlert size={16} /> },
             { key: "scheduler" as Tab, label: "Scheduler", icon: <Zap size={16} /> },
+            { key: "overrides" as Tab, label: "Overrides", icon: <Edit size={16} /> },
+            { key: "agencies" as Tab, label: "Agencies", icon: <Ban size={16} /> },
+            { key: "user-management" as Tab, label: "User Mgmt", icon: <UserPlus size={16} /> },
+            { key: "audit-logs" as Tab, label: "Audit Logs", icon: <History size={16} /> },
             { key: "subscriptions" as Tab, label: "Subscriptions", icon: <CreditCard size={16} /> },
             { key: "settings" as Tab, label: "Settings", icon: <Settings size={16} /> },
           ]).map((item) => (
@@ -771,6 +963,299 @@ export default function AdminPanel() {
           </div>
         )}
 
+        {/* Overrides Tab */}
+        {tab === "overrides" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><Edit className="text-blue-400" size={22} /> Override Check Results</h2>
+            <p className="text-slate-400 text-sm">Force-pass or force-fail a candidate&apos;s individual check result. This overrides the automated result and triggers compliance re-evaluation.</p>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-4">Override a Check</h3>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Candidate</label>
+                  <select value={overrideCandId} onChange={(e) => { setOverrideCandId(e.target.value); if (e.target.value) loadCandidateDetail(e.target.value); }}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm">
+                    <option value="">Select candidate...</option>
+                    {candidates.map((c) => <option key={String(c.id)} value={String(c.id)}>{String(c.first_name)} {String(c.last_name)} ({String(c.email)})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Check Type</label>
+                  <select value={overrideCheckType} onChange={(e) => setOverrideCheckType(e.target.value)}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm">
+                    {["identity","right_to_work","dbs","cv_analysis","employment","registration","references"].map((t) => <option key={t} value={t}>{t.replace(/_/g, " ").toUpperCase()}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Override Status</label>
+                  <select value={overrideStatus} onChange={(e) => setOverrideStatus(e.target.value)}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm">
+                    <option value="completed">Force PASS (completed)</option>
+                    <option value="failed">Force FAIL (failed)</option>
+                    <option value="pending">Reset to PENDING</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Notes (reason)</label>
+                  <input value={overrideNotes} onChange={(e) => setOverrideNotes(e.target.value)} placeholder="Reason for override..."
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                </div>
+              </div>
+              <button onClick={handleOverride} disabled={!overrideCandId || overriding}
+                className="bg-amber-600 hover:bg-amber-700 disabled:bg-amber-800 disabled:opacity-50 text-white px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                <Edit size={14} /> {overriding ? "Overriding..." : "Apply Override"}
+              </button>
+            </div>
+
+            {overrideCandId && candidateDetail && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-4">Candidate Check Data &amp; Re-trigger Verifications</h3>
+                <div className="space-y-4">
+                  {candidateDetail.references && Array.isArray(candidateDetail.references) && (candidateDetail.references as Record<string, unknown>[]).length > 0 ? (
+                    <div>
+                      <h4 className="text-sm font-medium text-slate-300 mb-2">References</h4>
+                      <div className="space-y-2">
+                        {(candidateDetail.references as Record<string, unknown>[]).map((ref) => (
+                          <div key={String(ref.id)} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
+                            <div><span className="text-white text-sm">{String(ref.referee_name)}</span> <span className="text-slate-400 text-xs">({String(ref.referee_email)})</span> <StatusBadge status={String(ref.status)} /></div>
+                            <button onClick={() => handleRetriggerReference(overrideCandId, String(ref.id))} disabled={retriggeringId === String(ref.id)}
+                              className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 flex items-center gap-1">
+                              <Send size={12} /> {retriggeringId === String(ref.id) ? "Sending..." : "Re-trigger"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {candidateDetail.employment_verifications && Array.isArray(candidateDetail.employment_verifications) && (candidateDetail.employment_verifications as Record<string, unknown>[]).length > 0 ? (
+                    <div>
+                      <h4 className="text-sm font-medium text-slate-300 mb-2">Employment Verifications</h4>
+                      <div className="space-y-2">
+                        {(candidateDetail.employment_verifications as Record<string, unknown>[]).map((ver) => (
+                          <div key={String(ver.id)} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
+                            <div><span className="text-white text-sm">{String(ver.verifier_name)}</span> <span className="text-slate-400 text-xs">({String(ver.verifier_email)})</span> <StatusBadge status={String(ver.status)} /></div>
+                            <button onClick={() => handleRetriggerEmployment(overrideCandId, String(ver.id))} disabled={retriggeringId === String(ver.id)}
+                              className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 flex items-center gap-1">
+                              <Send size={12} /> {retriggeringId === String(ver.id) ? "Sending..." : "Re-trigger"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Agencies Tab - suspend/activate */}
+        {tab === "agencies" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><Ban className="text-blue-400" size={22} /> Agency Management</h2>
+            <p className="text-slate-400 text-sm">View, suspend, or reactivate agency accounts. Suspended agencies cannot log in or access the platform.</p>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+              <table className="w-full"><thead><tr className="border-b border-slate-700">
+                {["Agency Name","Email","Contact","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+              </tr></thead><tbody>
+                {agencies.map((a) => (
+                  <tr key={String(a.id)} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td className="px-4 py-3 text-sm text-white font-medium">{String(a.name)}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300">{String(a.email)}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300">{String(a.contact_name || "N/A")}</td>
+                    <td className="px-4 py-3"><StatusBadge status={String(a.status || "active")} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {String(a.status) === "suspended" ? (
+                          <button onClick={() => handleAgencyStatus(String(a.id), "active")} className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-3 py-1 rounded-full hover:bg-green-600/30">Reactivate</button>
+                        ) : (
+                          <button onClick={() => { const reason = prompt("Reason for suspension:"); if (reason) { setSuspendReason(reason); handleAgencyStatus(String(a.id), "suspended"); } }}
+                            className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-3 py-1 rounded-full hover:bg-red-600/30">Suspend</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {agencies.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500 text-sm">No agencies found</td></tr>}
+              </tbody></table>
+            </div>
+          </div>
+        )}
+
+        {/* User Management Tab */}
+        {tab === "user-management" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><UserPlus className="text-blue-400" size={22} /> User Management</h2>
+            <p className="text-slate-400 text-sm">Create and delete agency or candidate accounts. Edit candidate profiles directly.</p>
+
+            <div className="grid grid-cols-2 gap-6">
+              {/* Create Agency */}
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-4 flex items-center gap-2"><PlusCircle size={16} className="text-green-400" /> Create Agency</h3>
+                <div className="space-y-3">
+                  <input placeholder="Agency Name" value={newAgency.name} onChange={(e) => setNewAgency({ ...newAgency, name: e.target.value })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                  <input placeholder="Email" value={newAgency.email} onChange={(e) => setNewAgency({ ...newAgency, email: e.target.value })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                  <input placeholder="Password" type="password" value={newAgency.password} onChange={(e) => setNewAgency({ ...newAgency, password: e.target.value })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                  <input placeholder="Contact Name" value={newAgency.contact_name} onChange={(e) => setNewAgency({ ...newAgency, contact_name: e.target.value })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                  <input placeholder="Phone" value={newAgency.phone} onChange={(e) => setNewAgency({ ...newAgency, phone: e.target.value })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                  <button onClick={handleCreateAgency} disabled={creatingUser || !newAgency.name || !newAgency.email || !newAgency.password}
+                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                    {creatingUser ? "Creating..." : "Create Agency"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Create Candidate */}
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-4 flex items-center gap-2"><PlusCircle size={16} className="text-green-400" /> Create Candidate</h3>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input placeholder="First Name" value={newCandidate.first_name} onChange={(e) => setNewCandidate({ ...newCandidate, first_name: e.target.value })}
+                      className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                    <input placeholder="Last Name" value={newCandidate.last_name} onChange={(e) => setNewCandidate({ ...newCandidate, last_name: e.target.value })}
+                      className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                  </div>
+                  <input placeholder="Email" value={newCandidate.email} onChange={(e) => setNewCandidate({ ...newCandidate, email: e.target.value })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                  <input placeholder="Password" type="password" value={newCandidate.password} onChange={(e) => setNewCandidate({ ...newCandidate, password: e.target.value })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                  <input placeholder="Profession (e.g. Nurse, Care Worker)" value={newCandidate.profession} onChange={(e) => setNewCandidate({ ...newCandidate, profession: e.target.value })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                  <button onClick={handleCreateCandidate} disabled={creatingUser || !newCandidate.email || !newCandidate.password}
+                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                    {creatingUser ? "Creating..." : "Create Candidate"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Existing Candidates List with Edit/Delete */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+              <div className="p-4 border-b border-slate-700"><h3 className="text-md font-semibold text-white">All Candidates</h3></div>
+              <table className="w-full"><thead><tr className="border-b border-slate-700">
+                {["Name","Email","Profession","Score","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+              </tr></thead><tbody>
+                {candidates.map((c) => (
+                  <tr key={String(c.id)} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td className="px-4 py-3 text-sm text-white">{String(c.first_name)} {String(c.last_name)}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300">{String(c.email)}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300">{String(c.profession || "N/A")}</td>
+                    <td className="px-4 py-3 text-sm text-white font-medium">{String(c.compliance_score || 0)}%</td>
+                    <td className="px-4 py-3"><StatusBadge status={String(c.compliance_status || "incomplete")} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setEditingCandidate(c); setEditFields({ first_name: String(c.first_name || ""), last_name: String(c.last_name || ""), email: String(c.email || ""), phone: String(c.phone || ""), profession: String(c.profession || ""), registration_body: String(c.registration_body || ""), registration_number: String(c.registration_number || ""), date_of_birth: String(c.date_of_birth || ""), address: String(c.address || "") }); }}
+                          className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"><Edit size={12} /> Edit</button>
+                        <button onClick={() => handleDeleteCandidate(String(c.id))} disabled={deletingId === String(c.id)}
+                          className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"><Trash2 size={12} /> {deletingId === String(c.id) ? "..." : "Delete"}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+
+            {/* Edit Candidate Modal */}
+            {editingCandidate && (
+              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                  <h3 className="text-lg font-semibold text-white mb-4">Edit Candidate: {String(editingCandidate.first_name)} {String(editingCandidate.last_name)}</h3>
+                  <div className="space-y-3">
+                    {Object.entries(editFields).map(([key, val]) => (
+                      <div key={key}>
+                        <label className="block text-xs text-slate-400 mb-1">{key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</label>
+                        <input value={val} onChange={(e) => setEditFields({ ...editFields, [key]: e.target.value })}
+                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button onClick={() => { setEditingCandidate(null); setEditFields({}); }} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+                    <button onClick={handleSaveCandidateEdit} disabled={savingEdit}
+                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-6 py-2 rounded-lg text-sm font-medium">
+                      {savingEdit ? "Saving..." : "Save Changes"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Existing Agencies List with Delete */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+              <div className="p-4 border-b border-slate-700"><h3 className="text-md font-semibold text-white">All Agencies</h3></div>
+              <table className="w-full"><thead><tr className="border-b border-slate-700">
+                {["Agency Name","Email","Contact","Phone","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+              </tr></thead><tbody>
+                {agencies.map((a) => (
+                  <tr key={String(a.id)} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td className="px-4 py-3 text-sm text-white font-medium">{String(a.name)}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300">{String(a.email)}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300">{String(a.contact_name || "N/A")}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300">{String(a.phone || "N/A")}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => handleDeleteAgency(String(a.id))} disabled={deletingId === String(a.id)}
+                        className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"><Trash2 size={12} /> {deletingId === String(a.id) ? "..." : "Delete"}</button>
+                    </td>
+                  </tr>
+                ))}
+                {agencies.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500 text-sm">No agencies found</td></tr>}
+              </tbody></table>
+            </div>
+          </div>
+        )}
+
+        {/* Audit Logs Tab */}
+        {tab === "audit-logs" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><History className="text-blue-400" size={22} /> Audit Log Viewer</h2>
+            <p className="text-slate-400 text-sm">View all system audit logs for compliance tracking. Filter by entity type or action. Total: {auditTotal} entries.</p>
+            <div className="flex items-center gap-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Entity Type</label>
+                <select value={auditFilter.entity_type} onChange={(e) => { setAuditFilter({ ...auditFilter, entity_type: e.target.value }); setAuditPage(0); }}
+                  className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm">
+                  <option value="">All</option>
+                  {["candidate","agency","check","compliance","alert","invoice","subscription","fraud","system"].map((t) => <option key={t} value={t}>{t.toUpperCase()}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Action</label>
+                <input value={auditFilter.action} onChange={(e) => { setAuditFilter({ ...auditFilter, action: e.target.value }); setAuditPage(0); }}
+                  placeholder="Filter by action..." className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+              </div>
+              <div className="ml-auto flex items-center gap-2 mt-4">
+                <button onClick={() => setAuditPage(Math.max(0, auditPage - 1))} disabled={auditPage === 0}
+                  className="px-3 py-1.5 rounded-lg text-xs bg-slate-700/50 text-slate-300 hover:bg-slate-700 disabled:opacity-50">Prev</button>
+                <span className="text-xs text-slate-400">Page {auditPage + 1}</span>
+                <button onClick={() => setAuditPage(auditPage + 1)} disabled={(auditPage + 1) * 50 >= auditTotal}
+                  className="px-3 py-1.5 rounded-lg text-xs bg-slate-700/50 text-slate-300 hover:bg-slate-700 disabled:opacity-50">Next</button>
+              </div>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+              <table className="w-full"><thead><tr className="border-b border-slate-700">
+                {["Timestamp","Entity Type","Entity ID","Action","Actor","Details"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+              </tr></thead><tbody>
+                {auditLogs.map((log, idx) => (
+                  <tr key={idx} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td className="px-4 py-2 text-xs text-slate-400 whitespace-nowrap">{String(log.created_at || "")}</td>
+                    <td className="px-4 py-2"><span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">{String(log.entity_type)}</span></td>
+                    <td className="px-4 py-2 text-xs text-slate-300 font-mono">{String(log.entity_id || "").substring(0, 8)}...</td>
+                    <td className="px-4 py-2 text-xs text-white">{String(log.action)}</td>
+                    <td className="px-4 py-2 text-xs text-slate-300">{String(log.actor || "system")}</td>
+                    <td className="px-4 py-2 text-xs text-slate-400 max-w-xs truncate">{String(log.details || "")}</td>
+                  </tr>
+                ))}
+                {auditLogs.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500 text-sm">No audit logs found</td></tr>}
+              </tbody></table>
+            </div>
+          </div>
+        )}
+
         {/* Settings Tab */}
         {tab === "settings" && (
           <div className="space-y-6">
@@ -804,6 +1289,47 @@ export default function AdminPanel() {
                   );
                 })}
               </tbody></table>
+            </div>
+
+            {/* Alert Settings */}
+            <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-8"><Bell className="text-amber-400" size={22} /> Alert &amp; Expiry Warning Settings</h2>
+            <p className="text-slate-400 text-sm">Configure the number of days before expiry that triggers a warning notification for each document type.</p>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                {[
+                  { key: "visa_expiry_days", label: "Visa Expiry Warning (days)", defaultVal: 30 },
+                  { key: "dbs_renewal_days", label: "DBS Renewal Warning (days)", defaultVal: 60 },
+                  { key: "registration_renewal_days", label: "Registration Renewal Warning (days)", defaultVal: 30 },
+                  { key: "training_expiry_days", label: "Training Certificate Expiry Warning (days)", defaultVal: 30 },
+                ].map((setting) => {
+                  const currentVal = alertSettings[setting.key] !== undefined ? String(alertSettings[setting.key]) : String(setting.defaultVal);
+                  const isEditing = setting.key in editAlertSettings;
+                  return (
+                    <div key={setting.key} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
+                      <div>
+                        <p className="text-white text-sm font-medium">{setting.label}</p>
+                        <p className="text-slate-400 text-xs">Default: {setting.defaultVal} days</p>
+                      </div>
+                      {isEditing ? (
+                        <input type="number" value={editAlertSettings[setting.key]} onChange={(e) => setEditAlertSettings({ ...editAlertSettings, [setting.key]: e.target.value })}
+                          className="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm text-center" />
+                      ) : (
+                        <button onClick={() => setEditAlertSettings({ ...editAlertSettings, [setting.key]: currentVal })}
+                          className="text-blue-400 hover:text-blue-300 text-sm font-medium">{currentVal} days <Edit size={12} className="inline ml-1" /></button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {Object.keys(editAlertSettings).length > 0 && (
+                <div className="flex gap-3">
+                  <button onClick={handleSaveAlertSettings} disabled={savingAlertSettings}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-6 py-2 rounded-lg text-sm font-medium">
+                    {savingAlertSettings ? "Saving..." : "Save Alert Settings"}
+                  </button>
+                  <button onClick={() => setEditAlertSettings({})} className="text-slate-400 hover:text-white text-sm">Cancel</button>
+                </div>
+              )}
             </div>
           </div>
         )}

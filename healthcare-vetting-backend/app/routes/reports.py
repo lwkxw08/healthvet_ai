@@ -53,6 +53,24 @@ async def generate_agency_audit_pack(agency_id: str, user=Depends(get_current_us
         raise HTTPException(status_code=500, detail=f"Failed to generate agency audit: {str(e)}")
 
 
+@router.post("/audit/bulk-candidates")
+async def generate_bulk_candidate_audit(data: dict, user=Depends(get_current_user)):
+    """Generate a combined CQC audit pack PDF for multiple selected candidates."""
+    from app.services.audit_pack import AuditPackService
+    candidate_ids = data.get("candidate_ids", [])
+    if not candidate_ids:
+        raise HTTPException(status_code=400, detail="candidate_ids list is required")
+    try:
+        pdf_bytes = AuditPackService.generate_bulk_audit(candidate_ids)
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=bulk_audit_pack.pdf"},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate bulk audit pack: {str(e)}")
+
+
 # ============================================================
 # PDF REPORT EXPORTS
 # ============================================================

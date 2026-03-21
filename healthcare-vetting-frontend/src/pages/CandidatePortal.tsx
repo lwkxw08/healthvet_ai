@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, checksApi, complianceApi, monitoringApi, agencyInvitesApi, trainingApi, reportsApi } from "../api/client";
+import { candidatesApi, checksApi, complianceApi, monitoringApi, agencyInvitesApi, trainingApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Upload,
   FileText, UserCheck, Fingerprint, Search, Send, LogOut, RefreshCw, ChevronRight,
-  Camera, ScanFace, Loader2, ArrowRight, ArrowLeft, Eye, Briefcase, Plus, Trash2, Edit3, Building2, GraduationCap, Download,
+  Camera, ScanFace, Loader2, ArrowRight, ArrowLeft, Eye, Briefcase, Plus, Trash2, Edit3, Building2, GraduationCap,
 } from "lucide-react";
 
 type Tab = "overview" | "identity" | "rtw" | "dbs" | "cv" | "employment" | "registration" | "references" | "training";
@@ -56,7 +56,6 @@ export default function CandidatePortal() {
   const [newCertIssueDate, setNewCertIssueDate] = useState("");
   const [newCertExpiryDate, setNewCertExpiryDate] = useState("");
   const [newCertRef, setNewCertRef] = useState("");
-  const [downloadingAudit, setDownloadingAudit] = useState(false);
 
   // Agency affiliation
   const [myAgencies, setMyAgencies] = useState<Record<string, unknown>[]>([]);
@@ -393,20 +392,6 @@ export default function CandidatePortal() {
     } catch (err) { showMessage("Error: " + (err instanceof Error ? err.message : "Failed")); }
   };
 
-  const downloadAuditPack = async () => {
-    if (!token || !userId) return;
-    setDownloadingAudit(true);
-    try {
-      const resp = await reportsApi.downloadCandidateAudit(token, userId);
-      if (!resp.ok) throw new Error("Failed to download");
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = "audit_pack.pdf"; a.click();
-      URL.revokeObjectURL(url);
-      showMessage("Audit pack downloaded");
-    } catch (err) { showMessage("Error: " + (err instanceof Error ? err.message : "Failed")); }
-    finally { setDownloadingAudit(false); }
-  };
 
   const StatusBadge = ({ status }: { status: string }) => {
     const colors: Record<string, string> = {
@@ -1568,10 +1553,6 @@ export default function CandidatePortal() {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2"><GraduationCap size={22} className="text-blue-400" /> Training Certificates</h2>
-                <button onClick={downloadAuditPack} disabled={downloadingAudit}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-                  <Download size={16} /> {downloadingAudit ? "Generating..." : "Download CQC Audit Pack"}
-                </button>
               </div>
 
               {/* Training Compliance Summary */}

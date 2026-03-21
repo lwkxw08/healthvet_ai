@@ -458,6 +458,22 @@ class AuditPackService:
         return buffer.getvalue()
 
     @staticmethod
+    def generate_bulk_audit(candidate_ids: list) -> bytes:
+        """Generate a combined audit pack PDF for multiple candidates."""
+        from PyPDF2 import PdfMerger
+        merger = PdfMerger()
+        for cid in candidate_ids:
+            try:
+                pdf_bytes = AuditPackService.generate_candidate_audit(cid)
+                merger.append(io.BytesIO(pdf_bytes))
+            except Exception:
+                continue
+        output = io.BytesIO()
+        merger.write(output)
+        merger.close()
+        return output.getvalue()
+
+    @staticmethod
     def generate_agency_audit(agency_id: str) -> bytes:
         """Generate an agency-wide audit summary PDF."""
         with get_db() as db:

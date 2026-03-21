@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db, migrate_db
 from app.routes import auth, candidates, checks, compliance, webhooks, agencies, admin, reports
+from app.routes import admin_extended
 
 app = FastAPI(
     title="HealthVet AI - Healthcare Vetting Engine",
@@ -33,6 +34,7 @@ app.include_router(webhooks.router)
 app.include_router(agencies.router)
 app.include_router(admin.router)
 app.include_router(reports.router)
+app.include_router(admin_extended.router)
 
 
 @app.on_event("startup")

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type Tab = "dashboard" | "candidates" | "alerts" | "candidate-detail" | "invites" | "billing";
+type Tab = "dashboard" | "candidates" | "alerts" | "candidate-detail" | "invites" | "billing" | "audit";
 
 export default function AgencyDashboard() {
   const { token, logout } = useAuth();
@@ -32,6 +32,7 @@ export default function AgencyDashboard() {
   // Candidate status tracking
   const [candidatesWithStatus, setCandidatesWithStatus] = useState<Record<string, unknown>[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [ragFilter, setRagFilter] = useState<string>("all");
 
   // Billing state
   const [subscription, setSubscription] = useState<Record<string, unknown> | null>(null);
@@ -41,6 +42,11 @@ export default function AgencyDashboard() {
   const [subscribing, setSubscribing] = useState(false);
   const [downloadingAudit, setDownloadingAudit] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+
+  // Multi-select audit state
+  const [selectedAuditCandidates, setSelectedAuditCandidates] = useState<string[]>([]);
+  const [downloadingBulkAudit, setDownloadingBulkAudit] = useState(false);
+  const [downloadingSingleAudit, setDownloadingSingleAudit] = useState("");
 
   const loadData = useCallback(async () => {
     if (!token) return;
@@ -182,6 +188,48 @@ export default function AgencyDashboard() {
     finally { setDownloadingAudit(false); }
   };
 
+  const downloadCandidateAudit = async (candidateId: string) => {
+    if (!token) return;
+    setDownloadingSingleAudit(candidateId);
+    try {
+      const resp = await reportsApi.downloadCandidateAudit(token, candidateId);
+      if (!resp.ok) throw new Error("Failed");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `candidate_audit_${candidateId}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { console.error("Download failed", err); }
+    finally { setDownloadingSingleAudit(""); }
+  };
+
+  const downloadBulkCandidateAudit = async () => {
+    if (!token || selectedAuditCandidates.length === 0) return;
+    setDownloadingBulkAudit(true);
+    try {
+      const resp = await reportsApi.downloadBulkCandidateAudit(token, selectedAuditCandidates);
+      if (!resp.ok) throw new Error("Failed");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "bulk_candidate_audit.pdf"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { console.error("Download failed", err); }
+    finally { setDownloadingBulkAudit(false); }
+  };
+
+  const toggleAuditCandidate = (candidateId: string) => {
+    setSelectedAuditCandidates((prev) =>
+      prev.includes(candidateId) ? prev.filter((id) => id !== candidateId) : [...prev, candidateId]
+    );
+  };
+
+  const toggleAllAuditCandidates = () => {
+    if (selectedAuditCandidates.length === candidatesWithStatus.length) {
+      setSelectedAuditCandidates([]);
+    } else {
+      setSelectedAuditCandidates(candidatesWithStatus.map((c) => String(c.id || c.candidate_id)));
+    }
+  };
+
   const updateCandidateStatus = async (candidateId: string, newStatus: string) => {
     if (!token) return;
     setUpdatingStatus(candidateId);
@@ -246,6 +294,20 @@ export default function AgencyDashboard() {
     { name: "Flagged", value: stats.flagged as number, color: "#ef4444" },
   ] : [];
 
+  // RAG status helper
+  const getRagStatus = (candidate: Record<string, unknown>): { label: string; color: string; bg: string; border: string } => {
+    const status = String(candidate.compliance_status || "incomplete");
+    const score = Number(candidate.compliance_score || 0);
+    if (status === "compliant" || score >= 80) return { label: "GREEN", color: "text-green-400", bg: "bg-green-500/20", border: "border-green-500/30" };
+    if (status === "flagged" || status === "failed" || score < 40) return { label: "RED", color: "text-red-400", bg: "bg-red-500/20", border: "border-red-500/30" };
+    return { label: "AMBER", color: "text-amber-400", bg: "bg-amber-500/20", border: "border-amber-500/30" };
+  };
+
+  const RagBadge = ({ candidate }: { candidate: Record<string, unknown> }) => {
+    const rag = getRagStatus(candidate);
+    return <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold border ${rag.bg} ${rag.color} ${rag.border}`}>{rag.label}</span>;
+  };
+
   // Services breakdown from backend
   const services = servicesData?.services as Record<string, unknown>[] | undefined;
   const _totalCostFromServices = servicesData?.total_cost as number | undefined;
@@ -254,13 +316,14 @@ export default function AgencyDashboard() {
   void _totalCostFromServices;
   void _totalMargin;
 
-  // Filter candidates by status
-  const filteredCandidates = statusFilter === "all"
-    ? candidatesWithStatus
-    : candidatesWithStatus.filter((c) => {
-        const empStatus = (c.employment_status as string) || "vetting";
-        return empStatus === statusFilter;
-      });
+  // Filter candidates by status and RAG
+  const filteredCandidates = candidatesWithStatus.filter((c) => {
+    const empStatus = (c.employment_status as string) || "vetting";
+    const passesStatus = statusFilter === "all" || empStatus === statusFilter;
+    const rag = getRagStatus(c);
+    const passesRag = ragFilter === "all" || rag.label === ragFilter;
+    return passesStatus && passesRag;
+  });
 
   return (
     <div className="min-h-screen bg-slate-900">
@@ -286,6 +349,7 @@ export default function AgencyDashboard() {
             { key: "candidates" as Tab, label: "Candidates", icon: <Users size={16} /> },
             { key: "invites" as Tab, label: `Invites (${invites.length})`, icon: <Mail size={16} /> },
             { key: "alerts" as Tab, label: `Alerts (${alerts.length})`, icon: <Bell size={16} /> },
+            { key: "audit" as Tab, label: "CQC Audit", icon: <FileText size={16} /> },
             { key: "billing" as Tab, label: "Billing", icon: <CreditCard size={16} /> },
           ].map((item) => (
             <button key={item.key} onClick={() => setTab(item.key)}
@@ -302,6 +366,36 @@ export default function AgencyDashboard() {
         {/* Dashboard Tab */}
         {tab === "dashboard" && stats && (
           <div className="space-y-6">
+            {/* Risk Flags Panel */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
+              <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><AlertTriangle className="text-amber-400" size={18} /> Candidate Risk Overview</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-center">
+                  <div className="text-3xl font-bold text-green-400">{stats.compliant as number}</div>
+                  <div className="text-xs text-green-300 mt-1 font-medium">COMPLIANT</div>
+                  <div className="text-xs text-slate-400 mt-0.5">Fully vetted &amp; up to date</div>
+                </div>
+                <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg text-center">
+                  <div className="text-3xl font-bold text-amber-400">{stats.pending as number}</div>
+                  <div className="text-xs text-amber-300 mt-1 font-medium">AT RISK</div>
+                  <div className="text-xs text-slate-400 mt-0.5">Pending checks or expiring soon</div>
+                </div>
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-center">
+                  <div className="text-3xl font-bold text-red-400">{stats.flagged as number}</div>
+                  <div className="text-xs text-red-300 mt-1 font-medium">NON-COMPLIANT</div>
+                  <div className="text-xs text-slate-400 mt-0.5">Failed checks or expired docs</div>
+                </div>
+              </div>
+              {(stats.active_alerts as number) > 0 && (
+                <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center gap-2">
+                  <Bell className="text-amber-400" size={16} />
+                  <span className="text-amber-300 text-sm font-medium">{stats.active_alerts as number} active alert{(stats.active_alerts as number) !== 1 ? "s" : ""}</span>
+                  <span className="text-slate-400 text-sm">requiring attention</span>
+                  <button onClick={() => setTab("alerts")} className="ml-auto text-xs bg-amber-600/20 text-amber-400 border border-amber-600/30 px-3 py-1 rounded-full hover:bg-amber-600/30">View Alerts</button>
+                </div>
+              )}
+            </div>
+
             {/* Stats Cards */}
             <div className="grid grid-cols-4 gap-4">
               {[
@@ -515,21 +609,39 @@ export default function AgencyDashboard() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">Candidates ({candidatesWithStatus.length})</h2>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Filter:</span>
-                {["all", "vetting", "hired", "rejected", "left_business"].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setStatusFilter(s)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      statusFilter === s
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-700"
-                    }`}
-                  >
-                    {s === "all" ? "All" : s.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
-                  </button>
-                ))}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">Status:</span>
+                  {["all", "vetting", "hired", "rejected", "left_business"].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setStatusFilter(s)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        statusFilter === s
+                          ? "bg-blue-600 text-white"
+                          : "bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-700"
+                      }`}
+                    >
+                      {s === "all" ? "All" : s.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">RAG:</span>
+                  {["all", "GREEN", "AMBER", "RED"].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setRagFilter(r)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        ragFilter === r
+                          ? r === "GREEN" ? "bg-green-600 text-white" : r === "AMBER" ? "bg-amber-600 text-white" : r === "RED" ? "bg-red-600 text-white" : "bg-blue-600 text-white"
+                          : r === "GREEN" ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : r === "AMBER" ? "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30" : r === "RED" ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-slate-700/50 text-slate-400 hover:bg-slate-700"
+                      }`}
+                    >
+                      {r === "all" ? "All RAG" : r}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -537,12 +649,12 @@ export default function AgencyDashboard() {
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-12 text-center">
                 <Users className="text-slate-600 mx-auto mb-3" size={48} />
                 <p className="text-slate-400">
-                  {statusFilter === "all" ? "No candidates assigned yet" : `No ${statusFilter.replace(/_/g, " ")} candidates`}
+                  {statusFilter === "all" && ragFilter === "all" ? "No candidates assigned yet" : `No candidates matching current filters`}
                 </p>
                 <p className="text-slate-500 text-sm mt-1">
-                  {statusFilter === "all"
+                  {statusFilter === "all" && ragFilter === "all"
                     ? "Candidates will appear here once assigned to your agency"
-                    : "Try a different filter"}
+                    : "Try a different filter combination"}
                 </p>
               </div>
             ) : (
@@ -554,6 +666,7 @@ export default function AgencyDashboard() {
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Profession</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Registration</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Score</th>
+                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">RAG</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Compliance</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Employment Status</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Actions</th>
@@ -569,6 +682,7 @@ export default function AgencyDashboard() {
                           <td className="px-4 py-3 text-sm text-slate-300">{(c.profession as string) || "N/A"}</td>
                           <td className="px-4 py-3 text-sm text-slate-300">{(c.registration_body as string) || "N/A"} {(c.registration_number as string) || ""}</td>
                           <td className="px-4 py-3 text-sm font-medium text-white">{c.compliance_score as number}%</td>
+                          <td className="px-4 py-3"><RagBadge candidate={c} /></td>
                           <td className="px-4 py-3"><StatusBadge status={c.compliance_status as string} /></td>
                           <td className="px-4 py-3">
                             <select
@@ -706,15 +820,74 @@ export default function AgencyDashboard() {
         )}
 
 
+        {/* CQC Audit Tab */}
+        {tab === "audit" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><FileText className="text-blue-400" size={22} /> CQC Audit Packs</h2>
+              <div className="flex items-center gap-3">
+                <button onClick={downloadAgencyAudit} disabled={downloadingAudit}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                  <Download size={16} /> {downloadingAudit ? "Generating..." : "Full Agency Audit"}
+                </button>
+                <button onClick={downloadBulkCandidateAudit} disabled={downloadingBulkAudit || selectedAuditCandidates.length === 0}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                  <Download size={16} /> {downloadingBulkAudit ? "Generating..." : `Download Selected (${selectedAuditCandidates.length})`}
+                </button>
+              </div>
+            </div>
+            <p className="text-slate-400 text-sm">Select individual or multiple candidates to generate CQC audit packs. Use the checkboxes to select candidates, then download a combined audit PDF.</p>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-700">
+                    <th className="text-left px-4 py-3">
+                      <input type="checkbox" checked={selectedAuditCandidates.length === candidatesWithStatus.length && candidatesWithStatus.length > 0}
+                        onChange={toggleAllAuditCandidates} className="rounded border-slate-600 bg-slate-700" />
+                    </th>
+                    <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Name</th>
+                    <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Profession</th>
+                    <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Compliance</th>
+                    <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Score</th>
+                    <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidatesWithStatus.map((c) => {
+                    const cId = String(c.id || c.candidate_id);
+                    const isSelected = selectedAuditCandidates.includes(cId);
+                    return (
+                      <tr key={cId} className={`border-b border-slate-700/50 hover:bg-slate-700/30 ${isSelected ? "bg-blue-500/10" : ""}`}>
+                        <td className="px-4 py-3">
+                          <input type="checkbox" checked={isSelected} onChange={() => toggleAuditCandidate(cId)} className="rounded border-slate-600 bg-slate-700" />
+                        </td>
+                        <td className="px-4 py-3 text-sm text-white">{String(c.first_name)} {String(c.last_name)}</td>
+                        <td className="px-4 py-3 text-sm text-slate-300">{String(c.profession || "N/A")}</td>
+                        <td className="px-4 py-3"><StatusBadge status={String(c.compliance_status || "incomplete")} /></td>
+                        <td className="px-4 py-3 text-sm font-medium text-white">{String(c.compliance_score || 0)}%</td>
+                        <td className="px-4 py-3">
+                          <button onClick={() => downloadCandidateAudit(cId)} disabled={downloadingSingleAudit === cId}
+                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                            <Download size={12} /> {downloadingSingleAudit === cId ? "Downloading..." : "Individual Audit"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {candidatesWithStatus.length === 0 && (
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500 text-sm">No candidates to audit</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Billing Tab */}
         {tab === "billing" && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Subscription & Billing</h2>
-              <button onClick={downloadAgencyAudit} disabled={downloadingAudit}
-                className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-                <Download size={16} /> {downloadingAudit ? "Generating..." : "Download CQC Audit Pack"}
-              </button>
             </div>
 
             {/* Current Subscription */}

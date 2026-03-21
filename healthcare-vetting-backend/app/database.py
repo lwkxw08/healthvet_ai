@@ -525,6 +525,13 @@ def init_db():
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
 
+        CREATE TABLE IF NOT EXISTS alert_settings (
+            id TEXT PRIMARY KEY,
+            setting_key TEXT UNIQUE NOT NULL,
+            setting_value INTEGER NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS agency_subscriptions (
             id TEXT PRIMARY KEY,
             agency_id TEXT NOT NULL,

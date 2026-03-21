@@ -219,6 +219,63 @@ export const adminApi = {
     apiRequest<Record<string, unknown>>(`/api/admin/invoices/generate?agency_id=${agencyId}`, { method: "POST", token }),
 };
 
+// Admin Extended API (override checks, suspend agencies, manage users, audit logs, etc.)
+export const adminExtendedApi = {
+  // Override check results
+  overrideCheck: (token: string, candidateId: string, data: { check_type: string; status: string; notes?: string }) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/override-check`, { method: "POST", body: data, token }),
+
+  // Agency management
+  listAgencies: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/agencies", { token }),
+  updateAgencyStatus: (token: string, agencyId: string, data: { status: string; reason?: string }) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/agencies/${agencyId}/status`, { method: "PUT", body: data, token }),
+
+  // Edit candidate profile
+  editCandidate: (token: string, candidateId: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}`, { method: "PUT", body: data, token }),
+
+  // User management
+  createAgency: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/agencies/create", { method: "POST", body: data, token }),
+  createCandidate: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/candidates/create", { method: "POST", body: data, token }),
+  deleteAgency: (token: string, agencyId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/agencies/${agencyId}`, { method: "DELETE", token }),
+  deleteCandidate: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}`, { method: "DELETE", token }),
+
+  // Alert settings
+  getAlertSettings: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/alert-settings", { token }),
+  updateAlertSettings: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/alert-settings", { method: "PUT", body: data, token }),
+
+  // Audit logs
+  getAuditLogs: (token: string, params?: { entity_type?: string; action?: string; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.entity_type) qs.set("entity_type", params.entity_type);
+    if (params?.action) qs.set("action", params.action);
+    if (params?.limit) qs.set("limit", params.limit.toString());
+    if (params?.offset) qs.set("offset", params.offset.toString());
+    return apiRequest<{ total: number; logs: Record<string, unknown>[] }>(`/api/admin/audit-logs?${qs.toString()}`, { token });
+  },
+
+  // Edit check data (automation fallout)
+  editCheckData: (token: string, candidateId: string, checkType: string, checkId: string, fields: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/check-data/${checkType}/${checkId}`, { method: "PUT", body: { fields }, token }),
+
+  // Re-trigger verifications
+  retriggerReference: (token: string, candidateId: string, refId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/retrigger-reference/${refId}`, { method: "POST", token }),
+  retriggerEmployment: (token: string, candidateId: string, verId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/retrigger-employment/${verId}`, { method: "POST", token }),
+
+  // Full candidate detail (admin view)
+  getCandidateFullDetail: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/full-detail`, { token }),
+};
+
 // Agency Services & Status API
 export const agencyServicesApi = {
   getMyServices: (token: string) =>
@@ -286,6 +343,10 @@ export const reportsApi = {
   downloadAgencyAudit: (token: string, agencyId: string) => {
     const headers: Record<string, string> = { "X-Auth-Token": token };
     return fetch(`${API_URL}/api/audit/agency/${agencyId}`, { headers });
+  },
+  downloadBulkCandidateAudit: (token: string, candidateIds: string[]) => {
+    const headers: Record<string, string> = { "X-Auth-Token": token, "Content-Type": "application/json" };
+    return fetch(`${API_URL}/api/reports/audit/bulk-candidates`, { method: "POST", headers, body: JSON.stringify({ candidate_ids: candidateIds }) });
   },
   downloadFinancialReport: (token: string, period?: string, dateFrom?: string, dateTo?: string) => {
     const qs = new URLSearchParams();
