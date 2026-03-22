@@ -227,6 +227,8 @@ async def update_subscription_tier(tier_key: str, data: dict, user=Depends(get_c
         tier["max_workers"] = int(data["max_workers"])
     if "features" in data and isinstance(data["features"], list):
         tier["features"] = data["features"]
+    if "monthly_checks" in data:
+        tier["monthly_checks"] = int(data["monthly_checks"])
 
     # Also persist to DB for durability
     with get_db() as db:
@@ -235,16 +237,16 @@ async def update_subscription_tier(tier_key: str, data: dict, user=Depends(get_c
         import json as _json
         if existing:
             db.execute(
-                "UPDATE subscription_tier_config SET name=?, monthly_price=?, per_worker_price=?, max_workers=?, features=?, updated_at=? WHERE tier_key=?",
+                "UPDATE subscription_tier_config SET name=?, monthly_price=?, per_worker_price=?, max_workers=?, monthly_checks=?, features=?, updated_at=? WHERE tier_key=?",
                 (tier["name"], tier["monthly_price"], tier["per_worker_price"], tier["max_workers"],
-                 _json.dumps(tier["features"]), now_str, tier_key),
+                 tier.get("monthly_checks", 0), _json.dumps(tier["features"]), now_str, tier_key),
             )
         else:
             from app.utils.auth import generate_id as _gen_id
             db.execute(
-                "INSERT INTO subscription_tier_config (id, tier_key, name, monthly_price, per_worker_price, max_workers, features, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO subscription_tier_config (id, tier_key, name, monthly_price, per_worker_price, max_workers, monthly_checks, features, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (_gen_id(), tier_key, tier["name"], tier["monthly_price"], tier["per_worker_price"],
-                 tier["max_workers"], _json.dumps(tier["features"]), now_str),
+                 tier["max_workers"], tier.get("monthly_checks", 0), _json.dumps(tier["features"]), now_str),
             )
 
     return {"tier_key": tier_key, **tier}
@@ -310,6 +312,30 @@ async def generate_recurring_invoices(user=Depends(get_current_admin)):
     """Generate recurring invoices for due subscriptions (admin only)."""
     from app.services.billing import BillingService
     return BillingService.generate_recurring_invoices()
+
+
+@router.get("/billing/remaining-checks/{agency_id}")
+async def get_remaining_checks(agency_id: str, user=Depends(get_current_user)):
+    """Get remaining check credits for a subscription agency."""
+    from app.services.billing import BillingService
+    real_id = user["sub"] if agency_id == "me" else agency_id
+    return BillingService.get_remaining_checks(real_id)
+
+
+@router.post("/billing/use-check")
+async def use_subscription_check(data: dict, user=Depends(get_current_user)):
+    """Use a subscription check credit for a candidate vetting."""
+    from app.services.billing import BillingService
+    agency_id = data.get("agency_id")
+    if agency_id == "me":
+        agency_id = user["sub"]
+    candidate_id = data.get("candidate_id")
+    description = data.get("description", "Vetting check")
+    sell_amount = float(data.get("sell_amount", 0))
+    cost_amount = float(data.get("cost_amount", 0))
+    if not agency_id:
+        raise HTTPException(status_code=400, detail="agency_id is required")
+    return BillingService.use_subscription_check(agency_id, candidate_id, description, sell_amount, cost_amount)
 
 
 # ============================================================

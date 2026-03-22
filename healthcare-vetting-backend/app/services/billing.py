@@ -16,21 +16,24 @@ SUBSCRIPTION_TIERS = {
         "max_workers": 50,
         "monthly_price": 299.00,
         "per_worker_price": 0,
-        "features": ["Up to 50 workers", "Basic compliance dashboard", "Email alerts", "Standard support"],
+        "monthly_checks": 50,
+        "features": ["Up to 50 workers", "50 checks/month included", "Basic compliance dashboard", "Email alerts", "Standard support"],
     },
     "growth": {
         "name": "Growth",
         "max_workers": 200,
         "monthly_price": 799.00,
         "per_worker_price": 0,
-        "features": ["Up to 200 workers", "Advanced analytics", "Priority alerts", "CQC audit pack", "Priority support"],
+        "monthly_checks": 200,
+        "features": ["Up to 200 workers", "200 checks/month included", "Advanced analytics", "Priority alerts", "CQC audit pack", "Priority support"],
     },
     "enterprise": {
         "name": "Enterprise",
         "max_workers": 99999,
         "monthly_price": 1999.00,
         "per_worker_price": 0,
-        "features": ["Unlimited workers", "Full analytics suite", "Dedicated account manager",
+        "monthly_checks": 999999,
+        "features": ["Unlimited workers", "Unlimited checks/month", "Full analytics suite", "Dedicated account manager",
                       "Custom integrations", "SLA guarantee", "White-label options"],
     },
     "per_worker": {
@@ -38,7 +41,8 @@ SUBSCRIPTION_TIERS = {
         "max_workers": 99999,
         "monthly_price": 0,
         "per_worker_price": 5.00,
-        "features": ["Pay per active worker", "Full feature access", "Flexible scaling"],
+        "monthly_checks": 0,
+        "features": ["Pay per active worker", "No monthly check allowance", "Full feature access", "Flexible scaling"],
     },
 }
 
@@ -87,13 +91,14 @@ class BillingService:
             db.execute(
                 """INSERT INTO agency_subscriptions
                    (id, agency_id, tier, billing_method, monthly_amount, per_worker_amount,
-                    max_workers, stripe_payment_method_id, stripe_subscription_id,
+                    max_workers, monthly_checks, checks_used, stripe_payment_method_id, stripe_subscription_id,
                     status, current_period_start, current_period_end, next_billing_date,
                     created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'active', ?, ?, ?, ?)""",
                 (sub_id, agency_id, tier, billing_method,
                  tier_info["monthly_price"], tier_info["per_worker_price"],
-                 tier_info["max_workers"], stripe_payment_method_id, None,
+                 tier_info["max_workers"], tier_info.get("monthly_checks", 0),
+                 stripe_payment_method_id, None,
                  now, next_billing, next_billing, now),
             )
 
@@ -185,10 +190,10 @@ class BillingService:
                      amount, now_str),
                 )
 
-                # Update next billing date
+                # Update next billing date and reset checks_used for new period
                 next_billing = (now + timedelta(days=30)).isoformat()
                 db.execute(
-                    "UPDATE agency_subscriptions SET next_billing_date=?, current_period_start=?, current_period_end=? WHERE id=?",
+                    "UPDATE agency_subscriptions SET next_billing_date=?, current_period_start=?, current_period_end=?, checks_used=0 WHERE id=?",
                     (next_billing, now_str, next_billing, s["id"]),
                 )
 
@@ -225,3 +230,95 @@ class BillingService:
             )
             row = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
             return dict(row) if row else None
+
+    @staticmethod
+    def get_remaining_checks(agency_id: str) -> dict:
+        """Get remaining check credits for a subscription agency."""
+        with get_db() as db:
+            sub = db.execute(
+                "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
+                (agency_id,),
+            ).fetchone()
+            if not sub:
+                return {"has_subscription": False, "monthly_checks": 0, "checks_used": 0, "checks_remaining": 0, "tier": None}
+
+            s = dict(sub)
+            monthly_checks = s.get("monthly_checks") or 0
+            checks_used = s.get("checks_used") or 0
+            checks_remaining = max(0, monthly_checks - checks_used)
+
+            return {
+                "has_subscription": True,
+                "subscription_id": s["id"],
+                "tier": s["tier"],
+                "tier_name": SUBSCRIPTION_TIERS.get(s["tier"], {}).get("name", s["tier"]),
+                "monthly_checks": monthly_checks,
+                "checks_used": checks_used,
+                "checks_remaining": checks_remaining,
+                "current_period_start": s.get("current_period_start"),
+                "current_period_end": s.get("current_period_end"),
+                "billing_method": s.get("billing_method"),
+            }
+
+    @staticmethod
+    def use_subscription_check(agency_id: str, candidate_id: str, check_description: str, sell_amount: float, cost_amount: float = 0) -> dict:
+        """Use a subscription check credit. Auto-marks as paid if within allowance, creates pending invoice if exceeded."""
+        now = datetime.now(timezone.utc).isoformat()
+        with get_db() as db:
+            sub = db.execute(
+                "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
+                (agency_id,),
+            ).fetchone()
+
+            if not sub:
+                # No subscription — create a normal pending invoice
+                inv_id = generate_id()
+                db.execute(
+                    """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
+                       VALUES (?, ?, ?, 'vetting', ?, ?, ?, 'pending', ?)""",
+                    (inv_id, agency_id, candidate_id, check_description, cost_amount, sell_amount, now),
+                )
+                return {"invoice_id": inv_id, "status": "pending", "within_credit": False, "message": "No active subscription. Invoice created as pending."}
+
+            s = dict(sub)
+            monthly_checks = s.get("monthly_checks") or 0
+            checks_used = s.get("checks_used") or 0
+
+            if checks_used < monthly_checks:
+                # Within credit — auto-mark as paid
+                inv_id = generate_id()
+                db.execute(
+                    """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, paid_at, created_at)
+                       VALUES (?, ?, ?, 'vetting', ?, ?, ?, 'paid', ?, ?)""",
+                    (inv_id, agency_id, candidate_id, check_description, cost_amount, sell_amount, now, now),
+                )
+                # Increment checks_used
+                db.execute(
+                    "UPDATE agency_subscriptions SET checks_used = checks_used + 1 WHERE id=?",
+                    (s["id"],),
+                )
+                remaining = monthly_checks - checks_used - 1
+                return {
+                    "invoice_id": inv_id,
+                    "status": "paid",
+                    "within_credit": True,
+                    "checks_remaining": max(0, remaining),
+                    "message": f"Check covered by subscription credit. {max(0, remaining)} checks remaining this month.",
+                }
+            else:
+                # Exceeded credit — create pending invoice for manual payment
+                inv_id = generate_id()
+                db.execute(
+                    """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
+                       VALUES (?, ?, ?, 'vetting', ?, ?, ?, 'pending', ?)""",
+                    (inv_id, agency_id, candidate_id,
+                     f"{check_description} (exceeded monthly credit)",
+                     cost_amount, sell_amount, now),
+                )
+                return {
+                    "invoice_id": inv_id,
+                    "status": "pending",
+                    "within_credit": False,
+                    "checks_remaining": 0,
+                    "message": "Monthly check credit exceeded. This check will be invoiced separately.",
+                }

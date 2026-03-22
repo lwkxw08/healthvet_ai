@@ -54,6 +54,9 @@ export default function AgencyDashboard() {
   const [includeMonitoring, setIncludeMonitoring] = useState(false);
   const [invitePricingLoading, setInvitePricingLoading] = useState(false);
 
+  // Remaining checks state (subscription credit)
+  const [remainingChecks, setRemainingChecks] = useState<Record<string, unknown> | null>(null);
+
   // Re-vet state
   const [revetModalOpen, setRevetModalOpen] = useState(false);
   const [revetCandidate, setRevetCandidate] = useState<Record<string, unknown> | null>(null);
@@ -98,6 +101,11 @@ export default function AgencyDashboard() {
       try {
         const hist = await billingApi.getHistory(token, "me");
         setBillingHistory(hist);
+      } catch { /* ignore */ }
+      // Load remaining checks for subscription credit tracking
+      try {
+        const rc = await billingApi.getRemainingChecks(token, "me");
+        setRemainingChecks(rc);
       } catch { /* ignore */ }
       // Load re-vet requests
       try {
@@ -172,6 +180,11 @@ export default function AgencyDashboard() {
       const pricing = await agencyInvitesApi.getVettingPricing(token);
       setInvitePricing(pricing);
       setIncludeMonitoring(false);
+      // Also refresh remaining checks
+      try {
+        const rc = await billingApi.getRemainingChecks(token, "me");
+        setRemainingChecks(rc);
+      } catch { /* ignore */ }
       setInviteCostModalOpen(true);
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : "Failed to load pricing");
@@ -473,6 +486,41 @@ export default function AgencyDashboard() {
                 </div>
               )}
             </div>
+
+            {/* Subscription Credit Countdown */}
+            {remainingChecks && (remainingChecks.has_subscription as boolean) && (
+              <div className="bg-slate-800/80 rounded-xl border border-blue-500/30 p-5">
+                <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><CreditCard className="text-blue-400" size={18} /> Monthly Check Credit</h3>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-blue-400">{remainingChecks.monthly_checks as number >= 999999 ? "\u221E" : remainingChecks.monthly_checks as number}</div>
+                    <div className="text-xs text-blue-300 mt-1 font-medium">MONTHLY ALLOWANCE</div>
+                  </div>
+                  <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-green-400">{remainingChecks.checks_remaining as number >= 999999 ? "\u221E" : remainingChecks.checks_remaining as number}</div>
+                    <div className="text-xs text-green-300 mt-1 font-medium">REMAINING</div>
+                  </div>
+                  <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-amber-400">{remainingChecks.checks_used as number}</div>
+                    <div className="text-xs text-amber-300 mt-1 font-medium">USED THIS MONTH</div>
+                  </div>
+                  <div className="p-4 bg-slate-700/50 border border-slate-600 rounded-lg text-center">
+                    <div className="text-lg font-bold text-white">{remainingChecks.tier_name as string}</div>
+                    <div className="text-xs text-slate-400 mt-1 font-medium">{(remainingChecks.billing_method as string || "").toUpperCase()} BILLING</div>
+                  </div>
+                </div>
+                {(remainingChecks.checks_remaining as number) <= 5 && (remainingChecks.checks_remaining as number) >= 0 && (remainingChecks.monthly_checks as number) < 999999 && (
+                  <div className="mt-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2">
+                    <AlertTriangle className="text-red-400" size={16} />
+                    <span className="text-red-300 text-sm font-medium">
+                      {(remainingChecks.checks_remaining as number) === 0
+                        ? "No checks remaining this month. Additional checks will be invoiced separately."
+                        : `Only ${remainingChecks.checks_remaining as number} check${(remainingChecks.checks_remaining as number) !== 1 ? "s" : ""} remaining this month.`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Stats Cards */}
             <div className="grid grid-cols-4 gap-4">
@@ -1243,67 +1291,129 @@ export default function AgencyDashboard() {
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <DollarSign className="text-green-400" size={20} /> Confirm Vetting Cost
+                    {remainingChecks && (remainingChecks.has_subscription as boolean)
+                      ? <><CreditCard className="text-blue-400" size={20} /> Subscription Check</>
+                      : <><DollarSign className="text-green-400" size={20} /> Confirm Vetting Cost</>}
                   </h3>
                   <button onClick={() => setInviteCostModalOpen(false)} className="text-slate-400 hover:text-white text-xl bg-transparent border-none cursor-pointer">&times;</button>
                 </div>
                 <p className="text-slate-300 text-sm mb-1">
                   Candidate: <span className="font-semibold text-white">{inviteEmail}</span>
                 </p>
-                <p className="text-slate-400 text-xs mb-5">Please confirm the vetting cost before sending the invite.</p>
 
-                <div className="space-y-4">
-                  {/* Total vetting cost */}
-                  <div className="flex justify-between items-center p-4 bg-slate-700/50 rounded-lg border border-slate-600">
-                    <div>
-                      <p className="text-white font-medium text-sm">Full Automated Vetting</p>
-                      <p className="text-slate-400 text-xs mt-0.5">All compliance checks included</p>
-                    </div>
-                    <span className="text-green-400 font-bold text-xl">£{invitePricing.vetting_total.toFixed(2)}</span>
-                  </div>
-
-                  {/* Optional annual monitoring */}
-                  <label className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600 cursor-pointer hover:bg-slate-700/70 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={includeMonitoring}
-                        onChange={(e) => setIncludeMonitoring(e.target.checked)}
-                        className="w-5 h-5 rounded accent-blue-500"
-                      />
+                {/* Subscription agency view — show remaining checks */}
+                {remainingChecks && (remainingChecks.has_subscription as boolean) ? (
+                  <div className="space-y-4 mt-4">
+                    {/* Credit status */}
+                    <div className="flex justify-between items-center p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                       <div>
-                        <p className="text-white font-medium text-sm">Annual Monitoring Service</p>
-                        <p className="text-slate-400 text-xs mt-0.5">Continuous compliance monitoring for 12 months</p>
+                        <p className="text-white font-medium text-sm">Monthly Check Credit</p>
+                        <p className="text-blue-300 text-xs mt-0.5">{remainingChecks.tier_name as string} Plan</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-blue-400 font-bold text-2xl">{(remainingChecks.checks_remaining as number) >= 999999 ? "\u221E" : remainingChecks.checks_remaining as number}</span>
+                        <p className="text-blue-300 text-xs">remaining</p>
                       </div>
                     </div>
-                    <span className="text-blue-400 font-bold text-lg">£{invitePricing.monitoring_annual_price.toFixed(2)}</span>
-                  </label>
 
-                  {/* Total */}
-                  <div className="flex justify-between items-center p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-                    <span className="text-green-300 font-semibold text-sm">Total Cost</span>
-                    <span className="text-green-400 font-bold text-2xl">
-                      £{(invitePricing.vetting_total + (includeMonitoring ? invitePricing.monitoring_annual_price : 0)).toFixed(2)}
-                    </span>
-                  </div>
+                    {/* Progress bar */}
+                    {(remainingChecks.monthly_checks as number) < 999999 && (
+                      <div>
+                        <div className="flex justify-between text-xs text-slate-400 mb-1">
+                          <span>{remainingChecks.checks_used as number} used</span>
+                          <span>{remainingChecks.monthly_checks as number} total</span>
+                        </div>
+                        <div className="w-full bg-slate-700 rounded-full h-2.5">
+                          <div className="h-2.5 rounded-full transition-all" style={{
+                            width: `${Math.min(100, ((remainingChecks.checks_used as number) / (remainingChecks.monthly_checks as number)) * 100)}%`,
+                            backgroundColor: (remainingChecks.checks_remaining as number) > 5 ? '#22c55e' : (remainingChecks.checks_remaining as number) > 0 ? '#f59e0b' : '#ef4444'
+                          }} />
+                        </div>
+                      </div>
+                    )}
 
-                  {/* Action buttons */}
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => setInviteCostModalOpen(false)}
-                      className="flex-1 bg-slate-600 hover:bg-slate-500 text-white rounded-lg py-2.5 text-sm font-medium border-none cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={confirmAndSendInvite}
-                      disabled={inviteLoading}
-                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium flex items-center justify-center gap-2 border-none cursor-pointer"
-                    >
-                      <Send size={14} /> {inviteLoading ? "Sending..." : "Accept & Send Invite"}
-                    </button>
+                    {/* Within credit */}
+                    {(remainingChecks.checks_remaining as number) > 0 ? (
+                      <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                        <p className="text-green-300 font-medium text-sm flex items-center gap-2">
+                          <CheckCircle size={16} /> This check is covered by your subscription
+                        </p>
+                        <p className="text-green-200/70 text-xs mt-1">Auto-billed against your monthly credit. No additional charge.</p>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                        <p className="text-red-300 font-medium text-sm flex items-center gap-2">
+                          <AlertTriangle size={16} /> Monthly credit exceeded
+                        </p>
+                        <p className="text-red-200/70 text-xs mt-1">This check will be invoiced separately at £{invitePricing.vetting_total.toFixed(2)}.</p>
+                      </div>
+                    )}
+
+                    {/* Optional annual monitoring */}
+                    <label className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600 cursor-pointer hover:bg-slate-700/70 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={includeMonitoring} onChange={(e) => setIncludeMonitoring(e.target.checked)} className="w-5 h-5 rounded accent-blue-500" />
+                        <div>
+                          <p className="text-white font-medium text-sm">Annual Monitoring Service</p>
+                          <p className="text-slate-400 text-xs mt-0.5">Continuous compliance monitoring for 12 months</p>
+                        </div>
+                      </div>
+                      <span className="text-blue-400 font-bold text-lg">£{invitePricing.monitoring_annual_price.toFixed(2)}</span>
+                    </label>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-3">
+                      <button onClick={() => setInviteCostModalOpen(false)} className="flex-1 bg-slate-600 hover:bg-slate-500 text-white rounded-lg py-2.5 text-sm font-medium border-none cursor-pointer">Cancel</button>
+                      <button onClick={confirmAndSendInvite} disabled={inviteLoading}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium flex items-center justify-center gap-2 border-none cursor-pointer">
+                        <Send size={14} /> {inviteLoading ? "Sending..." : (remainingChecks.checks_remaining as number) > 0 ? "Use Credit & Send Invite" : "Accept & Send Invite"}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  /* Non-subscription agency view — show charge amount */
+                  <div className="space-y-4 mt-4">
+                    <p className="text-slate-400 text-xs mb-1">Please confirm the vetting cost before sending the invite.</p>
+
+                    {/* Total vetting cost */}
+                    <div className="flex justify-between items-center p-4 bg-slate-700/50 rounded-lg border border-slate-600">
+                      <div>
+                        <p className="text-white font-medium text-sm">Full Automated Vetting</p>
+                        <p className="text-slate-400 text-xs mt-0.5">All compliance checks included</p>
+                      </div>
+                      <span className="text-green-400 font-bold text-xl">£{invitePricing.vetting_total.toFixed(2)}</span>
+                    </div>
+
+                    {/* Optional annual monitoring */}
+                    <label className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600 cursor-pointer hover:bg-slate-700/70 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={includeMonitoring} onChange={(e) => setIncludeMonitoring(e.target.checked)} className="w-5 h-5 rounded accent-blue-500" />
+                        <div>
+                          <p className="text-white font-medium text-sm">Annual Monitoring Service</p>
+                          <p className="text-slate-400 text-xs mt-0.5">Continuous compliance monitoring for 12 months</p>
+                        </div>
+                      </div>
+                      <span className="text-blue-400 font-bold text-lg">£{invitePricing.monitoring_annual_price.toFixed(2)}</span>
+                    </label>
+
+                    {/* Total */}
+                    <div className="flex justify-between items-center p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                      <span className="text-green-300 font-semibold text-sm">Total Cost</span>
+                      <span className="text-green-400 font-bold text-2xl">
+                        £{(invitePricing.vetting_total + (includeMonitoring ? invitePricing.monitoring_annual_price : 0)).toFixed(2)}
+                      </span>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-3">
+                      <button onClick={() => setInviteCostModalOpen(false)} className="flex-1 bg-slate-600 hover:bg-slate-500 text-white rounded-lg py-2.5 text-sm font-medium border-none cursor-pointer">Cancel</button>
+                      <button onClick={confirmAndSendInvite} disabled={inviteLoading}
+                        className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium flex items-center justify-center gap-2 border-none cursor-pointer">
+                        <Send size={14} /> {inviteLoading ? "Sending..." : "Accept & Send Invite"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -200,6 +200,22 @@ def migrate_db():
             cursor.execute("ALTER TABLE cv_analyses ADD COLUMN employment_entries TEXT")
     except Exception:
         pass
+    # Add monthly_checks and checks_used columns to agency_subscriptions if missing
+    try:
+        existing_sub_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_subscriptions)").fetchall()}
+        if "monthly_checks" not in existing_sub_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN monthly_checks INTEGER DEFAULT 0")
+        if "checks_used" not in existing_sub_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN checks_used INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    # Add monthly_checks column to subscription_tier_config if missing
+    try:
+        existing_stc_cols = {row[1] for row in cursor.execute("PRAGMA table_info(subscription_tier_config)").fetchall()}
+        if "monthly_checks" not in existing_stc_cols:
+            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN monthly_checks INTEGER DEFAULT 0")
+    except Exception:
+        pass
     # Seed default pricing if table is empty
     count = cursor.execute("SELECT COUNT(*) FROM pricing_settings").fetchone()[0]
     if count == 0:
@@ -575,6 +591,8 @@ def init_db():
             monthly_amount REAL DEFAULT 0.0,
             per_worker_amount REAL DEFAULT 0.0,
             max_workers INTEGER DEFAULT 50,
+            monthly_checks INTEGER DEFAULT 0,
+            checks_used INTEGER DEFAULT 0,
             stripe_payment_method_id TEXT,
             stripe_subscription_id TEXT,
             status TEXT DEFAULT 'active',
@@ -650,6 +668,7 @@ def init_db():
             monthly_price REAL DEFAULT 0,
             per_worker_price REAL DEFAULT 0,
             max_workers INTEGER DEFAULT 0,
+            monthly_checks INTEGER DEFAULT 0,
             features TEXT DEFAULT '[]',
             updated_at TEXT
         );

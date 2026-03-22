@@ -83,9 +83,9 @@ export default function AdminPanel() {
 
 
   // Subscription tier editing state
-  const [subTiers, setSubTiers] = useState<Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; features: string[]}>>({});
+  const [subTiers, setSubTiers] = useState<Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; features: string[]}>>({});
   const [editingTier, setEditingTier] = useState<string | null>(null);
-  const [tierEditData, setTierEditData] = useState<{name: string; monthly_price: string; per_worker_price: string; max_workers: string; features: string}>({name: "", monthly_price: "", per_worker_price: "", max_workers: "", features: ""});
+  const [tierEditData, setTierEditData] = useState<{name: string; monthly_price: string; per_worker_price: string; max_workers: string; monthly_checks: string; features: string}>({name: "", monthly_price: "", per_worker_price: "", max_workers: "", monthly_checks: "", features: ""});
   const [savingTier, setSavingTier] = useState(false);
 
   // Agency discount editing state
@@ -220,7 +220,7 @@ export default function AdminPanel() {
     if (!token) return;
     try {
       const tiers = await billingApi.getTiers(token);
-      setSubTiers(tiers as Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; features: string[]}>);
+      setSubTiers(tiers as Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; features: string[]}>);
     } catch { /* ignore */ }
   };
 
@@ -247,6 +247,7 @@ export default function AdminPanel() {
   useEffect(() => { if (tab === "agencies" || tab === "user-management" || tab === "invoicing") loadAgencies(); }, [tab, loadAgencies]);
   useEffect(() => { if (tab === "audit-logs") loadAuditLogs(); }, [tab, loadAuditLogs]);
   useEffect(() => { if (tab === "invoicing") loadAdminInvoices(); }, [tab, loadAdminInvoices]);
+  useEffect(() => { if (tab === "subscriptions") loadSubscriptionTiers(); }, [tab]);
 
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
@@ -476,6 +477,7 @@ export default function AdminPanel() {
         monthly_price: parseFloat(tierEditData.monthly_price) || 0,
         per_worker_price: parseFloat(tierEditData.per_worker_price) || 0,
         max_workers: parseInt(tierEditData.max_workers) || 0,
+        monthly_checks: parseInt(tierEditData.monthly_checks) || 0,
         features,
       });
       setEditingTier(null);
@@ -498,6 +500,7 @@ export default function AdminPanel() {
       monthly_price: tier.monthly_price.toString(),
       per_worker_price: tier.per_worker_price.toString(),
       max_workers: tier.max_workers.toString(),
+      monthly_checks: (tier.monthly_checks || 0).toString(),
       features: tier.features.join("\n"),
     });
   };
@@ -1269,10 +1272,17 @@ export default function AdminPanel() {
                                 className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                             </div>
                           </div>
-                          <div>
-                            <label className="block text-xs text-slate-400 mb-1">Max Workers</label>
-                            <input type="number" value={tierEditData.max_workers} onChange={(e) => setTierEditData(prev => ({...prev, max_workers: e.target.value}))}
-                              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Max Workers</label>
+                              <input type="number" value={tierEditData.max_workers} onChange={(e) => setTierEditData(prev => ({...prev, max_workers: e.target.value}))}
+                                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Monthly Checks Allowance</label>
+                              <input type="number" value={tierEditData.monthly_checks} onChange={(e) => setTierEditData(prev => ({...prev, monthly_checks: e.target.value}))}
+                                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                            </div>
                           </div>
                           <div>
                             <label className="block text-xs text-slate-400 mb-1">Features (one per line)</label>
@@ -1302,8 +1312,11 @@ export default function AdminPanel() {
                           <p className="text-blue-400 text-xl font-bold mb-1">
                             {tier.per_worker_price > 0 ? `£${tier.per_worker_price}/worker/mo` : `£${tier.monthly_price.toLocaleString()}/mo`}
                           </p>
-                          <p className="text-slate-400 text-sm mb-3">
+                          <p className="text-slate-400 text-sm mb-1">
                             {tier.max_workers >= 99999 ? "Unlimited workers" : `Up to ${tier.max_workers} workers`}
+                          </p>
+                          <p className="text-green-400 text-sm font-medium mb-3">
+                            {(tier.monthly_checks || 0) >= 999999 ? "Unlimited checks/month" : `${tier.monthly_checks || 0} checks/month`}
                           </p>
                           <div className="space-y-1">
                             {tier.features.map((f: string, i: number) => (
