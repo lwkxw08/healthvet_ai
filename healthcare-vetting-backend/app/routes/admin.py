@@ -107,7 +107,12 @@ async def get_revenue_analytics(
         invoice_rows = db.execute(query, params).fetchall()
         invoices = [dict(r) for r in invoice_rows]
 
-        total_revenue = sum(i["sell_amount"] for i in invoices)
+        # Use adjusted_amount if admin has adjusted, otherwise use sell_amount
+        def effective_revenue(inv):
+            adj = inv.get("adjusted_amount")
+            return adj if adj is not None else inv["sell_amount"]
+
+        total_revenue = sum(effective_revenue(i) for i in invoices)
         total_cost = sum(i["cost_amount"] for i in invoices)
         total_margin = total_revenue - total_cost
         margin_pct = round((total_margin / total_revenue * 100) if total_revenue > 0 else 0, 1)
@@ -118,7 +123,7 @@ async def get_revenue_analytics(
             ct = inv["check_type"] or "other"
             if ct not in by_check_type:
                 by_check_type[ct] = {"revenue": 0.0, "cost": 0.0, "count": 0, "label": pricing.get(ct, {}).get("label", ct)}
-            by_check_type[ct]["revenue"] += inv["sell_amount"]
+            by_check_type[ct]["revenue"] += effective_revenue(inv)
             by_check_type[ct]["cost"] += inv["cost_amount"]
             by_check_type[ct]["count"] += 1
 
@@ -132,7 +137,7 @@ async def get_revenue_analytics(
                     "agency_name": dict(agency_row)["name"] if agency_row else "Unknown",
                     "revenue": 0.0, "cost": 0.0, "count": 0,
                 }
-            by_agency[aid]["revenue"] += inv["sell_amount"]
+            by_agency[aid]["revenue"] += effective_revenue(inv)
             by_agency[aid]["cost"] += inv["cost_amount"]
             by_agency[aid]["count"] += 1
 
@@ -142,7 +147,7 @@ async def get_revenue_analytics(
             month_key = inv["created_at"][:7] if inv["created_at"] else "unknown"
             if month_key not in monthly:
                 monthly[month_key] = {"revenue": 0.0, "cost": 0.0, "count": 0}
-            monthly[month_key]["revenue"] += inv["sell_amount"]
+            monthly[month_key]["revenue"] += effective_revenue(inv)
             monthly[month_key]["cost"] += inv["cost_amount"]
             monthly[month_key]["count"] += 1
 
@@ -293,7 +298,7 @@ async def get_agency_analytics(
 
             # Revenue from invoices
             inv_row = db.execute(
-                "SELECT COALESCE(SUM(sell_amount),0) as rev, COALESCE(SUM(cost_amount),0) as cost, COUNT(*) as cnt FROM invoices WHERE agency_id=? AND created_at >= ? AND created_at <= ?",
+                "SELECT COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)),0) as rev, COALESCE(SUM(cost_amount),0) as cost, COUNT(*) as cnt FROM invoices WHERE agency_id=? AND created_at >= ? AND created_at <= ?",
                 (agency["id"], start, end),
             ).fetchone()
             inv = dict(inv_row) if inv_row else {"rev": 0, "cost": 0, "cnt": 0}

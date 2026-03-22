@@ -336,8 +336,13 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
             (agency_id,),
         ).fetchall()]
 
-        total_billed = sum(i["sell_amount"] for i in invoices)
-        total_paid = sum(i["sell_amount"] for i in invoices if i["status"] == "paid")
+        # Use adjusted_amount if admin has adjusted, otherwise use sell_amount
+        def effective_amount(inv):
+            adj = inv.get("adjusted_amount")
+            return adj if adj is not None else inv["sell_amount"]
+
+        total_billed = sum(effective_amount(i) for i in invoices)
+        total_paid = sum(effective_amount(i) for i in invoices if i["status"] == "paid")
         total_outstanding = total_billed - total_paid
 
         # Breakdown by check type
@@ -347,7 +352,7 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
             if ct not in by_type:
                 by_type[ct] = {"description": inv["description"] or ct, "count": 0, "total": 0.0}
             by_type[ct]["count"] += 1
-            by_type[ct]["total"] += inv["sell_amount"]
+            by_type[ct]["total"] += effective_amount(inv)
 
         # Get candidate count
         cand_count = db.execute(
