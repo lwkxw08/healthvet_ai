@@ -1061,12 +1061,12 @@ export default function AdminPanel() {
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-xs text-slate-400 mb-1">Monthly Price (\u00a3)</label>
+                              <label className="block text-xs text-slate-400 mb-1">Monthly Price (£)</label>
                               <input type="number" step="0.01" value={tierEditData.monthly_price} onChange={(e) => setTierEditData(prev => ({...prev, monthly_price: e.target.value}))}
                                 className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                             </div>
                             <div>
-                              <label className="block text-xs text-slate-400 mb-1">Per Worker Price (\u00a3)</label>
+                              <label className="block text-xs text-slate-400 mb-1">Per Worker Price (£)</label>
                               <input type="number" step="0.01" value={tierEditData.per_worker_price} onChange={(e) => setTierEditData(prev => ({...prev, per_worker_price: e.target.value}))}
                                 className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                             </div>
@@ -1102,7 +1102,7 @@ export default function AdminPanel() {
                             </button>
                           </div>
                           <p className="text-blue-400 text-xl font-bold mb-1">
-                            {tier.per_worker_price > 0 ? `\u00a3${tier.per_worker_price}/worker/mo` : `\u00a3${tier.monthly_price.toLocaleString()}/mo`}
+                            {tier.per_worker_price > 0 ? `£${tier.per_worker_price}/worker/mo` : `£${tier.monthly_price.toLocaleString()}/mo`}
                           </p>
                           <p className="text-slate-400 text-sm mb-3">
                             {tier.max_workers >= 99999 ? "Unlimited workers" : `Up to ${tier.max_workers} workers`}

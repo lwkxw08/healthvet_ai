@@ -1000,7 +1000,7 @@ export default function AgencyDashboard() {
                   </div>
                   <div className="p-4 bg-slate-700/50 rounded-lg text-center">
                     <p className="text-slate-400 text-xs mb-1">Monthly Amount</p>
-                    <p className="text-xl font-bold text-green-400">\u00a3{Number(subscription.monthly_amount).toFixed(2)}</p>
+                    <p className="text-xl font-bold text-green-400">£{Number(subscription.monthly_amount).toFixed(2)}</p>
                   </div>
                   <div className="p-4 bg-slate-700/50 rounded-lg text-center">
                     <p className="text-slate-400 text-xs mb-1">Billing Method</p>
@@ -1021,10 +1021,10 @@ export default function AgencyDashboard() {
                 <h3 className="text-md font-semibold text-white mb-4">Choose a Plan</h3>
                 <div className="grid grid-cols-4 gap-4 mb-6">
                   {[
-                    { key: "starter", name: "Starter", price: "\u00a3299/mo", workers: "Up to 50 workers", color: "border-blue-500/30" },
-                    { key: "growth", name: "Growth", price: "\u00a3799/mo", workers: "Up to 200 workers", color: "border-green-500/30" },
-                    { key: "enterprise", name: "Enterprise", price: "\u00a31,999/mo", workers: "Unlimited workers", color: "border-purple-500/30" },
-                    { key: "per_worker", name: "Per Worker", price: "\u00a35/worker/mo", workers: "Unlimited workers", color: "border-amber-500/30" },
+                    { key: "starter", name: "Starter", price: "£299/mo", workers: "Up to 50 workers", color: "border-blue-500/30" },
+                    { key: "growth", name: "Growth", price: "£799/mo", workers: "Up to 200 workers", color: "border-green-500/30" },
+                    { key: "enterprise", name: "Enterprise", price: "£1,999/mo", workers: "Unlimited workers", color: "border-purple-500/30" },
+                    { key: "per_worker", name: "Per Worker", price: "£5/worker/mo", workers: "Unlimited workers", color: "border-amber-500/30" },
                   ].map((tier) => (
                     <div key={tier.key} onClick={() => setSelectedTier(tier.key)}
                       className={`p-5 bg-slate-700/50 rounded-xl border cursor-pointer transition-all ${selectedTier === tier.key ? "border-blue-400 ring-2 ring-blue-400/30" : tier.color + " hover:border-slate-500"}`}>
@@ -1062,7 +1062,7 @@ export default function AgencyDashboard() {
                     {billingHistory.map((item, i) => (
                       <tr key={i} className="border-b border-slate-700/50">
                         <td className="px-4 py-3 text-sm text-white">{String(item.description || item.tier || "Invoice")}</td>
-                        <td className="px-4 py-3 text-sm text-green-400">\u00a3{Number(item.amount || item.monthly_amount || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-green-400">£{Number(item.amount || item.monthly_amount || 0).toFixed(2)}</td>
                         <td className="px-4 py-3"><StatusBadge status={String(item.status || "pending")} /></td>
                         <td className="px-4 py-3 text-sm text-slate-400">{String(item.created_at || item.date || "").split("T")[0]}</td>
                       </tr>
@@ -1235,13 +1235,13 @@ export default function AgencyDashboard() {
                       <p className="text-green-300 font-semibold mb-1">Re-vet request submitted successfully</p>
                       <p className="text-green-200 text-sm">Token: <code className="bg-slate-700 px-2 py-0.5 rounded text-xs">{revetResult.token as string}</code></p>
                       <p className="text-green-200 text-sm mt-1">Link will be emailed to {revetResult.candidate_email as string}</p>
-                      <p className="text-green-200 text-sm mt-1">Total cost: <span className="font-bold">\u00a3{(revetResult.total_cost as number)?.toFixed(2)}</span></p>
+                      <p className="text-green-200 text-sm mt-1">Total cost: <span className="font-bold">£{(revetResult.total_cost as number)?.toFixed(2)}</span></p>
                     </div>
                     <div className="space-y-1">
                       {(revetResult.section_costs as {section: string; label: string; cost: number}[])?.map((sc) => (
                         <div key={sc.section} className="flex justify-between p-2 bg-slate-700/50 rounded text-sm">
                           <span className="text-slate-300">{sc.label}</span>
-                          <span className="text-white font-medium">\u00a3{sc.cost.toFixed(2)}</span>
+                          <span className="text-white font-medium">£{sc.cost.toFixed(2)}</span>
                         </div>
                       ))}
                     </div>
@@ -1263,14 +1263,14 @@ export default function AgencyDashboard() {
                             />
                             <span className="text-slate-200 text-sm">{opt.label}</span>
                           </div>
-                          <span className="text-amber-400 text-sm font-medium">\u00a3{opt.price.toFixed(2)}</span>
+                          <span className="text-amber-400 text-sm font-medium">£{opt.price.toFixed(2)}</span>
                         </label>
                       ))}
                     </div>
 
                     <div className="flex justify-between items-center p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
                       <span className="text-amber-300 font-semibold text-sm">Estimated Total</span>
-                      <span className="text-amber-400 font-bold text-lg">\u00a3{revetTotalCost.toFixed(2)}</span>
+                      <span className="text-amber-400 font-bold text-lg">£{revetTotalCost.toFixed(2)}</span>
                     </div>
 
                     <button
