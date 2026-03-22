@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type Tab = "overview" | "candidates" | "alerts" | "monitoring" | "candidate-detail" | "settings" | "analytics" | "fraud" | "scheduler" | "subscriptions" | "overrides" | "user-management" | "audit-logs" | "agencies";
+type Tab = "overview" | "candidates" | "alerts" | "monitoring" | "candidate-detail" | "settings" | "analytics" | "fraud" | "scheduler" | "subscriptions" | "overrides" | "user-management" | "audit-logs" | "agencies" | "invoicing";
 
 export default function AdminPanel() {
   const { token, logout } = useAuth();
@@ -87,6 +87,23 @@ export default function AdminPanel() {
   const [editingTier, setEditingTier] = useState<string | null>(null);
   const [tierEditData, setTierEditData] = useState<{name: string; monthly_price: string; per_worker_price: string; max_workers: string; features: string}>({name: "", monthly_price: "", per_worker_price: "", max_workers: "", features: ""});
   const [savingTier, setSavingTier] = useState(false);
+
+  // Agency discount editing state
+  const [editingDiscount, setEditingDiscount] = useState<string | null>(null);
+  const [discountValue, setDiscountValue] = useState("");
+  const [savingDiscount, setSavingDiscount] = useState(false);
+
+  // Admin invoicing state
+  const [adminInvoices, setAdminInvoices] = useState<Record<string, unknown>[]>([]);
+  const [adjustingInvoice, setAdjustingInvoice] = useState<string | null>(null);
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustNotes, setAdjustNotes] = useState("");
+  const [savingAdjust, setSavingAdjust] = useState(false);
+  const [invoiceFilter, setInvoiceFilter] = useState("all");
+
+  // Monitoring candidates state
+  const [monitoringCandidates, setMonitoringCandidates] = useState<Record<string, unknown>[]>([]);
+  const [monitoringFilter, setMonitoringFilter] = useState("all");
 
   // Candidate full detail state (for overrides/editing check data)
   const [candidateDetail, setCandidateDetail] = useState<Record<string, unknown> | null>(null);
@@ -196,13 +213,24 @@ export default function AdminPanel() {
     try { const d = await adminExtendedApi.getCandidateFullDetail(token, candidateId); setCandidateDetail(d); } catch { /* ignore */ }
   };
 
+  const loadAdminInvoices = useCallback(async () => {
+    if (!token) return;
+    try { const inv = await adminExtendedApi.listInvoices(token); setAdminInvoices(inv); } catch { /* ignore */ }
+  }, [token]);
+
+  const loadMonitoringCandidates = useCallback(async () => {
+    if (!token) return;
+    try { const mc = await adminExtendedApi.getCandidatesMonitoring(token); setMonitoringCandidates(mc); } catch { /* ignore */ }
+  }, [token]);
+
   useEffect(() => { if (tab === "fraud") loadFraudData(); }, [tab, loadFraudData]);
   useEffect(() => { if (tab === "scheduler") loadSchedulerStatus(); }, [tab, loadSchedulerStatus]);
   useEffect(() => { if (tab === "settings") { loadPricing(); loadAlertSettings(); } }, [tab, loadPricing, loadAlertSettings]);
   useEffect(() => { if (tab === "analytics") loadAnalytics(); }, [tab, loadAnalytics]);
-  useEffect(() => { if (tab === "monitoring") loadMonitoringRevenue(); }, [tab, loadMonitoringRevenue]);
+  useEffect(() => { if (tab === "monitoring") { loadMonitoringRevenue(); loadMonitoringCandidates(); } }, [tab, loadMonitoringRevenue, loadMonitoringCandidates]);
   useEffect(() => { if (tab === "agencies" || tab === "user-management") loadAgencies(); }, [tab, loadAgencies]);
   useEffect(() => { if (tab === "audit-logs") loadAuditLogs(); }, [tab, loadAuditLogs]);
+  useEffect(() => { if (tab === "invoicing") loadAdminInvoices(); }, [tab, loadAdminInvoices]);
 
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
@@ -468,6 +496,43 @@ export default function AdminPanel() {
     finally { setRetriggeringId(""); }
   };
 
+  const handleSaveDiscount = async (agencyId: string) => {
+    if (!token) return;
+    setSavingDiscount(true);
+    try {
+      const val = parseFloat(discountValue);
+      if (isNaN(val) || val < 0 || val > 100) { showMessage("Error: Discount must be between 0 and 100"); setSavingDiscount(false); return; }
+      await adminExtendedApi.updateAgencyDiscount(token, agencyId, val);
+      showMessage(`Discount set to ${val}%`);
+      setEditingDiscount(null);
+      loadAgencies();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setSavingDiscount(false); }
+  };
+
+  const handleAdjustInvoice = async (invoiceId: string) => {
+    if (!token) return;
+    setSavingAdjust(true);
+    try {
+      const amt = parseFloat(adjustAmount);
+      if (isNaN(amt) || amt < 0) { showMessage("Error: Invalid amount"); setSavingAdjust(false); return; }
+      await adminExtendedApi.adjustInvoice(token, invoiceId, amt, adjustNotes || undefined);
+      showMessage("Invoice adjusted successfully");
+      setAdjustingInvoice(null);
+      loadAdminInvoices();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setSavingAdjust(false); }
+  };
+
+  const handleMarkInvoicePaid = async (invoiceId: string) => {
+    if (!token) return;
+    try {
+      await adminExtendedApi.markInvoicePaid(token, invoiceId);
+      showMessage("Invoice marked as paid");
+      loadAdminInvoices();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
   const StatusBadge = ({ status }: { status: string }) => {
     const colors: Record<string, string> = {
       compliant: "bg-green-500/20 text-green-400 border-green-500/30",
@@ -605,6 +670,7 @@ export default function AdminPanel() {
             { key: "agencies" as Tab, label: "Agencies", icon: <Ban size={16} /> },
             { key: "user-management" as Tab, label: "User Mgmt", icon: <UserPlus size={16} /> },
             { key: "audit-logs" as Tab, label: "Audit Logs", icon: <History size={16} /> },
+            { key: "invoicing" as Tab, label: "Invoicing", icon: <FileText size={16} /> },
             { key: "subscriptions" as Tab, label: "Subscriptions", icon: <CreditCard size={16} /> },
             { key: "settings" as Tab, label: "Settings", icon: <Settings size={16} /> },
           ]).map((item) => (
@@ -831,6 +897,58 @@ export default function AdminPanel() {
                   </div>
                 </div>
               ) : <p className="text-slate-400 text-sm">Loading revenue data...</p>}
+            </div>
+
+            {/* Annual Monitoring Subscriptions */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-md font-semibold text-white flex items-center gap-2"><Eye className="text-purple-400" size={18} /> Annual Monitoring Subscriptions</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 text-xs">Filter:</span>
+                  {["all", "active", "inactive"].map((f) => (
+                    <button key={f} onClick={() => setMonitoringFilter(f)}
+                      className={`px-2 py-0.5 rounded text-xs font-medium border ${monitoringFilter === f ? "bg-purple-600/30 text-purple-300 border-purple-500/50" : "bg-slate-700/50 text-slate-400 border-slate-600/30 hover:bg-slate-700"}`}>
+                      {f.charAt(0).toUpperCase() + f.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-slate-400 text-xs mb-4">Candidates with active annual monitoring subscriptions will receive continuous compliance updates. Do NOT send monitoring updates to candidates without paid monitoring.</p>
+              {monitoringCandidates.length > 0 ? (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {monitoringCandidates
+                    .filter((mc) => {
+                      if (monitoringFilter === "all") return true;
+                      const hasMonitoring = Number(mc.annual_monitoring) === 1;
+                      return monitoringFilter === "active" ? hasMonitoring : !hasMonitoring;
+                    })
+                    .map((mc, idx) => {
+                      const hasMonitoring = Number(mc.annual_monitoring) === 1;
+                      return (
+                        <div key={idx} className={`flex items-center justify-between p-3 rounded-lg border ${hasMonitoring ? "bg-green-500/10 border-green-500/20" : "bg-slate-700/30 border-slate-600/30"}`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-2.5 h-2.5 rounded-full ${hasMonitoring ? "bg-green-400" : "bg-slate-500"}`} />
+                            <div>
+                              <p className="text-white text-sm font-medium">{String(mc.candidate_name || mc.candidate_email || "Unknown")}</p>
+                              <p className="text-slate-400 text-xs">{String(mc.candidate_email || "")}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-slate-400 text-xs">{String(mc.agency_name || "N/A")}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${hasMonitoring ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-slate-600/30 text-slate-400 border border-slate-500/30"}`}>
+                              {hasMonitoring ? "Monitoring Active" : "No Monitoring"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : <p className="text-slate-500 text-sm">No candidate monitoring data available yet. Candidates will appear here once agencies send invites with monitoring enabled.</p>}
+              <div className="mt-3 flex items-center gap-4 text-xs">
+                <span className="text-green-400">Active: {monitoringCandidates.filter((mc) => Number(mc.annual_monitoring) === 1).length}</span>
+                <span className="text-slate-400">Inactive: {monitoringCandidates.filter((mc) => Number(mc.annual_monitoring) !== 1).length}</span>
+                <span className="text-slate-500">Total: {monitoringCandidates.length}</span>
+              </div>
             </div>
           </div>
         )}
@@ -1229,20 +1347,41 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* Agencies Tab - suspend/activate */}
+        {/* Agencies Tab - suspend/activate + discount */}
         {tab === "agencies" && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-white flex items-center gap-2"><Ban className="text-blue-400" size={22} /> Agency Management</h2>
-            <p className="text-slate-400 text-sm">View, suspend, or reactivate agency accounts. Suspended agencies cannot log in or access the platform.</p>
+            <p className="text-slate-400 text-sm">View, suspend, or reactivate agency accounts. Set per-agency discounts on vetting/monitoring costs.</p>
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
               <table className="w-full"><thead><tr className="border-b border-slate-700">
-                {["Agency Name","Email","Contact","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+                {["Agency Name","Email","Contact","Discount","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {agencies.map((a) => (
                   <tr key={String(a.id)} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="px-4 py-3 text-sm text-white font-medium">{String(a.name)}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{String(a.email)}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{String(a.contact_name || "N/A")}</td>
+                    <td className="px-4 py-3">
+                      {editingDiscount === String(a.id) ? (
+                        <div className="flex items-center gap-1">
+                          <input type="number" min="0" max="100" step="0.5" value={discountValue}
+                            onChange={(e) => setDiscountValue(e.target.value)}
+                            className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs" />
+                          <span className="text-slate-400 text-xs">%</span>
+                          <button onClick={() => handleSaveDiscount(String(a.id))} disabled={savingDiscount}
+                            className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-1 rounded hover:bg-green-600/30">
+                            {savingDiscount ? "..." : "Save"}
+                          </button>
+                          <button onClick={() => setEditingDiscount(null)}
+                            className="text-xs bg-slate-600/20 text-slate-400 border border-slate-600/30 px-2 py-1 rounded hover:bg-slate-600/30">Cancel</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setEditingDiscount(String(a.id)); setDiscountValue(String(Number(a.discount_percent) || 0)); }}
+                          className="text-xs bg-purple-600/20 text-purple-300 border border-purple-600/30 px-2 py-1 rounded hover:bg-purple-600/30">
+                          {Number(a.discount_percent) > 0 ? `${Number(a.discount_percent)}%` : "Set Discount"}
+                        </button>
+                      )}
+                    </td>
                     <td className="px-4 py-3"><StatusBadge status={String(a.status || "active")} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -1256,7 +1395,7 @@ export default function AdminPanel() {
                     </td>
                   </tr>
                 ))}
-                {agencies.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500 text-sm">No agencies found</td></tr>}
+                {agencies.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500 text-sm">No agencies found</td></tr>}
               </tbody></table>
             </div>
           </div>
@@ -1433,6 +1572,111 @@ export default function AdminPanel() {
                 {auditLogs.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500 text-sm">No audit logs found</td></tr>}
               </tbody></table>
             </div>
+          </div>
+        )}
+
+        {/* Invoicing Tab */}
+        {tab === "invoicing" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><FileText className="text-blue-400" size={22} /> Invoice Management</h2>
+            <p className="text-slate-400 text-sm">View all invoices, adjust amounts for partial completion (charge only for completed checks), and mark invoices as paid.</p>
+
+            {/* Filter */}
+            <div className="flex items-center gap-3">
+              <span className="text-slate-400 text-sm">Filter:</span>
+              {["all", "pending", "paid"].map((f) => (
+                <button key={f} onClick={() => setInvoiceFilter(f)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border ${invoiceFilter === f ? "bg-blue-600/30 text-blue-300 border-blue-500/50" : "bg-slate-700/50 text-slate-400 border-slate-600/30 hover:bg-slate-700"}`}>
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+              <table className="w-full"><thead><tr className="border-b border-slate-700">
+                {["Invoice ID","Agency","Candidate","Type","Original Amount","Adjusted","Discount","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-3 py-3">{h}</th>)}
+              </tr></thead><tbody>
+                {adminInvoices
+                  .filter((inv) => invoiceFilter === "all" || String(inv.status) === invoiceFilter)
+                  .map((inv) => {
+                    const invId = String(inv.id);
+                    const originalAmt = Number(inv.sell_amount) || 0;
+                    const adjustedAmt = inv.adjusted_amount != null ? Number(inv.adjusted_amount) : null;
+                    const discount = Number(inv.discount_percent) || 0;
+                    const isAdjusting = adjustingInvoice === invId;
+                    return (
+                      <tr key={invId} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                        <td className="px-3 py-3 text-xs text-slate-300 font-mono">{invId.substring(0, 8)}...</td>
+                        <td className="px-3 py-3 text-sm text-white">{String(inv.agency_name || "N/A")}</td>
+                        <td className="px-3 py-3 text-sm text-slate-300">{String(inv.candidate_email || "N/A")}</td>
+                        <td className="px-3 py-3"><span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">{String(inv.check_type || "vetting")}</span></td>
+                        <td className="px-3 py-3 text-sm text-green-400 font-medium">{"\u00A3"}{originalAmt.toFixed(2)}</td>
+                        <td className="px-3 py-3">
+                          {isAdjusting ? (
+                            <div className="space-y-1">
+                              <input type="number" step="0.01" min="0" max={originalAmt} value={adjustAmount}
+                                onChange={(e) => setAdjustAmount(e.target.value)}
+                                className="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs" placeholder="Amount" />
+                              <input value={adjustNotes} onChange={(e) => setAdjustNotes(e.target.value)}
+                                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs" placeholder="Reason (e.g. 5/7 checks completed)" />
+                              <div className="flex gap-1">
+                                <button onClick={() => handleAdjustInvoice(invId)} disabled={savingAdjust}
+                                  className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-1 rounded hover:bg-green-600/30">
+                                  {savingAdjust ? "..." : "Save"}
+                                </button>
+                                <button onClick={() => setAdjustingInvoice(null)}
+                                  className="text-xs bg-slate-600/20 text-slate-400 border border-slate-600/30 px-2 py-1 rounded hover:bg-slate-600/30">Cancel</button>
+                              </div>
+                            </div>
+                          ) : adjustedAmt != null ? (
+                            <div>
+                              <span className="text-amber-400 text-sm font-medium">{"\u00A3"}{adjustedAmt.toFixed(2)}</span>
+                              {inv.adjustment_notes ? <p className="text-slate-500 text-xs mt-0.5">{String(inv.adjustment_notes)}</p> : null}
+                            </div>
+                          ) : <span className="text-slate-500 text-xs">-</span>}
+                        </td>
+                        <td className="px-3 py-3">
+                          {discount > 0 ? <span className="text-purple-300 text-xs font-medium">{discount}%</span> : <span className="text-slate-500 text-xs">-</span>}
+                        </td>
+                        <td className="px-3 py-3"><StatusBadge status={String(inv.status || "pending")} /></td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-1">
+                            {String(inv.status) !== "paid" && (
+                              <>
+                                <button onClick={() => { setAdjustingInvoice(invId); setAdjustAmount(adjustedAmt != null ? String(adjustedAmt) : String(originalAmt)); setAdjustNotes(String(inv.adjustment_notes || "")); }}
+                                  className="text-xs bg-amber-600/20 text-amber-400 border border-amber-600/30 px-2 py-1 rounded hover:bg-amber-600/30">Adjust</button>
+                                <button onClick={() => handleMarkInvoicePaid(invId)}
+                                  className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-1 rounded hover:bg-green-600/30">Mark Paid</button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                {adminInvoices.filter((inv) => invoiceFilter === "all" || String(inv.status) === invoiceFilter).length === 0 && (
+                  <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500 text-sm">No invoices found</td></tr>
+                )}
+              </tbody></table>
+            </div>
+
+            {/* Summary */}
+            {adminInvoices.length > 0 && (
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4 text-center">
+                  <p className="text-slate-400 text-xs mb-1">Total Invoiced</p>
+                  <p className="text-green-400 font-bold text-xl">{"\u00A3"}{adminInvoices.reduce((sum, inv) => sum + (Number(inv.sell_amount) || 0), 0).toFixed(2)}</p>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4 text-center">
+                  <p className="text-slate-400 text-xs mb-1">Adjusted Total</p>
+                  <p className="text-amber-400 font-bold text-xl">{"\u00A3"}{adminInvoices.reduce((sum, inv) => sum + (inv.adjusted_amount != null ? Number(inv.adjusted_amount) : (Number(inv.sell_amount) || 0)), 0).toFixed(2)}</p>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4 text-center">
+                  <p className="text-slate-400 text-xs mb-1">Paid</p>
+                  <p className="text-blue-400 font-bold text-xl">{"\u00A3"}{adminInvoices.filter((inv) => String(inv.status) === "paid").reduce((sum, inv) => sum + (inv.adjusted_amount != null ? Number(inv.adjusted_amount) : (Number(inv.sell_amount) || 0)), 0).toFixed(2)}</p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

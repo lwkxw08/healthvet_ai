@@ -692,7 +692,137 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
         }
 
 
-# ── 10. Bulk CQC Audit Pack (multi-candidate) ────────────────────
+# ── 10. Candidates with Monitoring Status ────────────────────────
+
+@router.get("/candidates-monitoring")
+async def get_candidates_monitoring_status(current_user: dict = Depends(get_current_user)):
+    """Get all candidates with their annual monitoring subscription status."""
+    require_admin(current_user)
+
+    with get_db() as db:
+        rows = db.execute(
+            """SELECT c.id, c.first_name, c.last_name, c.email, c.compliance_score,
+                      c.compliance_status, c.created_at,
+                      ac.annual_monitoring, ac.vetting_cost_accepted, ac.monitoring_cost_accepted,
+                      ac.employment_status, ac.agency_id,
+                      a.name as agency_name
+               FROM candidates c
+               JOIN agency_candidates ac ON c.id = ac.candidate_id
+               LEFT JOIN agencies a ON ac.agency_id = a.id
+               ORDER BY ac.annual_monitoring DESC, c.last_name ASC"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── 11. Agency Discount Management ───────────────────────────────
+
+class AgencyDiscountUpdate(BaseModel):
+    discount_percent: float  # 0-100
+
+
+@router.put("/agencies/{agency_id}/discount")
+async def update_agency_discount(
+    agency_id: str, data: AgencyDiscountUpdate, current_user: dict = Depends(get_current_user)
+):
+    """Set a discount percentage for a specific agency."""
+    require_admin(current_user)
+    if data.discount_percent < 0 or data.discount_percent > 100:
+        raise HTTPException(status_code=400, detail="Discount must be between 0 and 100")
+
+    with get_db() as db:
+        agency = db.execute("SELECT id, name FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        if not agency:
+            raise HTTPException(status_code=404, detail="Agency not found")
+        db.execute("UPDATE agencies SET discount_percent=? WHERE id=?", (data.discount_percent, agency_id))
+        # Log audit
+        db.execute(
+            "INSERT INTO audit_logs (id, action, entity_type, entity_id, performed_by, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (generate_id(), "set_discount", "agency", agency_id, current_user["sub"],
+             f"Set discount to {data.discount_percent}%", datetime.now(timezone.utc).isoformat()),
+        )
+    return {"status": "ok", "agency_id": agency_id, "discount_percent": data.discount_percent}
+
+
+@router.get("/agencies/{agency_id}/discount")
+async def get_agency_discount(agency_id: str, current_user: dict = Depends(get_current_user)):
+    """Get the discount percentage for a specific agency."""
+    require_admin(current_user)
+    with get_db() as db:
+        row = db.execute("SELECT discount_percent FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Agency not found")
+        return {"agency_id": agency_id, "discount_percent": dict(row).get("discount_percent", 0) or 0}
+
+
+# ── 12. Partial Invoice Adjustment ──────────────────────────────
+
+class InvoiceAdjustment(BaseModel):
+    adjusted_amount: float
+    adjustment_notes: Optional[str] = None
+
+
+@router.put("/invoices/{invoice_id}/adjust")
+async def adjust_invoice(
+    invoice_id: str, data: InvoiceAdjustment, current_user: dict = Depends(get_current_user)
+):
+    """Adjust an invoice amount (for partial completion — charge only for completed checks)."""
+    require_admin(current_user)
+    now = datetime.now(timezone.utc).isoformat()
+
+    with get_db() as db:
+        inv = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        inv_dict = dict(inv)
+        if data.adjusted_amount < 0:
+            raise HTTPException(status_code=400, detail="Adjusted amount cannot be negative")
+        if data.adjusted_amount > inv_dict["sell_amount"]:
+            raise HTTPException(status_code=400, detail="Adjusted amount cannot exceed original amount")
+
+        db.execute(
+            "UPDATE invoices SET adjusted_amount=?, adjustment_notes=? WHERE id=?",
+            (data.adjusted_amount, data.adjustment_notes, invoice_id),
+        )
+        # Log audit
+        db.execute(
+            "INSERT INTO audit_logs (id, action, entity_type, entity_id, performed_by, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (generate_id(), "adjust_invoice", "invoice", invoice_id, current_user["sub"],
+             f"Adjusted from £{inv_dict['sell_amount']:.2f} to £{data.adjusted_amount:.2f}: {data.adjustment_notes or 'N/A'}", now),
+        )
+    return {"status": "ok", "invoice_id": invoice_id, "original_amount": inv_dict["sell_amount"],
+            "adjusted_amount": data.adjusted_amount, "notes": data.adjustment_notes}
+
+
+@router.get("/invoices")
+async def list_all_invoices(current_user: dict = Depends(get_current_user)):
+    """List all invoices with agency details for admin invoicing view."""
+    require_admin(current_user)
+    with get_db() as db:
+        rows = db.execute(
+            """SELECT i.*, a.name as agency_name, a.discount_percent
+               FROM invoices i
+               LEFT JOIN agencies a ON i.agency_id = a.id
+               ORDER BY i.created_at DESC"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+@router.put("/invoices/{invoice_id}/status")
+async def update_invoice_status(
+    invoice_id: str, current_user: dict = Depends(get_current_user)
+):
+    """Mark an invoice as paid."""
+    require_admin(current_user)
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as db:
+        inv = db.execute("SELECT id FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        db.execute("UPDATE invoices SET status='paid', paid_at=? WHERE id=?", (now, invoice_id))
+    return {"status": "ok", "invoice_id": invoice_id}
+
+
+# ── 13. Bulk CQC Audit Pack (multi-candidate) ────────────────────
 
 @router.post("/audit/bulk")
 async def generate_bulk_audit_pack(

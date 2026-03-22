@@ -48,6 +48,12 @@ export default function AgencyDashboard() {
   const [downloadingBulkAudit, setDownloadingBulkAudit] = useState(false);
   const [downloadingSingleAudit, setDownloadingSingleAudit] = useState("");
 
+  // Invite cost confirmation modal state
+  const [inviteCostModalOpen, setInviteCostModalOpen] = useState(false);
+  const [invitePricing, setInvitePricing] = useState<{ vetting_total: number; monitoring_annual_price: number } | null>(null);
+  const [includeMonitoring, setIncludeMonitoring] = useState(false);
+  const [invitePricingLoading, setInvitePricingLoading] = useState(false);
+
   // Re-vet state
   const [revetModalOpen, setRevetModalOpen] = useState(false);
   const [revetCandidate, setRevetCandidate] = useState<Record<string, unknown> | null>(null);
@@ -158,15 +164,32 @@ export default function AgencyDashboard() {
     }
   };
 
-  const sendInvite = async () => {
+  const openInviteCostModal = async () => {
+    if (!token || !inviteEmail.trim()) return;
+    setInvitePricingLoading(true);
+    setInviteError("");
+    try {
+      const pricing = await agencyInvitesApi.getVettingPricing(token);
+      setInvitePricing(pricing);
+      setIncludeMonitoring(false);
+      setInviteCostModalOpen(true);
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : "Failed to load pricing");
+    } finally {
+      setInvitePricingLoading(false);
+    }
+  };
+
+  const confirmAndSendInvite = async () => {
     if (!token || !inviteEmail.trim()) return;
     setInviteLoading(true);
     setInviteError("");
     setInviteSuccess("");
     try {
-      const result = await agencyInvitesApi.createInvite(token, inviteEmail.trim());
+      const result = await agencyInvitesApi.createInvite(token, inviteEmail.trim(), includeMonitoring);
       setInviteSuccess(`Invite sent to ${inviteEmail}. Code: ${result.invite_code as string}`);
       setInviteEmail("");
+      setInviteCostModalOpen(false);
       await loadData();
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : "Failed to send invite");
@@ -839,14 +862,14 @@ export default function AgencyDashboard() {
                   onChange={(e) => setInviteEmail(e.target.value)}
                   placeholder="candidate@example.com"
                   className="flex-1 bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2.5 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  onKeyDown={(e) => e.key === "Enter" && sendInvite()}
+                  onKeyDown={(e) => e.key === "Enter" && openInviteCostModal()}
                 />
                 <button
-                  onClick={sendInvite}
-                  disabled={inviteLoading || !inviteEmail.trim()}
+                  onClick={openInviteCostModal}
+                  disabled={inviteLoading || invitePricingLoading || !inviteEmail.trim()}
                   className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors"
                 >
-                  <Send size={16} /> {inviteLoading ? "Sending..." : "Send Invite"}
+                  <Send size={16} /> {invitePricingLoading ? "Loading..." : "Send Invite"}
                 </button>
               </div>
               {inviteSuccess && (
@@ -1210,6 +1233,79 @@ export default function AgencyDashboard() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Invite Cost Confirmation Modal */}
+        {inviteCostModalOpen && invitePricing && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-md">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <DollarSign className="text-green-400" size={20} /> Confirm Vetting Cost
+                  </h3>
+                  <button onClick={() => setInviteCostModalOpen(false)} className="text-slate-400 hover:text-white text-xl bg-transparent border-none cursor-pointer">&times;</button>
+                </div>
+                <p className="text-slate-300 text-sm mb-1">
+                  Candidate: <span className="font-semibold text-white">{inviteEmail}</span>
+                </p>
+                <p className="text-slate-400 text-xs mb-5">Please confirm the vetting cost before sending the invite.</p>
+
+                <div className="space-y-4">
+                  {/* Total vetting cost */}
+                  <div className="flex justify-between items-center p-4 bg-slate-700/50 rounded-lg border border-slate-600">
+                    <div>
+                      <p className="text-white font-medium text-sm">Full Automated Vetting</p>
+                      <p className="text-slate-400 text-xs mt-0.5">All compliance checks included</p>
+                    </div>
+                    <span className="text-green-400 font-bold text-xl">£{invitePricing.vetting_total.toFixed(2)}</span>
+                  </div>
+
+                  {/* Optional annual monitoring */}
+                  <label className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600 cursor-pointer hover:bg-slate-700/70 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={includeMonitoring}
+                        onChange={(e) => setIncludeMonitoring(e.target.checked)}
+                        className="w-5 h-5 rounded accent-blue-500"
+                      />
+                      <div>
+                        <p className="text-white font-medium text-sm">Annual Monitoring Service</p>
+                        <p className="text-slate-400 text-xs mt-0.5">Continuous compliance monitoring for 12 months</p>
+                      </div>
+                    </div>
+                    <span className="text-blue-400 font-bold text-lg">£{invitePricing.monitoring_annual_price.toFixed(2)}</span>
+                  </label>
+
+                  {/* Total */}
+                  <div className="flex justify-between items-center p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                    <span className="text-green-300 font-semibold text-sm">Total Cost</span>
+                    <span className="text-green-400 font-bold text-2xl">
+                      £{(invitePricing.vetting_total + (includeMonitoring ? invitePricing.monitoring_annual_price : 0)).toFixed(2)}
+                    </span>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setInviteCostModalOpen(false)}
+                      className="flex-1 bg-slate-600 hover:bg-slate-500 text-white rounded-lg py-2.5 text-sm font-medium border-none cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmAndSendInvite}
+                      disabled={inviteLoading}
+                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium flex items-center justify-center gap-2 border-none cursor-pointer"
+                    >
+                      <Send size={14} /> {inviteLoading ? "Sending..." : "Accept & Send Invite"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

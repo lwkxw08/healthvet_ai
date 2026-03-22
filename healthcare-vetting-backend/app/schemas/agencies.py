@@ -29,6 +29,7 @@ class AgencyLogin(BaseModel):
 
 class InviteCreate(BaseModel):
     candidate_email: str
+    include_monitoring: bool = False
 
 
 class InviteResponse(BaseModel):

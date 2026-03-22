@@ -274,6 +274,24 @@ export const adminExtendedApi = {
   // Full candidate detail (admin view)
   getCandidateFullDetail: (token: string, candidateId: string) =>
     apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/full-detail`, { token }),
+
+  // Candidates monitoring status
+  getCandidatesMonitoring: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/candidates-monitoring", { token }),
+
+  // Agency discount management
+  getAgencyDiscount: (token: string, agencyId: string) =>
+    apiRequest<{ agency_id: string; discount_percent: number }>(`/api/admin/agencies/${agencyId}/discount`, { token }),
+  updateAgencyDiscount: (token: string, agencyId: string, discountPercent: number) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/agencies/${agencyId}/discount`, { method: "PUT", body: { discount_percent: discountPercent }, token }),
+
+  // Invoice management
+  listInvoices: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/invoices", { token }),
+  adjustInvoice: (token: string, invoiceId: string, adjustedAmount: number, notes?: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/invoices/${invoiceId}/adjust`, { method: "PUT", body: { adjusted_amount: adjustedAmount, adjustment_notes: notes }, token }),
+  markInvoicePaid: (token: string, invoiceId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/invoices/${invoiceId}/status`, { method: "PUT", token }),
 };
 
 // Agency Services & Status API
@@ -418,8 +436,10 @@ export const agencyRevetApi = {
 
 // Agency Invites API
 export const agencyInvitesApi = {
-  createInvite: (token: string, candidateEmail: string) =>
-    apiRequest<Record<string, unknown>>("/api/agencies/invites", { method: "POST", body: { candidate_email: candidateEmail }, token }),
+  getVettingPricing: (token: string) =>
+    apiRequest<{ vetting_total: number; monitoring_annual_price: number }>("/api/agencies/vetting-pricing", { token }),
+  createInvite: (token: string, candidateEmail: string, includeMonitoring: boolean = false) =>
+    apiRequest<Record<string, unknown>>("/api/agencies/invites", { method: "POST", body: { candidate_email: candidateEmail, include_monitoring: includeMonitoring }, token }),
   listInvites: (token: string) =>
     apiRequest<Record<string, unknown>[]>("/api/agencies/invites", { token }),
   revokeInvite: (token: string, inviteId: string) =>

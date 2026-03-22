@@ -118,6 +118,41 @@ def migrate_db():
             cursor.execute("ALTER TABLE agency_candidates ADD COLUMN employment_status TEXT DEFAULT 'vetting'")
         if "employment_status_updated_at" not in existing_ac_cols:
             cursor.execute("ALTER TABLE agency_candidates ADD COLUMN employment_status_updated_at TEXT")
+        if "annual_monitoring" not in existing_ac_cols:
+            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN annual_monitoring INTEGER DEFAULT 0")
+        if "vetting_cost_accepted" not in existing_ac_cols:
+            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN vetting_cost_accepted REAL DEFAULT 0")
+        if "monitoring_cost_accepted" not in existing_ac_cols:
+            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN monitoring_cost_accepted REAL DEFAULT 0")
+    except Exception:
+        pass
+    # Add include_monitoring and cost columns to agency_invites if missing
+    try:
+        existing_inv_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_invites)").fetchall()}
+        if "include_monitoring" not in existing_inv_cols:
+            cursor.execute("ALTER TABLE agency_invites ADD COLUMN include_monitoring INTEGER DEFAULT 0")
+        if "vetting_cost" not in existing_inv_cols:
+            cursor.execute("ALTER TABLE agency_invites ADD COLUMN vetting_cost REAL DEFAULT 0")
+        if "monitoring_cost" not in existing_inv_cols:
+            cursor.execute("ALTER TABLE agency_invites ADD COLUMN monitoring_cost REAL DEFAULT 0")
+    except Exception:
+        pass
+    # Add discount_percent column to agencies if missing
+    try:
+        existing_ag_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agencies)").fetchall()}
+        if "discount_percent" not in existing_ag_cols:
+            cursor.execute("ALTER TABLE agencies ADD COLUMN discount_percent REAL DEFAULT 0")
+    except Exception:
+        pass
+    # Add adjusted_amount and adjustment_notes columns to invoices if missing
+    try:
+        existing_inv2_cols = {row[1] for row in cursor.execute("PRAGMA table_info(invoices)").fetchall()}
+        if "adjusted_amount" not in existing_inv2_cols:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN adjusted_amount REAL")
+        if "adjustment_notes" not in existing_inv2_cols:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN adjustment_notes TEXT")
+        if "candidate_email" not in existing_inv2_cols:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN candidate_email TEXT")
     except Exception:
         pass
     # Create pricing_settings table if it doesn't exist

@@ -11,6 +11,29 @@ from app.schemas.agencies import InviteCreate, InviteResponse
 router = APIRouter(prefix="/api/agencies", tags=["Agencies"])
 
 
+@router.get("/vetting-pricing")
+async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
+    """Get the total vetting cost and annual monitoring cost for the cost confirmation modal."""
+    if current_user["type"] != "agency":
+        raise HTTPException(status_code=403, detail="Agencies only")
+
+    with get_db() as db:
+        rows = db.execute("SELECT check_type, label, sell_price FROM pricing_settings").fetchall()
+        checks = [dict(r) for r in rows]
+        # Sum all check sell prices for full vetting (exclude monitoring)
+        vetting_total = sum(c["sell_price"] for c in checks if c["check_type"] != "monitoring")
+        # Get monitoring price separately
+        monitoring_price = 0.0
+        for c in checks:
+            if c["check_type"] == "monitoring":
+                monitoring_price = c["sell_price"]
+                break
+        return {
+            "vetting_total": round(vetting_total, 2),
+            "monitoring_annual_price": round(monitoring_price, 2),
+        }
+
+
 @router.post("/invites", response_model=InviteResponse)
 async def create_invite(data: InviteCreate, current_user: dict = Depends(get_current_user)):
     """Agency creates an invite for a candidate email."""
@@ -20,6 +43,7 @@ async def create_invite(data: InviteCreate, current_user: dict = Depends(get_cur
     agency_id = current_user["sub"]
     invite_code = secrets.token_urlsafe(16)
     invite_id = generate_id()
+    now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
         # Get agency name for the response
@@ -37,11 +61,39 @@ async def create_invite(data: InviteCreate, current_user: dict = Depends(get_cur
                 detail="A pending invite already exists for this email",
             )
 
+        # Calculate vetting cost and monitoring cost from pricing_settings
+        rows = db.execute("SELECT check_type, sell_price FROM pricing_settings").fetchall()
+        checks = [dict(r) for r in rows]
+        vetting_cost = sum(c["sell_price"] for c in checks if c["check_type"] != "monitoring")
+        monitoring_cost = 0.0
+        if data.include_monitoring:
+            for c in checks:
+                if c["check_type"] == "monitoring":
+                    monitoring_cost = c["sell_price"]
+                    break
+
         db.execute(
-            """INSERT INTO agency_invites (id, agency_id, candidate_email, invite_code, status, created_at)
-               VALUES (?, ?, ?, ?, 'pending', ?)""",
-            (invite_id, agency_id, data.candidate_email, invite_code, datetime.now(timezone.utc).isoformat()),
+            """INSERT INTO agency_invites (id, agency_id, candidate_email, invite_code, status, created_at, include_monitoring, vetting_cost, monitoring_cost)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
+            (invite_id, agency_id, data.candidate_email, invite_code, now,
+             1 if data.include_monitoring else 0, round(vetting_cost, 2), round(monitoring_cost, 2)),
         )
+
+        # Create invoice line items for the vetting cost
+        db.execute(
+            """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, created_at)
+               VALUES (?, ?, 'full_vetting', 'Full Automated Vetting - ' || ?, ?, ?, 'pending', ?)""",
+            (generate_id(), agency_id, data.candidate_email,
+             round(sum(c["sell_price"] * 0.3 for c in checks if c["check_type"] != "monitoring"), 2),
+             round(vetting_cost, 2), now),
+        )
+        if data.include_monitoring and monitoring_cost > 0:
+            db.execute(
+                """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, created_at)
+                   VALUES (?, ?, 'annual_monitoring', 'Annual Monitoring Service - ' || ?, ?, ?, 'pending', ?)""",
+                (generate_id(), agency_id, data.candidate_email,
+                 round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), now),
+            )
 
     return InviteResponse(
         id=invite_id,
@@ -50,7 +102,7 @@ async def create_invite(data: InviteCreate, current_user: dict = Depends(get_cur
         candidate_email=data.candidate_email,
         invite_code=invite_code,
         status="pending",
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=now,
     )
 
 
@@ -169,10 +221,14 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
             )
             return {"status": "already_assigned", "message": "You are already linked to this agency"}
 
-        # Link candidate to agency
+        # Link candidate to agency with monitoring preferences from invite
+        include_monitoring = invite.get("include_monitoring", 0)
+        vetting_cost = invite.get("vetting_cost", 0)
+        monitoring_cost = invite.get("monitoring_cost", 0)
         db.execute(
-            "INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at) VALUES (?, ?, ?)",
-            (invite["agency_id"], candidate_id, now),
+            """INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at, annual_monitoring, vetting_cost_accepted, monitoring_cost_accepted)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (invite["agency_id"], candidate_id, now, include_monitoring, vetting_cost, monitoring_cost),
         )
 
         # Update invite status
@@ -471,7 +527,8 @@ async def get_candidates_with_status(current_user: dict = Depends(get_current_us
         rows = db.execute(
             """SELECT c.id, c.first_name, c.last_name, c.email, c.compliance_score,
                       c.compliance_status, c.created_at,
-                      ac.employment_status, ac.employment_status_updated_at, ac.assigned_at
+                      ac.employment_status, ac.employment_status_updated_at, ac.assigned_at,
+                      ac.annual_monitoring, ac.vetting_cost_accepted, ac.monitoring_cost_accepted
                FROM candidates c
                JOIN agency_candidates ac ON c.id = ac.candidate_id
                WHERE ac.agency_id=?
