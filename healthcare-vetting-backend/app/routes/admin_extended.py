@@ -785,7 +785,7 @@ async def adjust_invoice(
         )
         # Log audit
         db.execute(
-            "INSERT INTO audit_logs (id, action, entity_type, entity_id, performed_by, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO audit_logs (id, action, entity_type, entity_id, actor, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (generate_id(), "adjust_invoice", "invoice", invoice_id, current_user["sub"],
              f"Adjusted from £{inv_dict['sell_amount']:.2f} to £{data.adjusted_amount:.2f}: {data.adjustment_notes or 'N/A'}", now),
         )
