@@ -100,6 +100,22 @@ export default function AdminPanel() {
   const [adjustNotes, setAdjustNotes] = useState("");
   const [savingAdjust, setSavingAdjust] = useState(false);
   const [invoiceFilter, setInvoiceFilter] = useState("all");
+  const [invoiceAgencyFilter, setInvoiceAgencyFilter] = useState("");
+  const [invoiceTypeFilter, setInvoiceTypeFilter] = useState("");
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+
+  // Grouped invoice generation state
+  const [groupedAgencyId, setGroupedAgencyId] = useState("");
+  const [groupedDateFrom, setGroupedDateFrom] = useState("");
+  const [groupedDateTo, setGroupedDateTo] = useState("");
+  const [generatingGrouped, setGeneratingGrouped] = useState(false);
+  const [groupedResult, setGroupedResult] = useState<Record<string, unknown> | null>(null);
+
+  // Invoicing tab generate state
+  const [invTabAgencyId, setInvTabAgencyId] = useState("");
+  const [invTabDateFrom, setInvTabDateFrom] = useState("");
+  const [invTabDateTo, setInvTabDateTo] = useState("");
+  const [invTabGenerating, setInvTabGenerating] = useState(false);
 
   // Monitoring candidates state
   const [monitoringCandidates, setMonitoringCandidates] = useState<Record<string, unknown>[]>([]);
@@ -228,7 +244,7 @@ export default function AdminPanel() {
   useEffect(() => { if (tab === "settings") { loadPricing(); loadAlertSettings(); } }, [tab, loadPricing, loadAlertSettings]);
   useEffect(() => { if (tab === "analytics") loadAnalytics(); }, [tab, loadAnalytics]);
   useEffect(() => { if (tab === "monitoring") { loadMonitoringRevenue(); loadMonitoringCandidates(); } }, [tab, loadMonitoringRevenue, loadMonitoringCandidates]);
-  useEffect(() => { if (tab === "agencies" || tab === "user-management") loadAgencies(); }, [tab, loadAgencies]);
+  useEffect(() => { if (tab === "agencies" || tab === "user-management" || tab === "invoicing") loadAgencies(); }, [tab, loadAgencies]);
   useEffect(() => { if (tab === "audit-logs") loadAuditLogs(); }, [tab, loadAuditLogs]);
   useEffect(() => { if (tab === "invoicing") loadAdminInvoices(); }, [tab, loadAdminInvoices]);
 
@@ -531,6 +547,19 @@ export default function AdminPanel() {
       showMessage("Invoice marked as paid");
       loadAdminInvoices();
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  const handleGenerateGroupedInvoice = async (agencyId: string, dateFrom: string, dateTo: string, setLoading: (v: boolean) => void) => {
+    if (!token || !agencyId || !dateFrom || !dateTo) { showMessage("Error: Please select an agency and date range"); return; }
+    setLoading(true);
+    try {
+      const result = await adminApi.generateGroupedInvoices(token, agencyId, dateFrom, dateTo);
+      const gen = (result as Record<string, unknown>).generated as number;
+      setGroupedResult(result as Record<string, unknown>);
+      showMessage(`Generated ${gen} itemised invoice line items for ${(result as Record<string, unknown>).agency}`);
+      await Promise.all([loadAnalytics(), loadAdminInvoices()]);
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setLoading(false); }
   };
 
   const StatusBadge = ({ status }: { status: string }) => {
@@ -1027,18 +1056,69 @@ export default function AdminPanel() {
                       <td className="px-4 py-3 text-sm text-white">{a.agency_name as string}</td>
                       <td className="px-4 py-3 text-sm text-white">{a.total_candidates as number}</td>
                       <td className="px-4 py-3 text-sm text-green-400">{a.compliant_candidates as number}</td>
-                      <td className="px-4 py-3 text-sm text-green-400">£{((a.revenue as number) || 0).toFixed(2)}</td>
-                      <td className="px-4 py-3 text-sm text-amber-400">£{((a.cost as number) || 0).toFixed(2)}</td>
-                      <td className="px-4 py-3 text-sm text-emerald-400">£{((a.margin as number) || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-sm text-green-400">{"\u00A3"}{((a.revenue as number) || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-sm text-amber-400">{"\u00A3"}{((a.cost as number) || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-sm text-emerald-400">{"\u00A3"}{((a.margin as number) || 0).toFixed(2)}</td>
                       <td className="px-4 py-3">
-                        <button onClick={() => generateInvoicesForAgency(a.agency_id as string)} disabled={generatingInvoices === a.agency_id}
-                          className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 disabled:opacity-50 flex items-center gap-1">
-                          <FileText size={12} /> {generatingInvoices === a.agency_id ? "Generating..." : "Generate Invoices"}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => generateInvoicesForAgency(a.agency_id as string)} disabled={generatingInvoices === a.agency_id}
+                            className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 disabled:opacity-50 flex items-center gap-1">
+                            <FileText size={12} /> {generatingInvoices === a.agency_id ? "Generating..." : "Generate All"}
+                          </button>
+                          <button onClick={() => { setGroupedAgencyId(a.agency_id as string); setGroupedResult(null); }}
+                            className="text-xs bg-purple-600/20 text-purple-400 border border-purple-600/30 px-3 py-1 rounded-full hover:bg-purple-600/30 flex items-center gap-1">
+                            <CreditCard size={12} /> Periodic Invoice
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody></table></div>
+
+                {/* Grouped/Periodic Invoice Generation */}
+                {groupedAgencyId && (
+                  <div className="mt-4 p-4 bg-slate-700/50 rounded-lg border border-purple-500/30">
+                    <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2"><CreditCard className="text-purple-400" size={16} /> Generate Periodic Invoice — {agencyData.find(a => a.agency_id === groupedAgencyId)?.agency_name as string}</h4>
+                    <p className="text-slate-400 text-xs mb-3">Select a date range to group all completed checks into a single itemised invoice for this agency.</p>
+                    <div className="flex items-end gap-3 mb-3">
+                      <div><label className="text-xs text-slate-400 block mb-1">From</label><input type="date" value={groupedDateFrom} onChange={(e) => setGroupedDateFrom(e.target.value)} className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-white text-sm" /></div>
+                      <div><label className="text-xs text-slate-400 block mb-1">To</label><input type="date" value={groupedDateTo} onChange={(e) => setGroupedDateTo(e.target.value)} className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-white text-sm" /></div>
+                      <button onClick={() => handleGenerateGroupedInvoice(groupedAgencyId, groupedDateFrom, groupedDateTo, setGeneratingGrouped)} disabled={generatingGrouped || !groupedDateFrom || !groupedDateTo}
+                        className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 disabled:opacity-50 text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-1">
+                        <FileText size={14} /> {generatingGrouped ? "Generating..." : "Generate Itemised Invoice"}
+                      </button>
+                      <button onClick={() => { setGroupedAgencyId(""); setGroupedResult(null); }} className="text-xs text-slate-400 hover:text-slate-300 px-2 py-1.5">Cancel</button>
+                    </div>
+                    {groupedResult && (
+                      <div className="mt-3 bg-slate-800/80 rounded-lg p-4 border border-slate-600">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="text-sm font-medium text-white">Invoice Summary: {groupedResult.agency as string}</h5>
+                          <span className="text-xs text-slate-400">{groupedResult.date_from as string} — {groupedResult.date_to as string}</span>
+                        </div>
+                        {(groupedResult.discount_percent as number) > 0 && <p className="text-xs text-purple-300 mb-2">Agency discount: {groupedResult.discount_percent as number}% applied</p>}
+                        {(groupedResult.line_items as Record<string, unknown>[])?.length > 0 ? (
+                          <table className="w-full text-sm"><thead><tr className="border-b border-slate-700">
+                            {["Candidate","Check","Description","Cost","Sell"].map(h => <th key={h} className="text-left text-xs text-slate-400 px-2 py-1">{h}</th>)}
+                          </tr></thead><tbody>
+                            {(groupedResult.line_items as Record<string, unknown>[]).map((li, idx) => (
+                              <tr key={idx} className="border-b border-slate-700/30">
+                                <td className="px-2 py-1 text-slate-300 text-xs">{li.candidate as string}</td>
+                                <td className="px-2 py-1 text-xs"><span className="bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded text-xs">{(li.check_type as string).replace(/_/g, " ")}</span></td>
+                                <td className="px-2 py-1 text-slate-300 text-xs">{li.description as string}</td>
+                                <td className="px-2 py-1 text-amber-400 text-xs">{"\u00A3"}{(Number(li.cost) || 0).toFixed(2)}</td>
+                                <td className="px-2 py-1 text-green-400 text-xs">{"\u00A3"}{(Number(li.sell) || 0).toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody><tfoot><tr className="border-t border-slate-600">
+                            <td colSpan={3} className="px-2 py-2 text-white text-sm font-medium">Total ({groupedResult.generated as number} items)</td>
+                            <td className="px-2 py-2 text-amber-400 font-medium">{"\u00A3"}{(Number(groupedResult.total_cost) || 0).toFixed(2)}</td>
+                            <td className="px-2 py-2 text-green-400 font-medium">{"\u00A3"}{(Number(groupedResult.total_sell) || 0).toFixed(2)}</td>
+                          </tr></tfoot></table>
+                        ) : <p className="text-slate-400 text-sm">No new invoiceable items found in this date range.</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1053,7 +1133,7 @@ export default function AdminPanel() {
                     <tr key={inv.id as string} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                       <td className="px-3 py-2 text-sm text-slate-300 max-w-xs truncate">{inv.description as string}</td>
                       <td className="px-3 py-2 text-xs text-slate-400 capitalize">{((inv.check_type as string) || "").replace(/_/g, " ")}</td>
-                      <td className="px-3 py-2 text-sm text-green-400 font-medium">£{((inv.sell_amount as number) || 0).toFixed(2)}</td>
+                      <td className="px-3 py-2 text-sm font-medium">{inv.adjusted_amount != null ? (<><span className="text-amber-400">{"\u00A3"}{(Number(inv.adjusted_amount) || 0).toFixed(2)}</span><span className="text-slate-500 text-xs ml-1 line-through">{"\u00A3"}{(Number(inv.sell_amount) || 0).toFixed(2)}</span></>) : (<span className="text-green-400">{"\u00A3"}{(Number(inv.sell_amount) || 0).toFixed(2)}</span>)}</td>
                       <td className="px-3 py-2"><StatusBadge status={inv.status as string} /></td>
                       <td className="px-3 py-2 text-xs text-slate-400">{(inv.created_at as string)?.split("T")[0]}</td>
                       <td className="px-3 py-2">{inv.status === "pending" && <button onClick={() => markInvoicePaid(inv.id as string)} className="text-xs text-green-400 hover:text-green-300">Mark Paid</button>}</td>
@@ -1581,15 +1661,66 @@ export default function AdminPanel() {
             <h2 className="text-xl font-bold text-white flex items-center gap-2"><FileText className="text-blue-400" size={22} /> Invoice Management</h2>
             <p className="text-slate-400 text-sm">View all invoices, adjust amounts for partial completion (charge only for completed checks), and mark invoices as paid.</p>
 
-            {/* Filter */}
-            <div className="flex items-center gap-3">
-              <span className="text-slate-400 text-sm">Filter:</span>
+            {/* Generate Invoice Section */}
+            <div className="bg-slate-800/80 rounded-xl border border-purple-500/30 p-5">
+              <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><PlusCircle className="text-purple-400" size={18} /> Generate Invoices</h3>
+              <p className="text-slate-400 text-xs mb-3">Generate itemised invoices for an agency. Select a date range for periodic invoicing, or leave blank to generate for all completed checks.</p>
+              <div className="flex items-end gap-3 flex-wrap">
+                <div><label className="text-xs text-slate-400 block mb-1">Agency</label>
+                  <select value={invTabAgencyId} onChange={(e) => setInvTabAgencyId(e.target.value)}
+                    className="bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-white text-sm min-w-48">
+                    <option value="">Select agency...</option>
+                    {agencies.map((ag) => <option key={ag.id as string} value={ag.id as string}>{ag.name as string}</option>)}
+                  </select>
+                </div>
+                <div><label className="text-xs text-slate-400 block mb-1">From (optional)</label><input type="date" value={invTabDateFrom} onChange={(e) => setInvTabDateFrom(e.target.value)} className="bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-white text-sm" /></div>
+                <div><label className="text-xs text-slate-400 block mb-1">To (optional)</label><input type="date" value={invTabDateTo} onChange={(e) => setInvTabDateTo(e.target.value)} className="bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-white text-sm" /></div>
+                <button onClick={() => {
+                  if (!invTabAgencyId) { showMessage("Error: Please select an agency"); return; }
+                  if (invTabDateFrom && invTabDateTo) {
+                    handleGenerateGroupedInvoice(invTabAgencyId, invTabDateFrom, invTabDateTo, setInvTabGenerating);
+                  } else {
+                    generateInvoicesForAgency(invTabAgencyId);
+                  }
+                }} disabled={invTabGenerating || generatingInvoices === invTabAgencyId || !invTabAgencyId}
+                  className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 disabled:opacity-50 text-white px-5 py-1.5 rounded text-sm font-medium flex items-center gap-1">
+                  <FileText size={14} /> {invTabGenerating || generatingInvoices === invTabAgencyId ? "Generating..." : "Generate Invoices"}
+                </button>
+              </div>
+            </div>
+
+            {/* Filters & Search */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-slate-400 text-sm">Status:</span>
               {["all", "pending", "paid"].map((f) => (
                 <button key={f} onClick={() => setInvoiceFilter(f)}
                   className={`px-3 py-1 rounded-full text-xs font-medium border ${invoiceFilter === f ? "bg-blue-600/30 text-blue-300 border-blue-500/50" : "bg-slate-700/50 text-slate-400 border-slate-600/30 hover:bg-slate-700"}`}>
                   {f.charAt(0).toUpperCase() + f.slice(1)}
                 </button>
               ))}
+              <span className="text-slate-600">|</span>
+              <select value={invoiceAgencyFilter} onChange={(e) => setInvoiceAgencyFilter(e.target.value)}
+                className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs">
+                <option value="">All Agencies</option>
+                {[...new Set(adminInvoices.map((inv) => String(inv.agency_name || "")))].filter(Boolean).map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <select value={invoiceTypeFilter} onChange={(e) => setInvoiceTypeFilter(e.target.value)}
+                className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs">
+                <option value="">All Types</option>
+                {[...new Set(adminInvoices.map((inv) => String(inv.check_type || "")))].filter(Boolean).map((ct) => (
+                  <option key={ct} value={ct}>{ct.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+              <span className="text-slate-600">|</span>
+              <input value={invoiceSearch} onChange={(e) => setInvoiceSearch(e.target.value)}
+                placeholder="Search invoice ID, candidate, agency..."
+                className="bg-slate-700 border border-slate-600 rounded px-3 py-1 text-white text-xs w-64" />
+              {(invoiceAgencyFilter || invoiceTypeFilter || invoiceSearch || invoiceFilter !== "all") && (
+                <button onClick={() => { setInvoiceFilter("all"); setInvoiceAgencyFilter(""); setInvoiceTypeFilter(""); setInvoiceSearch(""); }}
+                  className="text-xs text-slate-400 hover:text-slate-300 underline">Clear filters</button>
+              )}
             </div>
 
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
@@ -1597,7 +1728,17 @@ export default function AdminPanel() {
                 {["Invoice ID","Agency","Candidate","Type","Original Amount","Adjusted","Discount","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-3 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {adminInvoices
-                  .filter((inv) => invoiceFilter === "all" || String(inv.status) === invoiceFilter)
+                  .filter((inv) => {
+                    if (invoiceFilter !== "all" && String(inv.status) !== invoiceFilter) return false;
+                    if (invoiceAgencyFilter && String(inv.agency_name || "") !== invoiceAgencyFilter) return false;
+                    if (invoiceTypeFilter && String(inv.check_type || "") !== invoiceTypeFilter) return false;
+                    if (invoiceSearch) {
+                      const q = invoiceSearch.toLowerCase();
+                      const searchable = `${String(inv.id || "")} ${String(inv.agency_name || "")} ${String(inv.candidate_email || "")} ${String(inv.check_type || "")} ${String(inv.description || "")}`.toLowerCase();
+                      if (!searchable.includes(q)) return false;
+                    }
+                    return true;
+                  })
                   .map((inv) => {
                     const invId = String(inv.id);
                     const originalAmt = Number(inv.sell_amount) || 0;
@@ -1654,15 +1795,21 @@ export default function AdminPanel() {
                       </tr>
                     );
                   })}
-                {adminInvoices.filter((inv) => invoiceFilter === "all" || String(inv.status) === invoiceFilter).length === 0 && (
-                  <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500 text-sm">No invoices found</td></tr>
+                {adminInvoices.filter((inv) => {
+                  if (invoiceFilter !== "all" && String(inv.status) !== invoiceFilter) return false;
+                  if (invoiceAgencyFilter && String(inv.agency_name || "") !== invoiceAgencyFilter) return false;
+                  if (invoiceTypeFilter && String(inv.check_type || "") !== invoiceTypeFilter) return false;
+                  if (invoiceSearch) { const q = invoiceSearch.toLowerCase(); const s = `${String(inv.id || "")} ${String(inv.agency_name || "")} ${String(inv.candidate_email || "")} ${String(inv.check_type || "")} ${String(inv.description || "")}`.toLowerCase(); if (!s.includes(q)) return false; }
+                  return true;
+                }).length === 0 && (
+                  <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500 text-sm">No invoices found matching filters</td></tr>
                 )}
               </tbody></table>
             </div>
 
             {/* Summary */}
             {adminInvoices.length > 0 && (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4 text-center">
                   <p className="text-slate-400 text-xs mb-1">Total Invoiced</p>
                   <p className="text-green-400 font-bold text-xl">{"\u00A3"}{adminInvoices.reduce((sum, inv) => sum + (Number(inv.sell_amount) || 0), 0).toFixed(2)}</p>
@@ -1674,6 +1821,10 @@ export default function AdminPanel() {
                 <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4 text-center">
                   <p className="text-slate-400 text-xs mb-1">Paid</p>
                   <p className="text-blue-400 font-bold text-xl">{"\u00A3"}{adminInvoices.filter((inv) => String(inv.status) === "paid").reduce((sum, inv) => sum + (inv.adjusted_amount != null ? Number(inv.adjusted_amount) : (Number(inv.sell_amount) || 0)), 0).toFixed(2)}</p>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4 text-center">
+                  <p className="text-slate-400 text-xs mb-1">Outstanding</p>
+                  <p className="text-red-400 font-bold text-xl">{"\u00A3"}{adminInvoices.filter((inv) => String(inv.status) === "pending").reduce((sum, inv) => sum + (inv.adjusted_amount != null ? Number(inv.adjusted_amount) : (Number(inv.sell_amount) || 0)), 0).toFixed(2)}</p>
                 </div>
               </div>
             )}

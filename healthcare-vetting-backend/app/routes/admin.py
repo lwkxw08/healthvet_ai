@@ -2,7 +2,7 @@
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from app.database import get_db
 from app.utils.auth import get_current_user, generate_id
 
@@ -491,3 +491,165 @@ async def generate_invoices_for_agency(
                         generated.append(inv_id)
 
         return {"generated": len(generated), "agency": agency_name, "invoice_ids": generated}
+
+
+class GroupedInvoiceRequest(BaseModel):
+    agency_id: str
+    date_from: str
+    date_to: str
+
+
+@router.post("/invoices/generate-grouped")
+async def generate_grouped_invoice(
+    data: GroupedInvoiceRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Generate a grouped/consolidated invoice for an agency within a date range.
+    Groups all uninvoiced completed checks within the date range into itemised line items."""
+    require_admin(current_user)
+    now = datetime.now(timezone.utc).isoformat()
+
+    with get_db() as db:
+        # Get pricing
+        pricing_rows = db.execute("SELECT * FROM pricing_settings").fetchall()
+        pricing = {dict(r)["check_type"]: dict(r) for r in pricing_rows}
+
+        agency_row = db.execute("SELECT * FROM agencies WHERE id=?", (data.agency_id,)).fetchone()
+        if not agency_row:
+            raise HTTPException(status_code=404, detail="Agency not found")
+        agency = dict(agency_row)
+        agency_name = agency["name"]
+        discount = agency.get("discount_percent") or 0
+
+        # Get agency candidates
+        candidates = db.execute(
+            """SELECT c.* FROM candidates c
+               JOIN agency_candidates ac ON c.id = ac.candidate_id
+               WHERE ac.agency_id=?""",
+            (data.agency_id,),
+        ).fetchall()
+
+        generated = []
+        line_items = []
+
+        for cand in candidates:
+            c = dict(cand)
+            cand_name = f"{c['first_name']} {c['last_name']}"
+            cand_email = c.get("email", "")
+
+            # Check each type of check completed within the date range
+            check_tables = [
+                ("identity", "identity_checks", "completed_at"),
+                ("dbs", "dbs_checks", "completed_at"),
+                ("right_to_work", "right_to_work_checks", "checked_at"),
+                ("cv_analysis", "cv_analyses", "analysed_at"),
+                ("registration", "registration_checks", "last_checked"),
+            ]
+            for check_type, table, date_col in check_tables:
+                completed = db.execute(
+                    f"SELECT COUNT(*) as cnt FROM {table} WHERE candidate_id=? AND status IN ('complete','completed','verified','clear') AND {date_col} >= ? AND {date_col} <= ?",
+                    (c["id"], data.date_from, data.date_to),
+                ).fetchone()
+                if completed and dict(completed)["cnt"] > 0:
+                    existing = db.execute(
+                        "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type=?",
+                        (data.agency_id, c["id"], check_type),
+                    ).fetchone()
+                    if not existing and check_type in pricing:
+                        p = pricing[check_type]
+                        sell = p["sell_price"]
+                        if discount > 0:
+                            sell = round(sell * (1 - discount / 100), 2)
+                        inv_id = generate_id()
+                        db.execute(
+                            """INSERT INTO invoices (id, agency_id, candidate_id, candidate_email, check_type, description, cost_amount, sell_amount, status, created_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                            (inv_id, data.agency_id, c["id"], cand_email, check_type,
+                             f"{p['label']} - {cand_name}", p["cost_price"], sell, now),
+                        )
+                        generated.append(inv_id)
+                        line_items.append({
+                            "invoice_id": inv_id, "candidate": cand_name, "candidate_email": cand_email,
+                            "check_type": check_type, "description": p["label"],
+                            "cost": p["cost_price"], "sell": sell,
+                        })
+
+            # References
+            refs = db.execute(
+                "SELECT COUNT(*) as cnt FROM references_ WHERE candidate_id=? AND status='completed' AND completed_at >= ? AND completed_at <= ?",
+                (c["id"], data.date_from, data.date_to),
+            ).fetchone()
+            ref_count = dict(refs)["cnt"] if refs else 0
+            if ref_count > 0 and "references" in pricing:
+                existing = db.execute(
+                    "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type='references'",
+                    (data.agency_id, c["id"]),
+                ).fetchone()
+                if not existing:
+                    p = pricing["references"]
+                    sell = p["sell_price"] * ref_count
+                    cost = p["cost_price"] * ref_count
+                    if discount > 0:
+                        sell = round(sell * (1 - discount / 100), 2)
+                    inv_id = generate_id()
+                    db.execute(
+                        """INSERT INTO invoices (id, agency_id, candidate_id, candidate_email, check_type, description, cost_amount, sell_amount, status, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                        (inv_id, data.agency_id, c["id"], cand_email, "references",
+                         f"References ({ref_count}x) - {cand_name}", cost, sell, now),
+                    )
+                    generated.append(inv_id)
+                    line_items.append({
+                        "invoice_id": inv_id, "candidate": cand_name, "candidate_email": cand_email,
+                        "check_type": "references", "description": f"References ({ref_count}x)",
+                        "cost": cost, "sell": sell,
+                    })
+
+            # Re-vet requests within date range
+            revet_rows = db.execute(
+                "SELECT rr.* FROM revet_requests rr WHERE rr.agency_id=? AND rr.candidate_id=? AND rr.status IN ('completed', 'pending') AND rr.created_at >= ? AND rr.created_at <= ?",
+                (data.agency_id, c["id"], data.date_from, data.date_to),
+            ).fetchall()
+            for rr in revet_rows:
+                rr_data = dict(rr)
+                import json as _json
+                sections = _json.loads(rr_data["sections"]) if rr_data["sections"] else []
+                for sec in sections:
+                    existing_revet = db.execute(
+                        "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type=? AND description LIKE '%Re-vet%'",
+                        (data.agency_id, c["id"], f"revet_{sec}"),
+                    ).fetchone()
+                    if not existing_revet and sec in pricing:
+                        p = pricing[sec]
+                        sell = p["sell_price"]
+                        if discount > 0:
+                            sell = round(sell * (1 - discount / 100), 2)
+                        inv_id = generate_id()
+                        db.execute(
+                            """INSERT INTO invoices (id, agency_id, candidate_id, candidate_email, check_type, description, cost_amount, sell_amount, status, created_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                            (inv_id, data.agency_id, c["id"], cand_email, f"revet_{sec}",
+                             f"Re-vet: {p['label']} - {cand_name}", p["cost_price"], sell, now),
+                        )
+                        generated.append(inv_id)
+                        line_items.append({
+                            "invoice_id": inv_id, "candidate": cand_name, "candidate_email": cand_email,
+                            "check_type": f"revet_{sec}", "description": f"Re-vet: {p['label']}",
+                            "cost": p["cost_price"], "sell": sell,
+                        })
+
+        total_cost = sum(li["cost"] for li in line_items)
+        total_sell = sum(li["sell"] for li in line_items)
+
+        return {
+            "generated": len(generated),
+            "agency": agency_name,
+            "agency_id": data.agency_id,
+            "date_from": data.date_from,
+            "date_to": data.date_to,
+            "discount_percent": discount,
+            "invoice_ids": generated,
+            "line_items": line_items,
+            "total_cost": round(total_cost, 2),
+            "total_sell": round(total_sell, 2),
+        }
