@@ -294,6 +294,16 @@ export const adminExtendedApi = {
     apiRequest<Record<string, unknown>>(`/api/admin/invoices/${invoiceId}/adjust`, { method: "PUT", body: { adjusted_amount: adjustedAmount, adjustment_notes: notes }, token }),
   markInvoicePaid: (token: string, invoiceId: string) =>
     apiRequest<Record<string, unknown>>(`/api/admin/invoices/${invoiceId}/status`, { method: "PUT", token }),
+
+  // Agency billing mode management
+  getAgencyBillingMode: (token: string, agencyId: string) =>
+    apiRequest<{ agency_id: string; agency_name: string; billing_mode: string; stripe_customer_id: string | null }>(`/api/admin/agencies/${agencyId}/billing-mode`, { token }),
+  updateAgencyBillingMode: (token: string, agencyId: string, billingMode: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/agencies/${agencyId}/billing-mode`, { method: "PUT", body: { billing_mode: billingMode }, token }),
+
+  // Payment reminders
+  sendPaymentReminders: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/billing/send-reminders", { method: "POST", token }),
 };
 
 // Agency Services & Status API
@@ -306,6 +316,10 @@ export const agencyServicesApi = {
     apiRequest<Record<string, unknown>>(`/api/agencies/candidates/${candidateId}/status`, {
       method: "PUT", body: { employment_status: employmentStatus }, token,
     }),
+  getBillingMode: (token: string) =>
+    apiRequest<{ agency_id: string; agency_name: string; billing_mode: string; stripe_customer_id: string | null }>("/api/agencies/billing-mode", { token }),
+  payInvoice: (token: string, invoiceId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/agencies/billing/pay-invoice/${invoiceId}`, { method: "POST", token }),
 };
 
 // Training Certificates API

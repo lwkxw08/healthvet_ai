@@ -579,3 +579,225 @@ class BillingService:
                 (agency_id, limit),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    # -- Agency Billing Mode --
+
+    @staticmethod
+    def get_agency_billing_mode(agency_id: str) -> dict:
+        """Get the billing mode for an agency."""
+        with get_db() as db:
+            row = db.execute(
+                "SELECT id, name, billing_mode, stripe_customer_id FROM agencies WHERE id=?",
+                (agency_id,),
+            ).fetchone()
+            if not row:
+                return {"billing_mode": "manual_invoicing", "stripe_customer_id": None}
+            r = dict(row)
+            return {
+                "agency_id": r["id"],
+                "agency_name": r["name"],
+                "billing_mode": r.get("billing_mode") or "manual_invoicing",
+                "stripe_customer_id": r.get("stripe_customer_id"),
+            }
+
+    @staticmethod
+    def set_agency_billing_mode(agency_id: str, billing_mode: str, stripe_customer_id: str = None) -> dict:
+        """Set the billing mode for an agency (admin only)."""
+        valid_modes = {"manual_invoicing", "online_payment", "subscription"}
+        if billing_mode not in valid_modes:
+            raise ValueError(f"Invalid billing_mode. Valid: {', '.join(valid_modes)}")
+
+        with get_db() as db:
+            row = db.execute("SELECT id, name FROM agencies WHERE id=?", (agency_id,)).fetchone()
+            if not row:
+                raise ValueError("Agency not found")
+
+            updates = {"billing_mode": billing_mode}
+            if stripe_customer_id is not None:
+                updates["stripe_customer_id"] = stripe_customer_id
+
+            set_clause = ", ".join(f"{k}=?" for k in updates.keys())
+            values = list(updates.values()) + [agency_id]
+            db.execute(f"UPDATE agencies SET {set_clause} WHERE id=?", values)
+
+            return BillingService.get_agency_billing_mode(agency_id)
+
+    # -- Stripe PAYG Checkout --
+
+    @staticmethod
+    def create_checkout_session(agency_id: str, invoice_id: str, success_url: str, cancel_url: str) -> dict:
+        """Create a Stripe checkout session for paying an invoice.
+        In production, this calls Stripe API. Currently simulated with a session ID."""
+        import secrets as _secrets
+        now = datetime.now(timezone.utc).isoformat()
+
+        with get_db() as db:
+            inv = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            if not inv:
+                raise ValueError("Invoice not found")
+            invoice = dict(inv)
+
+            if invoice["status"] == "paid":
+                raise ValueError("Invoice is already paid")
+
+            # Generate a simulated Stripe checkout session ID
+            # In production: stripe.checkout.Session.create(...)
+            session_id = f"cs_simulated_{_secrets.token_hex(16)}"
+
+            db.execute(
+                "UPDATE invoices SET stripe_session_id=?, payment_method='stripe' WHERE id=?",
+                (session_id, invoice_id),
+            )
+
+            # Simulated checkout URL (in production, Stripe returns the real URL)
+            checkout_url = f"{success_url}?session_id={session_id}&invoice_id={invoice_id}"
+
+            return {
+                "session_id": session_id,
+                "invoice_id": invoice_id,
+                "amount": invoice.get("adjusted_amount") or invoice["sell_amount"],
+                "checkout_url": checkout_url,
+                "status": "created",
+            }
+
+    @staticmethod
+    def confirm_stripe_payment(session_id: str) -> dict:
+        """Confirm a Stripe payment (webhook handler in production).
+        Simulated: marks invoice as paid when called with valid session_id."""
+        now = datetime.now(timezone.utc).isoformat()
+
+        with get_db() as db:
+            inv = db.execute(
+                "SELECT * FROM invoices WHERE stripe_session_id=?", (session_id,)
+            ).fetchone()
+            if not inv:
+                raise ValueError("No invoice found for this session")
+            invoice = dict(inv)
+
+            if invoice["status"] == "paid":
+                return {"invoice_id": invoice["id"], "status": "already_paid"}
+
+            db.execute(
+                "UPDATE invoices SET status='paid', paid_at=?, payment_method='stripe', stripe_payment_intent_id=? WHERE id=?",
+                (now, f"pi_simulated_{session_id[-16:]}", invoice["id"]),
+            )
+
+            return {
+                "invoice_id": invoice["id"],
+                "status": "paid",
+                "paid_at": now,
+                "amount": invoice.get("adjusted_amount") or invoice["sell_amount"],
+            }
+
+    @staticmethod
+    def pay_invoice_online(invoice_id: str) -> dict:
+        """Agency pays an invoice online (simulated Stripe payment).
+        Used for the 'Pay Now' button in billing history."""
+        now = datetime.now(timezone.utc).isoformat()
+
+        with get_db() as db:
+            inv = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            if not inv:
+                raise ValueError("Invoice not found")
+            invoice = dict(inv)
+
+            if invoice["status"] == "paid":
+                return {"invoice_id": invoice_id, "status": "already_paid", "message": "Invoice is already paid"}
+
+            # Simulate Stripe payment processing
+            import secrets as _secrets
+            payment_intent = f"pi_simulated_{_secrets.token_hex(8)}"
+
+            db.execute(
+                "UPDATE invoices SET status='paid', paid_at=?, payment_method='stripe', stripe_payment_intent_id=? WHERE id=?",
+                (now, payment_intent, invoice_id),
+            )
+
+            return {
+                "invoice_id": invoice_id,
+                "status": "paid",
+                "paid_at": now,
+                "payment_intent": payment_intent,
+                "amount": invoice.get("adjusted_amount") or invoice["sell_amount"],
+                "message": "Payment processed successfully",
+            }
+
+    # -- Payment Reminders --
+
+    @staticmethod
+    def send_payment_reminders() -> list:
+        """Send payment reminders for unpaid invoices older than 7 days.
+        Returns list of reminders sent."""
+        now = datetime.now(timezone.utc)
+        now_str = now.isoformat()
+        reminder_threshold = (now - timedelta(days=7)).isoformat()
+        second_reminder = (now - timedelta(days=14)).isoformat()
+        final_reminder = (now - timedelta(days=21)).isoformat()
+
+        reminders_sent = []
+
+        with get_db() as db:
+            # Find unpaid invoices older than 7 days
+            unpaid = db.execute(
+                """SELECT i.*, a.name as agency_name, a.email as agency_email, a.billing_mode
+                   FROM invoices i
+                   JOIN agencies a ON i.agency_id = a.id
+                   WHERE i.status = 'pending' AND i.created_at <= ?
+                   ORDER BY i.created_at ASC""",
+                (reminder_threshold,),
+            ).fetchall()
+
+            for row in unpaid:
+                inv = dict(row)
+                reminder_count = inv.get("reminder_count") or 0
+                last_reminder = inv.get("reminder_sent_at")
+
+                # Determine if we should send a reminder
+                should_remind = False
+                if reminder_count == 0:
+                    should_remind = True
+                elif reminder_count == 1 and inv["created_at"] <= second_reminder:
+                    should_remind = True
+                elif reminder_count == 2 and inv["created_at"] <= final_reminder:
+                    should_remind = True
+
+                # Don't send more than 3 reminders
+                if reminder_count >= 3:
+                    should_remind = False
+
+                # Don't re-send within 3 days
+                if last_reminder:
+                    try:
+                        last_dt = datetime.fromisoformat(last_reminder)
+                        if (now - last_dt).days < 3:
+                            should_remind = False
+                    except (ValueError, TypeError):
+                        pass
+
+                if should_remind:
+                    amount = inv.get("adjusted_amount") or inv["sell_amount"]
+                    urgency = "Reminder" if reminder_count == 0 else (
+                        "Second Reminder" if reminder_count == 1 else "Final Notice"
+                    )
+
+                    from app.services.email_service import EmailService
+                    EmailService.send_payment_reminder(
+                        inv["agency_email"], inv["agency_name"],
+                        inv["id"], amount, inv.get("description", "Invoice"),
+                        urgency,
+                    )
+
+                    db.execute(
+                        "UPDATE invoices SET reminder_count = reminder_count + 1, reminder_sent_at=? WHERE id=?",
+                        (now_str, inv["id"]),
+                    )
+
+                    reminders_sent.append({
+                        "invoice_id": inv["id"],
+                        "agency_name": inv["agency_name"],
+                        "amount": amount,
+                        "reminder_number": reminder_count + 1,
+                        "urgency": urgency,
+                    })
+
+        return reminders_sent

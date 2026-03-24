@@ -597,6 +597,24 @@ export default function AdminPanel() {
     finally { setSavingDiscount(false); }
   };
 
+  const handleBillingModeChange = async (agencyId: string, newMode: string) => {
+    if (!token) return;
+    try {
+      await adminExtendedApi.updateAgencyBillingMode(token, agencyId, newMode);
+      showMessage(`Billing mode updated to ${newMode.replace(/_/g, " ")}`);
+      loadAgencies();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  const handleSendReminders = async () => {
+    if (!token) return;
+    try {
+      const result = await adminExtendedApi.sendPaymentReminders(token);
+      const count = (result as Record<string, unknown>).reminders_sent as number;
+      showMessage(`${count} payment reminder(s) sent`);
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
   const handleAdjustInvoice = async (invoiceId: string) => {
     if (!token) return;
     setSavingAdjust(true);
@@ -1643,20 +1661,27 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* Agencies Tab - suspend/activate + discount */}
+        {/* Agencies Tab - suspend/activate + discount + billing mode */}
         {tab === "agencies" && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2"><Ban className="text-blue-400" size={22} /> Agency Management</h2>
-            <p className="text-slate-400 text-sm">View, suspend, or reactivate agency accounts. Set per-agency discounts on vetting/monitoring costs.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2"><Ban className="text-blue-400" size={22} /> Agency Management</h2>
+                <p className="text-slate-400 text-sm mt-1">View, suspend, or reactivate agency accounts. Set per-agency discounts and billing modes.</p>
+              </div>
+              <button onClick={handleSendReminders}
+                className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                <Bell size={14} /> Send Payment Reminders
+              </button>
+            </div>
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
               <table className="w-full"><thead><tr className="border-b border-slate-700">
-                {["Agency Name","Email","Contact","Discount","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+                {["Agency Name","Email","Discount","Billing Mode","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {agencies.map((a) => (
                   <tr key={String(a.id)} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="px-4 py-3 text-sm text-white font-medium">{String(a.name)}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{String(a.email)}</td>
-                    <td className="px-4 py-3 text-sm text-slate-300">{String(a.contact_name || "N/A")}</td>
                     <td className="px-4 py-3">
                       {editingDiscount === String(a.id) ? (
                         <div className="flex items-center gap-1">
@@ -1677,6 +1702,17 @@ export default function AdminPanel() {
                           {Number(a.discount_percent) > 0 ? `${Number(a.discount_percent)}%` : "Set Discount"}
                         </button>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={String(a.billing_mode || "manual_invoicing")}
+                        onChange={(e) => handleBillingModeChange(String(a.id), e.target.value)}
+                        className="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="manual_invoicing">Manual Invoicing</option>
+                        <option value="online_payment">Online Payment (PAYG)</option>
+                        <option value="subscription">Subscription</option>
+                      </select>
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={String(a.status || "active")} /></td>
                     <td className="px-4 py-3">

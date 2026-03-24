@@ -156,6 +156,29 @@ class EmailService:
         )
 
     @staticmethod
+    def send_payment_reminder(agency_email: str, agency_name: str,
+                               invoice_id: str, amount: float, description: str,
+                               urgency: str = "Reminder"):
+        """Send payment reminder for unpaid invoice."""
+        subject = f"HealthVet AI - {urgency}: Invoice #{invoice_id[:8]} Payment Due"
+        body = f"Dear {agency_name},\n\n"
+        if urgency == "Final Notice":
+            body += "IMPORTANT: This is your final payment reminder.\n\n"
+        body += f"We have an outstanding invoice that requires your attention:\n\n"
+        body += f"  Invoice: #{invoice_id[:8]}\n"
+        body += f"  Amount Due: \u00a3{amount:.2f}\n"
+        body += f"  Description: {description}\n\n"
+        if urgency == "Final Notice":
+            body += "Failure to pay may result in service suspension.\n\n"
+        body += "Please log in to your dashboard to make payment.\n"
+        body += "\nBest regards,\nHealthVet AI Billing Team"
+
+        EmailService._store_notification(
+            agency_email, agency_name, subject, body,
+            "payment_reminder", invoice_id,
+        )
+
+    @staticmethod
     def get_notifications(recipient_email: str = None, notification_type: str = None,
                           limit: int = 50) -> list:
         """Get stored notifications."""

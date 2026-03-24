@@ -1,6 +1,6 @@
 """Agency management and invite routes."""
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
@@ -34,9 +34,14 @@ async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
         }
 
 
-@router.post("/invites", response_model=InviteResponse)
+@router.post("/invites")
 async def create_invite(data: InviteCreate, current_user: dict = Depends(get_current_user)):
-    """Agency creates an invite for a candidate email."""
+    """Agency creates an invite for a candidate email.
+    Routes payment based on agency billing_mode:
+    - manual_invoicing: creates pending invoice (no Stripe)
+    - online_payment: creates invoice + returns Stripe checkout info for PAYG
+    - subscription: uses credits first, falls back to PAYG if exceeded
+    """
     if current_user["type"] != "agency":
         raise HTTPException(status_code=403, detail="Agencies only")
 
@@ -44,11 +49,18 @@ async def create_invite(data: InviteCreate, current_user: dict = Depends(get_cur
     invite_code = secrets.token_urlsafe(16)
     invite_id = generate_id()
     now = datetime.now(timezone.utc).isoformat()
+    due_date = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
 
     with get_db() as db:
-        # Get agency name for the response
-        agency_row = db.execute("SELECT name FROM agencies WHERE id=?", (agency_id,)).fetchone()
-        agency_name = dict(agency_row)["name"] if agency_row else "Unknown Agency"
+        # Get agency details including billing_mode
+        agency_row = db.execute(
+            "SELECT name, billing_mode, stripe_customer_id, discount_percent FROM agencies WHERE id=?",
+            (agency_id,),
+        ).fetchone()
+        agency_data = dict(agency_row) if agency_row else {}
+        agency_name = agency_data.get("name", "Unknown Agency")
+        billing_mode = agency_data.get("billing_mode") or "manual_invoicing"
+        discount_pct = float(agency_data.get("discount_percent") or 0)
 
         # Check if there's already a pending invite for this email from this agency
         existing = db.execute(
@@ -72,6 +84,11 @@ async def create_invite(data: InviteCreate, current_user: dict = Depends(get_cur
                     monitoring_cost = c["sell_price"]
                     break
 
+        # Apply agency discount if set
+        if discount_pct > 0:
+            vetting_cost = vetting_cost * (1 - discount_pct / 100)
+            monitoring_cost = monitoring_cost * (1 - discount_pct / 100)
+
         db.execute(
             """INSERT INTO agency_invites (id, agency_id, candidate_email, invite_code, status, created_at, include_monitoring, vetting_cost, monitoring_cost)
                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
@@ -79,31 +96,80 @@ async def create_invite(data: InviteCreate, current_user: dict = Depends(get_cur
              1 if data.include_monitoring else 0, round(vetting_cost, 2), round(monitoring_cost, 2)),
         )
 
-        # Create invoice line items for the vetting cost
-        db.execute(
-            """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, created_at)
-               VALUES (?, ?, 'full_vetting', 'Full Automated Vetting - ' || ?, ?, ?, 'pending', ?)""",
-            (generate_id(), agency_id, data.candidate_email,
-             round(sum(c["sell_price"] * 0.3 for c in checks if c["check_type"] != "monitoring"), 2),
-             round(vetting_cost, 2), now),
-        )
-        if data.include_monitoring and monitoring_cost > 0:
-            db.execute(
-                """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                   VALUES (?, ?, 'annual_monitoring', 'Annual Monitoring Service - ' || ?, ?, ?, 'pending', ?)""",
-                (generate_id(), agency_id, data.candidate_email,
-                 round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), now),
-            )
+        # Route based on billing_mode
+        payment_info = {"billing_mode": billing_mode, "payment_required": False}
+        cost_amount = round(sum(c["sell_price"] * 0.3 for c in checks if c["check_type"] != "monitoring"), 2)
 
-    return InviteResponse(
-        id=invite_id,
-        agency_id=agency_id,
-        agency_name=agency_name,
-        candidate_email=data.candidate_email,
-        invite_code=invite_code,
-        status="pending",
-        created_at=now,
-    )
+        if billing_mode == "subscription":
+            # Try to use subscription credits first
+            from app.services.billing import BillingService
+            result = BillingService.use_subscription_check(
+                agency_id, "", f"Full Automated Vetting - {data.candidate_email}",
+                round(vetting_cost, 2), cost_amount, "full_vetting",
+            )
+            payment_info["subscription_result"] = result
+            if result.get("within_credit"):
+                # Covered by subscription — auto-paid
+                payment_info["status"] = "paid_by_subscription"
+                payment_info["credits_remaining"] = result.get("credits_remaining", 0)
+            else:
+                # Credits exceeded — fall back to PAYG
+                payment_info["payment_required"] = True
+                payment_info["status"] = "credits_exceeded"
+                payment_info["invoice_id"] = result.get("invoice_id")
+                payment_info["amount"] = result.get("overage_charge", round(vetting_cost, 2))
+
+        elif billing_mode == "online_payment":
+            # PAYG — create invoice and flag for Stripe payment
+            inv_id = generate_id()
+            db.execute(
+                """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
+                   VALUES (?, ?, 'full_vetting', 'Full Automated Vetting - ' || ?, ?, ?, 'pending', 'stripe', ?, ?)""",
+                (inv_id, agency_id, data.candidate_email, cost_amount,
+                 round(vetting_cost, 2), due_date, now),
+            )
+            if data.include_monitoring and monitoring_cost > 0:
+                mon_inv_id = generate_id()
+                db.execute(
+                    """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
+                       VALUES (?, ?, 'annual_monitoring', 'Annual Monitoring Service - ' || ?, ?, ?, 'pending', 'stripe', ?, ?)""",
+                    (mon_inv_id, agency_id, data.candidate_email,
+                     round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), due_date, now),
+                )
+            payment_info["payment_required"] = True
+            payment_info["status"] = "awaiting_payment"
+            payment_info["invoice_id"] = inv_id
+            payment_info["amount"] = round(vetting_cost, 2)
+
+        else:
+            # manual_invoicing — create pending invoice, no Stripe redirect
+            inv_id = generate_id()
+            db.execute(
+                """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
+                   VALUES (?, ?, 'full_vetting', 'Full Automated Vetting - ' || ?, ?, ?, 'pending', 'manual', ?, ?)""",
+                (inv_id, agency_id, data.candidate_email, cost_amount,
+                 round(vetting_cost, 2), due_date, now),
+            )
+            if data.include_monitoring and monitoring_cost > 0:
+                db.execute(
+                    """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
+                       VALUES (?, ?, 'annual_monitoring', 'Annual Monitoring Service - ' || ?, ?, ?, 'pending', 'manual', ?, ?)""",
+                    (generate_id(), agency_id, data.candidate_email,
+                     round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), due_date, now),
+                )
+            payment_info["status"] = "invoice_created"
+            payment_info["invoice_id"] = inv_id
+
+    return {
+        "id": invite_id,
+        "agency_id": agency_id,
+        "agency_name": agency_name,
+        "candidate_email": data.candidate_email,
+        "invite_code": invite_code,
+        "status": "pending",
+        "created_at": now,
+        "payment": payment_info,
+    }
 
 
 @router.get("/invites", response_model=list[InviteResponse])
@@ -541,3 +607,41 @@ async def get_candidates_with_status(current_user: dict = Depends(get_current_us
             (agency_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ── Agency Billing Mode & Payment ─────────────────────────────────
+
+@router.get("/billing-mode")
+async def get_my_billing_mode(current_user: dict = Depends(get_current_user)):
+    """Get the current agency's billing mode."""
+    if current_user["type"] != "agency":
+        raise HTTPException(status_code=403, detail="Agencies only")
+    from app.services.billing import BillingService
+    return BillingService.get_agency_billing_mode(current_user["sub"])
+
+
+@router.post("/billing/pay-invoice/{invoice_id}")
+async def pay_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Agency pays an outstanding invoice online (simulated Stripe payment).
+    Used for the 'Pay Now' button in billing history."""
+    if current_user["type"] != "agency":
+        raise HTTPException(status_code=403, detail="Agencies only")
+
+    agency_id = current_user["sub"]
+
+    # Verify the invoice belongs to this agency
+    with get_db() as db:
+        inv = db.execute(
+            "SELECT id, agency_id, status FROM invoices WHERE id=?", (invoice_id,)
+        ).fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        if dict(inv)["agency_id"] != agency_id:
+            raise HTTPException(status_code=403, detail="Not your invoice")
+
+    from app.services.billing import BillingService
+    try:
+        result = BillingService.pay_invoice_online(invoice_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

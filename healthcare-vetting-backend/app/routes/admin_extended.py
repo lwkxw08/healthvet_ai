@@ -822,7 +822,60 @@ async def update_invoice_status(
     return {"status": "ok", "invoice_id": invoice_id}
 
 
-# ── 13. Bulk CQC Audit Pack (multi-candidate) ────────────────────
+# ── 13. Agency Billing Mode Toggle ─────────────────────────────────
+
+class BillingModeUpdate(BaseModel):
+    billing_mode: str  # manual_invoicing, online_payment, subscription
+    stripe_customer_id: Optional[str] = None
+
+
+@router.put("/agencies/{agency_id}/billing-mode")
+async def update_agency_billing_mode(
+    agency_id: str, data: BillingModeUpdate, current_user: dict = Depends(get_current_user)
+):
+    """Admin toggles an agency's billing mode between manual_invoicing, online_payment, and subscription."""
+    require_admin(current_user)
+    now = datetime.now(timezone.utc).isoformat()
+
+    from app.services.billing import BillingService
+    try:
+        result = BillingService.set_agency_billing_mode(
+            agency_id, data.billing_mode, data.stripe_customer_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Log the action
+    with get_db() as db:
+        log_id = generate_id()
+        db.execute(
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            (log_id, "agency", agency_id, "billing_mode_changed",
+             current_user["sub"], f"Billing mode set to '{data.billing_mode}'", now))
+
+    return result
+
+
+@router.get("/agencies/{agency_id}/billing-mode")
+async def get_agency_billing_mode(
+    agency_id: str, current_user: dict = Depends(get_current_user)
+):
+    """Get an agency's billing mode."""
+    require_admin(current_user)
+    from app.services.billing import BillingService
+    return BillingService.get_agency_billing_mode(agency_id)
+
+
+@router.post("/billing/send-reminders")
+async def trigger_payment_reminders(current_user: dict = Depends(get_current_user)):
+    """Admin manually triggers payment reminders for all overdue invoices."""
+    require_admin(current_user)
+    from app.services.billing import BillingService
+    reminders = BillingService.send_payment_reminders()
+    return {"reminders_sent": len(reminders), "details": reminders}
+
+
+# ── 14. Bulk CQC Audit Pack (multi-candidate) ────────────────────
 
 @router.post("/audit/bulk")
 async def generate_bulk_audit_pack(

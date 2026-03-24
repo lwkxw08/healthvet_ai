@@ -137,14 +137,18 @@ def migrate_db():
             cursor.execute("ALTER TABLE agency_invites ADD COLUMN monitoring_cost REAL DEFAULT 0")
     except Exception:
         pass
-    # Add discount_percent column to agencies if missing
+    # Add discount_percent and billing_mode columns to agencies if missing
     try:
         existing_ag_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agencies)").fetchall()}
         if "discount_percent" not in existing_ag_cols:
             cursor.execute("ALTER TABLE agencies ADD COLUMN discount_percent REAL DEFAULT 0")
+        if "billing_mode" not in existing_ag_cols:
+            cursor.execute("ALTER TABLE agencies ADD COLUMN billing_mode TEXT DEFAULT 'manual_invoicing'")
+        if "stripe_customer_id" not in existing_ag_cols:
+            cursor.execute("ALTER TABLE agencies ADD COLUMN stripe_customer_id TEXT")
     except Exception:
         pass
-    # Add adjusted_amount and adjustment_notes columns to invoices if missing
+    # Add adjusted_amount, adjustment_notes, payment_method, stripe_session_id columns to invoices if missing
     try:
         existing_inv2_cols = {row[1] for row in cursor.execute("PRAGMA table_info(invoices)").fetchall()}
         if "adjusted_amount" not in existing_inv2_cols:
@@ -153,6 +157,18 @@ def migrate_db():
             cursor.execute("ALTER TABLE invoices ADD COLUMN adjustment_notes TEXT")
         if "candidate_email" not in existing_inv2_cols:
             cursor.execute("ALTER TABLE invoices ADD COLUMN candidate_email TEXT")
+        if "payment_method" not in existing_inv2_cols:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN payment_method TEXT DEFAULT 'manual'")
+        if "stripe_session_id" not in existing_inv2_cols:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN stripe_session_id TEXT")
+        if "stripe_payment_intent_id" not in existing_inv2_cols:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN stripe_payment_intent_id TEXT")
+        if "due_date" not in existing_inv2_cols:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN due_date TEXT")
+        if "reminder_sent_at" not in existing_inv2_cols:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN reminder_sent_at TEXT")
+        if "reminder_count" not in existing_inv2_cols:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN reminder_count INTEGER DEFAULT 0")
     except Exception:
         pass
     # Create pricing_settings table if it doesn't exist

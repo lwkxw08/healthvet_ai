@@ -57,6 +57,11 @@ export default function AgencyDashboard() {
   // Remaining checks state (subscription credit)
   const [remainingChecks, setRemainingChecks] = useState<Record<string, unknown> | null>(null);
 
+  // Agency billing mode state
+  const [billingMode, setBillingMode] = useState<string>("manual_invoicing");
+  const [payingInvoice, setPayingInvoice] = useState<string | null>(null);
+  const [, setPaymentResult] = useState<Record<string, unknown> | null>(null);
+
   // Re-vet state
   const [revetModalOpen, setRevetModalOpen] = useState(false);
   const [revetCandidate, setRevetCandidate] = useState<Record<string, unknown> | null>(null);
@@ -93,6 +98,11 @@ export default function AgencyDashboard() {
         // fallback to regular candidates
         setCandidatesWithStatus(c);
       }
+      // Load billing mode
+      try {
+        const bm = await agencyServicesApi.getBillingMode(token);
+        setBillingMode(bm.billing_mode || "manual_invoicing");
+      } catch { /* ignore */ }
       // Load billing data
       try {
         const sub = await billingApi.getSubscription(token, "me");
@@ -198,9 +208,28 @@ export default function AgencyDashboard() {
     setInviteLoading(true);
     setInviteError("");
     setInviteSuccess("");
+    setPaymentResult(null);
     try {
       const result = await agencyInvitesApi.createInvite(token, inviteEmail.trim(), includeMonitoring);
-      setInviteSuccess(`Invite sent to ${inviteEmail}. Code: ${result.invite_code as string}`);
+      const payment = result.payment as Record<string, unknown> | undefined;
+      if (payment && payment.payment_required) {
+        // PAYG or subscription overflow — show payment info
+        setPaymentResult(payment);
+        const amt = payment.amount as number;
+        const status = payment.status as string;
+        if (status === "awaiting_payment") {
+          setInviteSuccess(`Invite sent to ${inviteEmail}. Payment of £${amt?.toFixed(2)} required. Use Pay Now in Billing History.`);
+        } else if (status === "credits_exceeded") {
+          setInviteSuccess(`Invite sent to ${inviteEmail}. Subscription credits exceeded — £${amt?.toFixed(2)} overage charge created.`);
+        } else {
+          setInviteSuccess(`Invite sent to ${inviteEmail}. Code: ${result.invite_code as string}`);
+        }
+      } else if (payment && payment.status === "paid_by_subscription") {
+        const creditsLeft = payment.credits_remaining as number;
+        setInviteSuccess(`Invite sent to ${inviteEmail}. Paid by subscription credit. ${creditsLeft?.toFixed(1)} credits remaining.`);
+      } else {
+        setInviteSuccess(`Invite sent to ${inviteEmail}. Code: ${result.invite_code as string}`);
+      }
       setInviteEmail("");
       setInviteCostModalOpen(false);
       await loadData();
@@ -208,6 +237,20 @@ export default function AgencyDashboard() {
       setInviteError(err instanceof Error ? err.message : "Failed to send invite");
     } finally {
       setInviteLoading(false);
+    }
+  };
+
+  const handlePayInvoice = async (invoiceId: string) => {
+    if (!token) return;
+    setPayingInvoice(invoiceId);
+    try {
+      await agencyServicesApi.payInvoice(token, invoiceId);
+      await loadData();
+    } catch (err) {
+      console.error("Payment failed", err);
+      setInviteError(err instanceof Error ? err.message : "Payment failed");
+    } finally {
+      setPayingInvoice(null);
     }
   };
 
@@ -916,9 +959,21 @@ export default function AgencyDashboard() {
 
             {/* Send Invite Form */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-              <h3 className="text-md font-semibold text-white mb-4">Send New Invite</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-md font-semibold text-white">Send New Invite</h3>
+                <span className={`text-xs px-2 py-1 rounded-full border ${
+                  billingMode === "online_payment" ? "bg-green-500/20 text-green-400 border-green-500/30" :
+                  billingMode === "subscription" ? "bg-blue-500/20 text-blue-400 border-blue-500/30" :
+                  "bg-slate-500/20 text-slate-400 border-slate-500/30"
+                }`}>
+                  {billingMode === "online_payment" ? "Pay-As-You-Go" :
+                   billingMode === "subscription" ? "Subscription" : "Manual Invoice"}
+                </span>
+              </div>
               <p className="text-slate-400 text-sm mb-4">
                 Enter a candidate's email to generate a unique invite link. They'll register using that link and be automatically assigned to your agency.
+                {billingMode === "online_payment" && " You will be asked to confirm payment after sending."}
+                {billingMode === "subscription" && " This will use your subscription credits."}
               </p>
               <div className="flex gap-3">
                 <input
@@ -1075,6 +1130,17 @@ export default function AgencyDashboard() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Subscription & Billing</h2>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Billing Mode:</span>
+                <span className={`text-xs px-3 py-1 rounded-full font-medium border ${
+                  billingMode === "online_payment" ? "bg-green-500/20 text-green-400 border-green-500/30" :
+                  billingMode === "subscription" ? "bg-blue-500/20 text-blue-400 border-blue-500/30" :
+                  "bg-slate-500/20 text-slate-400 border-slate-500/30"
+                }`}>
+                  {billingMode === "online_payment" ? "Online Payment (PAYG)" :
+                   billingMode === "subscription" ? "Subscription" : "Manual Invoicing"}
+                </span>
+              </div>
             </div>
 
             {/* Current Subscription */}
@@ -1142,7 +1208,7 @@ export default function AgencyDashboard() {
                 <h3 className="text-md font-semibold text-white mb-4">Billing History</h3>
                 <table className="w-full">
                   <thead><tr className="border-b border-slate-700">
-                    {["Description", "Amount", "Status", "Date"].map((h) => (
+                    {["Description", "Amount", "Status", "Date", "Actions"].map((h) => (
                       <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>
                     ))}
                   </tr></thead>
@@ -1150,9 +1216,24 @@ export default function AgencyDashboard() {
                     {billingHistory.map((item, i) => (
                       <tr key={i} className="border-b border-slate-700/50">
                         <td className="px-4 py-3 text-sm text-white">{String(item.description || item.tier || "Invoice")}</td>
-                        <td className="px-4 py-3 text-sm text-green-400">£{Number(item.amount || item.monthly_amount || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-green-400">£{Number(item.amount || item.sell_amount || item.monthly_amount || 0).toFixed(2)}</td>
                         <td className="px-4 py-3"><StatusBadge status={String(item.status || "pending")} /></td>
                         <td className="px-4 py-3 text-sm text-slate-400">{String(item.created_at || item.date || "").split("T")[0]}</td>
+                        <td className="px-4 py-3">
+                          {item.status === "pending" && item.id && billingMode !== "manual_invoicing" ? (
+                            <button
+                              onClick={() => handlePayInvoice(item.id as string)}
+                              disabled={payingInvoice === item.id}
+                              className="text-xs bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-medium flex items-center gap-1"
+                            >
+                              <CreditCard size={12} /> {payingInvoice === item.id ? "Processing..." : "Pay Now"}
+                            </button>
+                          ) : item.status === "pending" && item.id && billingMode === "manual_invoicing" ? (
+                            <span className="text-xs text-slate-500">Awaiting Invoice</span>
+                          ) : item.status === "paid" ? (
+                            <span className="text-xs text-green-400">Paid</span>
+                          ) : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

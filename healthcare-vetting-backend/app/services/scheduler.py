@@ -52,8 +52,17 @@ def start_scheduler():
         name="Weekly Fraud Pattern Scan",
     )
 
+    # Run payment reminders daily at 9 AM
+    scheduler.add_job(
+        run_payment_reminders,
+        CronTrigger(hour=9, minute=0),
+        id="payment_reminders",
+        replace_existing=True,
+        name="Payment Reminder Checks",
+    )
+
     scheduler.start()
-    logger.info("Monitoring scheduler started with 3 jobs")
+    logger.info("Monitoring scheduler started with 4 jobs")
 
 
 def stop_scheduler():
@@ -229,6 +238,21 @@ def run_expiry_warnings():
 
     except Exception as e:
         logger.error(f"Expiry warning check failed: {e}")
+
+
+def run_payment_reminders():
+    """Send payment reminders for unpaid invoices."""
+    from app.services.billing import BillingService
+
+    logger.info("Running payment reminder checks...")
+    try:
+        reminders = BillingService.send_payment_reminders()
+        if reminders:
+            logger.info(f"Payment reminders sent: {len(reminders)} reminders")
+        else:
+            logger.info("No payment reminders to send")
+    except Exception as e:
+        logger.error(f"Payment reminder check failed: {e}")
 
 
 def run_fraud_scan():
