@@ -212,44 +212,76 @@ async def get_subscription_tiers():
 @router.put("/billing/tiers/{tier_key}")
 async def update_subscription_tier(tier_key: str, data: dict, user=Depends(get_current_admin)):
     """Update a subscription tier's pricing and configuration (admin only)."""
-    from app.services.billing import SUBSCRIPTION_TIERS
-    if tier_key not in SUBSCRIPTION_TIERS:
-        raise HTTPException(status_code=404, detail=f"Tier not found: {tier_key}")
+    from app.services.billing import BillingService
+    try:
+        return BillingService.update_tier(tier_key, data)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
-    tier = SUBSCRIPTION_TIERS[tier_key]
-    if "name" in data:
-        tier["name"] = data["name"]
-    if "monthly_price" in data:
-        tier["monthly_price"] = float(data["monthly_price"])
-    if "per_worker_price" in data:
-        tier["per_worker_price"] = float(data["per_worker_price"])
-    if "max_workers" in data:
-        tier["max_workers"] = int(data["max_workers"])
-    if "features" in data and isinstance(data["features"], list):
-        tier["features"] = data["features"]
-    if "monthly_checks" in data:
-        tier["monthly_checks"] = int(data["monthly_checks"])
 
-    # Also persist to DB for durability
-    with get_db() as db:
-        now_str = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-        existing = db.execute("SELECT id FROM subscription_tier_config WHERE tier_key=?", (tier_key,)).fetchone()
-        import json as _json
-        if existing:
-            db.execute(
-                "UPDATE subscription_tier_config SET name=?, monthly_price=?, per_worker_price=?, max_workers=?, monthly_checks=?, features=?, updated_at=? WHERE tier_key=?",
-                (tier["name"], tier["monthly_price"], tier["per_worker_price"], tier["max_workers"],
-                 tier.get("monthly_checks", 0), _json.dumps(tier["features"]), now_str, tier_key),
-            )
-        else:
-            from app.utils.auth import generate_id as _gen_id
-            db.execute(
-                "INSERT INTO subscription_tier_config (id, tier_key, name, monthly_price, per_worker_price, max_workers, monthly_checks, features, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (_gen_id(), tier_key, tier["name"], tier["monthly_price"], tier["per_worker_price"],
-                 tier["max_workers"], tier.get("monthly_checks", 0), _json.dumps(tier["features"]), now_str),
-            )
+@router.post("/billing/tiers")
+async def create_subscription_tier(data: dict, user=Depends(get_current_admin)):
+    """Create a new subscription tier (admin only)."""
+    from app.services.billing import BillingService
+    try:
+        return BillingService.create_tier(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    return {"tier_key": tier_key, **tier}
+
+@router.delete("/billing/tiers/{tier_key}")
+async def delete_subscription_tier(tier_key: str, user=Depends(get_current_admin)):
+    """Delete (deactivate) a subscription tier (admin only)."""
+    from app.services.billing import BillingService
+    try:
+        return BillingService.delete_tier(tier_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/billing/partial-credit-rates")
+async def get_partial_credit_rates(user=Depends(get_current_admin)):
+    """Get all partial credit rate configurations (admin only)."""
+    from app.services.billing import BillingService
+    return BillingService.get_partial_credit_rates()
+
+
+@router.put("/billing/partial-credit-rates/{check_type}")
+async def update_partial_credit_rate(check_type: str, data: dict, user=Depends(get_current_admin)):
+    """Update a partial credit rate (admin only)."""
+    from app.services.billing import BillingService
+    try:
+        return BillingService.update_partial_credit_rate(check_type, data)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/billing/partial-credit-rates")
+async def create_partial_credit_rate(data: dict, user=Depends(get_current_admin)):
+    """Create a new partial credit rate (admin only)."""
+    from app.services.billing import BillingService
+    try:
+        return BillingService.create_partial_credit_rate(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/billing/partial-credit-rates/{check_type}")
+async def delete_partial_credit_rate(check_type: str, user=Depends(get_current_admin)):
+    """Delete a partial credit rate (admin only)."""
+    from app.services.billing import BillingService
+    try:
+        return BillingService.delete_partial_credit_rate(check_type)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/billing/credit-transactions/{agency_id}")
+async def get_credit_transactions(agency_id: str, limit: int = 50, user=Depends(get_current_user)):
+    """Get credit transaction history for an agency."""
+    from app.services.billing import BillingService
+    real_id = user["sub"] if agency_id == "me" else agency_id
+    return BillingService.get_credit_transactions(real_id, limit)
 
 
 @router.get("/billing/subscription/{agency_id}")
@@ -324,7 +356,7 @@ async def get_remaining_checks(agency_id: str, user=Depends(get_current_user)):
 
 @router.post("/billing/use-check")
 async def use_subscription_check(data: dict, user=Depends(get_current_user)):
-    """Use a subscription check credit for a candidate vetting."""
+    """Use a subscription check credit for a candidate vetting. Supports fractional credits via check_type."""
     from app.services.billing import BillingService
     agency_id = data.get("agency_id")
     if agency_id == "me":
@@ -333,9 +365,10 @@ async def use_subscription_check(data: dict, user=Depends(get_current_user)):
     description = data.get("description", "Vetting check")
     sell_amount = float(data.get("sell_amount", 0))
     cost_amount = float(data.get("cost_amount", 0))
+    check_type = data.get("check_type", "full_vetting")
     if not agency_id:
         raise HTTPException(status_code=400, detail="agency_id is required")
-    return BillingService.use_subscription_check(agency_id, candidate_id, description, sell_amount, cost_amount)
+    return BillingService.use_subscription_check(agency_id, candidate_id, description, sell_amount, cost_amount, check_type)
 
 
 # ============================================================

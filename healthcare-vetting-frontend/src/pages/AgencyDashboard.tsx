@@ -490,32 +490,49 @@ export default function AgencyDashboard() {
             {/* Subscription Credit Countdown */}
             {remainingChecks && (remainingChecks.has_subscription as boolean) && (
               <div className="bg-slate-800/80 rounded-xl border border-blue-500/30 p-5">
-                <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><CreditCard className="text-blue-400" size={18} /> Monthly Check Credit</h3>
-                <div className="grid grid-cols-4 gap-4">
+                <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><CreditCard className="text-blue-400" size={18} /> Monthly Credit Balance</h3>
+                <div className="grid grid-cols-5 gap-3">
                   <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg text-center">
-                    <div className="text-3xl font-bold text-blue-400">{remainingChecks.monthly_checks as number >= 999999 ? "\u221E" : remainingChecks.monthly_checks as number}</div>
-                    <div className="text-xs text-blue-300 mt-1 font-medium">MONTHLY ALLOWANCE</div>
+                    <div className="text-2xl font-bold text-blue-400">{(remainingChecks.credits_total as number) >= 999999 ? "\u221E" : (remainingChecks.credits_total as number ?? remainingChecks.monthly_checks as number)}</div>
+                    <div className="text-xs text-blue-300 mt-1 font-medium">MONTHLY CREDITS</div>
                   </div>
                   <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-center">
-                    <div className="text-3xl font-bold text-green-400">{remainingChecks.checks_remaining as number >= 999999 ? "\u221E" : remainingChecks.checks_remaining as number}</div>
+                    <div className="text-2xl font-bold text-green-400">{(remainingChecks.credits_remaining as number) >= 999999 ? "\u221E" : typeof remainingChecks.credits_remaining === "number" ? (remainingChecks.credits_remaining as number).toFixed(1) : remainingChecks.checks_remaining as number}</div>
                     <div className="text-xs text-green-300 mt-1 font-medium">REMAINING</div>
                   </div>
                   <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg text-center">
-                    <div className="text-3xl font-bold text-amber-400">{remainingChecks.checks_used as number}</div>
+                    <div className="text-2xl font-bold text-amber-400">{typeof remainingChecks.credits_used === "number" ? (remainingChecks.credits_used as number).toFixed(1) : remainingChecks.checks_used as number}</div>
                     <div className="text-xs text-amber-300 mt-1 font-medium">USED THIS MONTH</div>
+                  </div>
+                  <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-purple-400">{typeof remainingChecks.rollover_credits === "number" ? (remainingChecks.rollover_credits as number).toFixed(1) : "0"}</div>
+                    <div className="text-xs text-purple-300 mt-1 font-medium">ROLLOVER</div>
                   </div>
                   <div className="p-4 bg-slate-700/50 border border-slate-600 rounded-lg text-center">
                     <div className="text-lg font-bold text-white">{remainingChecks.tier_name as string}</div>
-                    <div className="text-xs text-slate-400 mt-1 font-medium">{(remainingChecks.billing_method as string || "").toUpperCase()} BILLING</div>
+                    <div className="text-xs text-slate-400 mt-1 font-medium">{remainingChecks.allow_rollover ? "ROLLOVER ON" : "NO ROLLOVER"}</div>
                   </div>
                 </div>
-                {(remainingChecks.checks_remaining as number) <= 5 && (remainingChecks.checks_remaining as number) >= 0 && (remainingChecks.monthly_checks as number) < 999999 && (
+                {/* Progress bar */}
+                {typeof remainingChecks.credits_total === "number" && (remainingChecks.credits_total as number) < 999999 && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-slate-400 mb-1">
+                      <span>{typeof remainingChecks.credits_used === "number" ? (remainingChecks.credits_used as number).toFixed(1) : 0} used of {(remainingChecks.credits_total as number) + (typeof remainingChecks.rollover_credits === "number" ? (remainingChecks.rollover_credits as number) : 0)} total</span>
+                      <span>{typeof remainingChecks.credits_remaining === "number" ? (remainingChecks.credits_remaining as number).toFixed(1) : 0} remaining</span>
+                    </div>
+                    <div className="w-full bg-slate-700 rounded-full h-2.5">
+                      <div className="bg-gradient-to-r from-blue-500 to-blue-400 h-2.5 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, ((typeof remainingChecks.credits_used === "number" ? remainingChecks.credits_used as number : 0) / ((remainingChecks.credits_total as number) + (typeof remainingChecks.rollover_credits === "number" ? (remainingChecks.rollover_credits as number) : 0))) * 100)}%` }} />
+                    </div>
+                  </div>
+                )}
+                {typeof remainingChecks.credits_remaining === "number" && (remainingChecks.credits_remaining as number) <= 2 && (remainingChecks.credits_total as number) < 999999 && (
                   <div className="mt-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2">
                     <AlertTriangle className="text-red-400" size={16} />
                     <span className="text-red-300 text-sm font-medium">
-                      {(remainingChecks.checks_remaining as number) === 0
-                        ? "No checks remaining this month. Additional checks will be invoiced separately."
-                        : `Only ${remainingChecks.checks_remaining as number} check${(remainingChecks.checks_remaining as number) !== 1 ? "s" : ""} remaining this month.`}
+                      {(remainingChecks.credits_remaining as number) <= 0
+                        ? `No credits remaining. Additional checks charged at overage rate${typeof remainingChecks.overage_rate === "number" ? ` (£${remainingChecks.overage_rate}/credit)` : ""}.`
+                        : `Only ${(remainingChecks.credits_remaining as number).toFixed(1)} credits remaining this month.`}
                     </span>
                   </div>
                 )}

@@ -209,11 +209,38 @@ def migrate_db():
             cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN checks_used INTEGER DEFAULT 0")
     except Exception:
         pass
-    # Add monthly_checks column to subscription_tier_config if missing
+    # Add monthly_checks and new columns to subscription_tier_config if missing
     try:
         existing_stc_cols = {row[1] for row in cursor.execute("PRAGMA table_info(subscription_tier_config)").fetchall()}
         if "monthly_checks" not in existing_stc_cols:
             cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN monthly_checks INTEGER DEFAULT 0")
+        if "overage_rate" not in existing_stc_cols:
+            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN overage_rate REAL DEFAULT 0")
+        if "allow_rollover" not in existing_stc_cols:
+            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN allow_rollover INTEGER DEFAULT 0")
+        if "monitoring_included" not in existing_stc_cols:
+            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN monitoring_included INTEGER DEFAULT 0")
+        if "monitoring_cap" not in existing_stc_cols:
+            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN monitoring_cap INTEGER DEFAULT 0")
+        if "monitoring_addon_rate" not in existing_stc_cols:
+            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN monitoring_addon_rate REAL DEFAULT 0")
+        if "is_active" not in existing_stc_cols:
+            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN is_active INTEGER DEFAULT 1")
+    except Exception:
+        pass
+    # Add rollover and credit columns to agency_subscriptions if missing
+    try:
+        existing_sub_cols2 = {row[1] for row in cursor.execute("PRAGMA table_info(agency_subscriptions)").fetchall()}
+        if "credits_total" not in existing_sub_cols2:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN credits_total REAL DEFAULT 0")
+        if "credits_used" not in existing_sub_cols2:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN credits_used REAL DEFAULT 0")
+        if "rollover_credits" not in existing_sub_cols2:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN rollover_credits REAL DEFAULT 0")
+        if "allow_rollover" not in existing_sub_cols2:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN allow_rollover INTEGER DEFAULT 0")
+        if "overage_rate" not in existing_sub_cols2:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN overage_rate REAL DEFAULT 0")
     except Exception:
         pass
     # Seed default pricing if table is empty
@@ -234,6 +261,57 @@ def migrate_db():
             cursor.execute(
                 "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (?, ?, ?, ?, ?)",
                 (generate_id(), check_type, label, cost, sell),
+            )
+
+    # Seed default partial credit rates if table is empty
+    try:
+        pcr_count = cursor.execute("SELECT COUNT(*) FROM partial_credit_rates").fetchone()[0]
+    except Exception:
+        pcr_count = 0
+    if pcr_count == 0:
+        from app.utils.auth import generate_id as _gid
+        pcr_defaults = [
+            ("full_vetting", "Full Vetting", 1.0, 73.50),
+            ("dbs_recheck", "DBS Recheck", 0.5, 41.00),
+            ("rtw_recheck", "Right to Work Recheck", 0.15, 4.00),
+            ("registration_check", "Registration Check Only", 0.10, 2.00),
+            ("reference_recheck", "Reference Re-chase (x1)", 0.12, 7.50),
+            ("training_update", "Training Certificate Update", 0.08, 1.50),
+            ("health_declaration", "Health Declaration Only", 0.05, 0.00),
+        ]
+        for ct, lbl, cv, cost in pcr_defaults:
+            cursor.execute(
+                "INSERT INTO partial_credit_rates (id, check_type, label, credit_value, third_party_cost) VALUES (?, ?, ?, ?, ?)",
+                (_gid(), ct, lbl, cv, cost),
+            )
+
+    # Seed default subscription tier config if table is empty
+    try:
+        stc_count = cursor.execute("SELECT COUNT(*) FROM subscription_tier_config").fetchone()[0]
+    except Exception:
+        stc_count = 0
+    if stc_count == 0:
+        from app.utils.auth import generate_id as _gid2
+        import json as _json
+        stc_defaults = [
+            ("starter", "Starter", 995.0, 0, 50, 5, 210.0, 0, 0, 0, 5.0,
+             _json.dumps(["5 full vettings/month", "Basic compliance dashboard", "Email alerts", "Standard support"])),
+            ("growth", "Growth", 2625.0, 0, 200, 15, 195.0, 0, 1, 100, 0,
+             _json.dumps(["15 full vettings/month", "Advanced analytics", "Priority alerts", "CQC audit pack", "Monitoring up to 100 workers", "Priority support"])),
+            ("professional", "Professional", 6600.0, 0, 500, 40, 185.0, 0, 1, 300, 0,
+             _json.dumps(["40 full vettings/month", "Full analytics suite", "Dedicated account manager", "Monitoring up to 300 workers", "SLA guarantee"])),
+            ("enterprise", "Enterprise", 10000.0, 0, 99999, 60, 175.0, 0, 1, 99999, 0,
+             _json.dumps(["60+ full vettings/month", "Unlimited monitoring", "Custom integrations", "White-label options", "Dedicated account manager"])),
+            ("payg", "Pay As You Go", 0, 0, 99999, 0, 195.0, 0, 0, 0, 5.0,
+             _json.dumps(["No monthly commitment", "£195 per full vetting", "Pay per check", "Full feature access"])),
+        ]
+        for tier_key, name, mp, pwp, mw, mc, ovr, ar, mi, mcap, mar, feats in stc_defaults:
+            cursor.execute(
+                """INSERT INTO subscription_tier_config
+                   (id, tier_key, name, monthly_price, per_worker_price, max_workers, monthly_checks,
+                    overage_rate, allow_rollover, monitoring_included, monitoring_cap, monitoring_addon_rate, features, is_active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+                (_gid2(), tier_key, name, mp, pwp, mw, mc, ovr, ar, mi, mcap, mar, feats),
             )
 
     conn.commit()
@@ -669,8 +747,40 @@ def init_db():
             per_worker_price REAL DEFAULT 0,
             max_workers INTEGER DEFAULT 0,
             monthly_checks INTEGER DEFAULT 0,
+            overage_rate REAL DEFAULT 0,
+            allow_rollover INTEGER DEFAULT 0,
+            monitoring_included INTEGER DEFAULT 0,
+            monitoring_cap INTEGER DEFAULT 0,
+            monitoring_addon_rate REAL DEFAULT 0,
             features TEXT DEFAULT '[]',
+            is_active INTEGER DEFAULT 1,
             updated_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS partial_credit_rates (
+            id TEXT PRIMARY KEY,
+            check_type TEXT UNIQUE NOT NULL,
+            label TEXT NOT NULL,
+            credit_value REAL DEFAULT 1.0,
+            third_party_cost REAL DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS credit_transactions (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_id TEXT,
+            order_id TEXT,
+            check_type TEXT NOT NULL,
+            credits_consumed REAL DEFAULT 0,
+            credit_balance_after REAL DEFAULT 0,
+            unit_cost REAL DEFAULT 0,
+            charge_amount REAL DEFAULT 0,
+            is_overage INTEGER DEFAULT 0,
+            is_rollover INTEGER DEFAULT 0,
+            description TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
     """)
 

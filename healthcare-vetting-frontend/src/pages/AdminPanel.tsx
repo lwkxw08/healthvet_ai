@@ -83,10 +83,16 @@ export default function AdminPanel() {
 
 
   // Subscription tier editing state
-  const [subTiers, setSubTiers] = useState<Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; features: string[]}>>({});
+  const [subTiers, setSubTiers] = useState<Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; overage_rate: number; allow_rollover: boolean; features: string[]}>>({});
   const [editingTier, setEditingTier] = useState<string | null>(null);
-  const [tierEditData, setTierEditData] = useState<{name: string; monthly_price: string; per_worker_price: string; max_workers: string; monthly_checks: string; features: string}>({name: "", monthly_price: "", per_worker_price: "", max_workers: "", monthly_checks: "", features: ""});
+  const [tierEditData, setTierEditData] = useState<{name: string; monthly_price: string; per_worker_price: string; max_workers: string; monthly_checks: string; overage_rate: string; allow_rollover: boolean; features: string}>({name: "", monthly_price: "", per_worker_price: "", max_workers: "", monthly_checks: "", overage_rate: "", allow_rollover: false, features: ""});
   const [savingTier, setSavingTier] = useState(false);
+  const [creatingTier, setCreatingTier] = useState(false);
+  const [newTierData, setNewTierData] = useState<{tier_key: string; name: string; monthly_price: string; per_worker_price: string; max_workers: string; monthly_checks: string; overage_rate: string; allow_rollover: boolean; features: string}>({tier_key: "", name: "", monthly_price: "", per_worker_price: "0", max_workers: "999", monthly_checks: "", overage_rate: "", allow_rollover: false, features: ""});
+  // Partial credit rates state
+  const [creditRates, setCreditRates] = useState<Record<string, unknown>[]>([]);
+  const [editingRate, setEditingRate] = useState<string | null>(null);
+  const [rateEditData, setRateEditData] = useState<{label: string; credit_value: string; third_party_cost: string}>({label: "", credit_value: "", third_party_cost: ""});
 
   // Agency discount editing state
   const [editingDiscount, setEditingDiscount] = useState<string | null>(null);
@@ -220,8 +226,13 @@ export default function AdminPanel() {
     if (!token) return;
     try {
       const tiers = await billingApi.getTiers(token);
-      setSubTiers(tiers as Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; features: string[]}>);
+      setSubTiers(tiers as Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; overage_rate: number; allow_rollover: boolean; features: string[]}>);
     } catch { /* ignore */ }
+  };
+
+  const loadCreditRates = async () => {
+    if (!token) return;
+    try { const rates = await billingApi.getPartialCreditRates(token); setCreditRates(rates); } catch { /* ignore */ }
   };
 
   const loadCandidateDetail = async (candidateId: string) => {
@@ -247,7 +258,7 @@ export default function AdminPanel() {
   useEffect(() => { if (tab === "agencies" || tab === "user-management" || tab === "invoicing") loadAgencies(); }, [tab, loadAgencies]);
   useEffect(() => { if (tab === "audit-logs") loadAuditLogs(); }, [tab, loadAuditLogs]);
   useEffect(() => { if (tab === "invoicing") loadAdminInvoices(); }, [tab, loadAdminInvoices]);
-  useEffect(() => { if (tab === "subscriptions") loadSubscriptionTiers(); }, [tab]);
+  useEffect(() => { if (tab === "subscriptions") { loadSubscriptionTiers(); loadCreditRates(); } }, [tab]);
 
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
@@ -478,16 +489,55 @@ export default function AdminPanel() {
         per_worker_price: parseFloat(tierEditData.per_worker_price) || 0,
         max_workers: parseInt(tierEditData.max_workers) || 0,
         monthly_checks: parseInt(tierEditData.monthly_checks) || 0,
+        overage_rate: parseFloat(tierEditData.overage_rate) || 0,
+        allow_rollover: tierEditData.allow_rollover,
         features,
       });
       setEditingTier(null);
       await loadSubscriptionTiers();
-      setMessage("Tier pricing updated successfully");
-      setTimeout(() => setMessage(""), 3000);
+      showMessage("Tier pricing updated successfully");
     } catch (err) {
-      console.error("Failed to save tier", err);
+      showMessage(`Error: ${err instanceof Error ? err.message : "Failed to save tier"}`);
     } finally {
       setSavingTier(false);
+    }
+  };
+
+  const createNewTier = async () => {
+    if (!token) return;
+    setSavingTier(true);
+    try {
+      const features = newTierData.features.split("\n").map(f => f.trim()).filter(f => f.length > 0);
+      await billingApi.createTier(token, {
+        tier_key: newTierData.tier_key,
+        name: newTierData.name,
+        monthly_price: parseFloat(newTierData.monthly_price) || 0,
+        per_worker_price: parseFloat(newTierData.per_worker_price) || 0,
+        max_workers: parseInt(newTierData.max_workers) || 999,
+        monthly_checks: parseInt(newTierData.monthly_checks) || 0,
+        overage_rate: parseFloat(newTierData.overage_rate) || 0,
+        allow_rollover: newTierData.allow_rollover,
+        features,
+      });
+      setCreatingTier(false);
+      setNewTierData({tier_key: "", name: "", monthly_price: "", per_worker_price: "0", max_workers: "999", monthly_checks: "", overage_rate: "", allow_rollover: false, features: ""});
+      await loadSubscriptionTiers();
+      showMessage("New tier created successfully");
+    } catch (err) {
+      showMessage(`Error: ${err instanceof Error ? err.message : "Failed to create tier"}`);
+    } finally {
+      setSavingTier(false);
+    }
+  };
+
+  const deleteTier = async (tierKey: string) => {
+    if (!token || !confirm(`Delete tier "${tierKey}"? This will deactivate it.`)) return;
+    try {
+      await billingApi.deleteTier(token, tierKey);
+      await loadSubscriptionTiers();
+      showMessage("Tier deactivated successfully");
+    } catch (err) {
+      showMessage(`Error: ${err instanceof Error ? err.message : "Failed to delete tier"}`);
     }
   };
 
@@ -501,8 +551,26 @@ export default function AdminPanel() {
       per_worker_price: tier.per_worker_price.toString(),
       max_workers: tier.max_workers.toString(),
       monthly_checks: (tier.monthly_checks || 0).toString(),
+      overage_rate: (tier.overage_rate || 0).toString(),
+      allow_rollover: tier.allow_rollover || false,
       features: tier.features.join("\n"),
     });
+  };
+
+  const saveCreditRate = async (checkType: string) => {
+    if (!token) return;
+    try {
+      await billingApi.updatePartialCreditRate(token, checkType, {
+        label: rateEditData.label,
+        credit_value: parseFloat(rateEditData.credit_value) || 0,
+        third_party_cost: parseFloat(rateEditData.third_party_cost) || 0,
+      });
+      setEditingRate(null);
+      await loadCreditRates();
+      showMessage("Credit rate updated");
+    } catch (err) {
+      showMessage(`Error: ${err instanceof Error ? err.message : "Failed to save rate"}`);
+    }
   };
 
   const handleRetriggerEmployment = async (candidateId: string, verId: string) => {
@@ -1242,28 +1310,106 @@ export default function AdminPanel() {
         {tab === "subscriptions" && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Agency Subscriptions & Pricing</h2>
-            <p className="text-slate-400 text-sm">Manage agency subscription tiers, pricing models, and billing methods. Click Edit on any tier to update its pricing.</p>
+            <p className="text-slate-400 text-sm">Manage subscription tiers, monthly fees, credit allowances, partial credit rates, and rollover settings.</p>
 
             {/* Editable Subscription Tiers */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-              <h3 className="text-md font-semibold text-white mb-4">Subscription Plan Pricing</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-md font-semibold text-white">Subscription Plans</h3>
+                <button onClick={() => setCreatingTier(true)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-xs font-medium border-none cursor-pointer flex items-center gap-1">
+                  + New Plan
+                </button>
+              </div>
+
+              {/* Create New Tier Form */}
+              {creatingTier && (
+                <div className="mb-4 p-5 bg-slate-700/80 rounded-xl border border-green-500/30">
+                  <h4 className="text-white font-medium mb-3">Create New Plan</h4>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Plan Key (e.g. premium)</label>
+                        <input value={newTierData.tier_key} onChange={(e) => setNewTierData(prev => ({...prev, tier_key: e.target.value}))}
+                          className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Plan Name</label>
+                        <input value={newTierData.name} onChange={(e) => setNewTierData(prev => ({...prev, name: e.target.value}))}
+                          className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Monthly Fee (£)</label>
+                        <input type="number" step="0.01" value={newTierData.monthly_price} onChange={(e) => setNewTierData(prev => ({...prev, monthly_price: e.target.value}))}
+                          className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Monthly Credits</label>
+                        <input type="number" value={newTierData.monthly_checks} onChange={(e) => setNewTierData(prev => ({...prev, monthly_checks: e.target.value}))}
+                          className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Overage Rate (£/credit)</label>
+                        <input type="number" step="0.01" value={newTierData.overage_rate} onChange={(e) => setNewTierData(prev => ({...prev, overage_rate: e.target.value}))}
+                          className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
+                        <input type="checkbox" checked={newTierData.allow_rollover} onChange={(e) => setNewTierData(prev => ({...prev, allow_rollover: e.target.checked}))}
+                          className="rounded" />
+                        Allow unused credit rollover (capped at 50% of monthly allowance)
+                      </label>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Features (one per line)</label>
+                      <textarea value={newTierData.features} onChange={(e) => setNewTierData(prev => ({...prev, features: e.target.value}))} rows={3}
+                        className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm resize-none" />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={createNewTier} disabled={savingTier || !newTierData.tier_key || !newTierData.name}
+                        className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white rounded-lg py-2 text-xs font-medium border-none cursor-pointer">
+                        {savingTier ? "Creating..." : "Create Plan"}
+                      </button>
+                      <button onClick={() => setCreatingTier(false)}
+                        className="flex-1 bg-slate-600 hover:bg-slate-500 text-white rounded-lg py-2 text-xs font-medium border-none cursor-pointer">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 {Object.entries(subTiers).length > 0 ? Object.entries(subTiers).map(([tierKey, tier]) => {
-                  const colors: Record<string, string> = { starter: "border-blue-500/30", growth: "border-green-500/30", enterprise: "border-purple-500/30", per_worker: "border-amber-500/30" };
+                  const colors: Record<string, string> = { starter: "border-blue-500/30", growth: "border-green-500/30", professional: "border-cyan-500/30", enterprise: "border-purple-500/30" };
                   const isEditing = editingTier === tierKey;
                   return (
                     <div key={tierKey} className={`p-5 bg-slate-700/50 rounded-xl border ${colors[tierKey] || "border-slate-600"}`}>
                       {isEditing ? (
                         <div className="space-y-3">
                           <div>
-                            <label className="block text-xs text-slate-400 mb-1">Tier Name</label>
+                            <label className="block text-xs text-slate-400 mb-1">Plan Name</label>
                             <input value={tierEditData.name} onChange={(e) => setTierEditData(prev => ({...prev, name: e.target.value}))}
                               className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-xs text-slate-400 mb-1">Monthly Price (£)</label>
+                              <label className="block text-xs text-slate-400 mb-1">Monthly Fee (£)</label>
                               <input type="number" step="0.01" value={tierEditData.monthly_price} onChange={(e) => setTierEditData(prev => ({...prev, monthly_price: e.target.value}))}
+                                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Monthly Credits</label>
+                              <input type="number" value={tierEditData.monthly_checks} onChange={(e) => setTierEditData(prev => ({...prev, monthly_checks: e.target.value}))}
+                                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Overage Rate (£/credit)</label>
+                              <input type="number" step="0.01" value={tierEditData.overage_rate} onChange={(e) => setTierEditData(prev => ({...prev, overage_rate: e.target.value}))}
                                 className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                             </div>
                             <div>
@@ -1272,21 +1418,16 @@ export default function AdminPanel() {
                                 className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-xs text-slate-400 mb-1">Max Workers</label>
-                              <input type="number" value={tierEditData.max_workers} onChange={(e) => setTierEditData(prev => ({...prev, max_workers: e.target.value}))}
-                                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-slate-400 mb-1">Monthly Checks Allowance</label>
-                              <input type="number" value={tierEditData.monthly_checks} onChange={(e) => setTierEditData(prev => ({...prev, monthly_checks: e.target.value}))}
-                                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
-                            </div>
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
+                              <input type="checkbox" checked={tierEditData.allow_rollover} onChange={(e) => setTierEditData(prev => ({...prev, allow_rollover: e.target.checked}))}
+                                className="rounded" />
+                              Allow credit rollover (50% cap)
+                            </label>
                           </div>
                           <div>
                             <label className="block text-xs text-slate-400 mb-1">Features (one per line)</label>
-                            <textarea value={tierEditData.features} onChange={(e) => setTierEditData(prev => ({...prev, features: e.target.value}))} rows={4}
+                            <textarea value={tierEditData.features} onChange={(e) => setTierEditData(prev => ({...prev, features: e.target.value}))} rows={3}
                               className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm resize-none" />
                           </div>
                           <div className="flex gap-2">
@@ -1304,19 +1445,28 @@ export default function AdminPanel() {
                         <div>
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-white font-bold text-lg">{tier.name}</p>
-                            <button onClick={() => startEditTier(tierKey)}
-                              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 bg-transparent border-none cursor-pointer">
-                              <Edit size={12} /> Edit
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => startEditTier(tierKey)}
+                                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 bg-transparent border-none cursor-pointer">
+                                <Edit size={12} /> Edit
+                              </button>
+                              <button onClick={() => deleteTier(tierKey)}
+                                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 bg-transparent border-none cursor-pointer">
+                                <Trash2 size={12} /> Delete
+                              </button>
+                            </div>
                           </div>
                           <p className="text-blue-400 text-xl font-bold mb-1">
-                            {tier.per_worker_price > 0 ? `£${tier.per_worker_price}/worker/mo` : `£${tier.monthly_price.toLocaleString()}/mo`}
+                            £{tier.monthly_price.toLocaleString()}/mo
                           </p>
-                          <p className="text-slate-400 text-sm mb-1">
-                            {tier.max_workers >= 99999 ? "Unlimited workers" : `Up to ${tier.max_workers} workers`}
+                          <p className="text-green-400 text-sm font-medium mb-1">
+                            {(tier.monthly_checks || 0) >= 999999 ? "Unlimited credits/month" : `${tier.monthly_checks || 0} credits/month`}
                           </p>
-                          <p className="text-green-400 text-sm font-medium mb-3">
-                            {(tier.monthly_checks || 0) >= 999999 ? "Unlimited checks/month" : `${tier.monthly_checks || 0} checks/month`}
+                          {(tier.overage_rate || 0) > 0 && (
+                            <p className="text-amber-400 text-xs mb-1">Overage: £{tier.overage_rate}/credit</p>
+                          )}
+                          <p className="text-slate-400 text-xs mb-3">
+                            {tier.allow_rollover ? "Unused credits roll over (50% cap)" : "Credits expire monthly"}
                           </p>
                           <div className="space-y-1">
                             {tier.features.map((f: string, i: number) => (
@@ -1334,6 +1484,59 @@ export default function AdminPanel() {
                     <p>Loading subscription tiers...</p>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Partial Credit Rates */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-2">Partial Credit Rates</h3>
+              <p className="text-slate-400 text-xs mb-4">Configure how many credits each check type consumes. 1.0 = full credit, 0.5 = half credit, etc.</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-600">
+                      <th className="text-left py-2 text-slate-400 font-medium">Check Type</th>
+                      <th className="text-left py-2 text-slate-400 font-medium">Label</th>
+                      <th className="text-right py-2 text-slate-400 font-medium">Credit Value</th>
+                      <th className="text-right py-2 text-slate-400 font-medium">Third Party Cost (£)</th>
+                      <th className="text-right py-2 text-slate-400 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditRates.map((rate) => {
+                      const isEditingRate = editingRate === (rate.check_type as string);
+                      return (
+                        <tr key={rate.check_type as string} className="border-b border-slate-700/50">
+                          <td className="py-2 text-white font-mono text-xs">{rate.check_type as string}</td>
+                          {isEditingRate ? (
+                            <>
+                              <td className="py-2"><input value={rateEditData.label} onChange={(e) => setRateEditData(prev => ({...prev, label: e.target.value}))}
+                                className="bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs w-full" /></td>
+                              <td className="py-2"><input type="number" step="0.01" value={rateEditData.credit_value} onChange={(e) => setRateEditData(prev => ({...prev, credit_value: e.target.value}))}
+                                className="bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs w-20 text-right" /></td>
+                              <td className="py-2"><input type="number" step="0.01" value={rateEditData.third_party_cost} onChange={(e) => setRateEditData(prev => ({...prev, third_party_cost: e.target.value}))}
+                                className="bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs w-20 text-right" /></td>
+                              <td className="py-2 text-right">
+                                <button onClick={() => saveCreditRate(rate.check_type as string)} className="text-xs text-green-400 hover:text-green-300 mr-2 bg-transparent border-none cursor-pointer">Save</button>
+                                <button onClick={() => setEditingRate(null)} className="text-xs text-slate-400 hover:text-slate-300 bg-transparent border-none cursor-pointer">Cancel</button>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="py-2 text-slate-300">{rate.label as string}</td>
+                              <td className="py-2 text-right text-cyan-400 font-medium">{(rate.credit_value as number).toFixed(2)}</td>
+                              <td className="py-2 text-right text-slate-300">£{(rate.third_party_cost as number).toFixed(2)}</td>
+                              <td className="py-2 text-right">
+                                <button onClick={() => { setEditingRate(rate.check_type as string); setRateEditData({ label: rate.label as string, credit_value: (rate.credit_value as number).toString(), third_party_cost: (rate.third_party_cost as number).toString() }); }}
+                                  className="text-xs text-blue-400 hover:text-blue-300 bg-transparent border-none cursor-pointer">Edit</button>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
 

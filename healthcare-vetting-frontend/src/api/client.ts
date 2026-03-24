@@ -354,10 +354,24 @@ export const billingApi = {
     apiRequest<Record<string, unknown>>("/api/billing/generate-recurring", { method: "POST", token }),
   updateTier: (token: string, tierKey: string, data: Record<string, unknown>) =>
     apiRequest<Record<string, unknown>>(`/api/billing/tiers/${tierKey}`, { method: "PUT", body: data, token }),
+  createTier: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/billing/tiers", { method: "POST", body: data, token }),
+  deleteTier: (token: string, tierKey: string) =>
+    apiRequest<Record<string, unknown>>(`/api/billing/tiers/${tierKey}`, { method: "DELETE", token }),
   getRemainingChecks: (token: string, agencyId: string) =>
     apiRequest<Record<string, unknown>>(`/api/billing/remaining-checks/${agencyId}`, { token }),
-  useCheck: (token: string, data: { agency_id: string; candidate_id?: string; description?: string; sell_amount?: number; cost_amount?: number }) =>
+  useCheck: (token: string, data: { agency_id: string; candidate_id?: string; description?: string; sell_amount?: number; cost_amount?: number; check_type?: string }) =>
     apiRequest<Record<string, unknown>>("/api/billing/use-check", { method: "POST", body: data, token }),
+  getPartialCreditRates: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/billing/partial-credit-rates", { token }),
+  updatePartialCreditRate: (token: string, checkType: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/billing/partial-credit-rates/${checkType}`, { method: "PUT", body: data, token }),
+  createPartialCreditRate: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/billing/partial-credit-rates", { method: "POST", body: data, token }),
+  deletePartialCreditRate: (token: string, checkType: string) =>
+    apiRequest<Record<string, unknown>>(`/api/billing/partial-credit-rates/${checkType}`, { method: "DELETE", token }),
+  getCreditTransactions: (token: string, agencyId: string, limit?: number) =>
+    apiRequest<Record<string, unknown>[]>(`/api/billing/credit-transactions/${agencyId}${limit ? `?limit=${limit}` : ""}`, { token }),
 };
 
 // Audit Pack & PDF Reports API
