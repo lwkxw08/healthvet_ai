@@ -145,6 +145,15 @@ export const checksApi = {
     apiRequest<Record<string, unknown>[]>(`/api/checks/employment-verifications/${candidateId}`, { token }),
   sendEmploymentVerificationReminder: (token: string, verId: string) =>
     apiRequest<Record<string, unknown>>(`/api/checks/employment-verifications/${verId}/remind`, { method: "POST", token }),
+
+  submitImposterDeclaration: (token: string, candidateId: string, declarationText: string, documentsVerified?: string[]) =>
+    apiRequest<Record<string, unknown>>("/api/checks/imposter-declaration", {
+      method: "POST",
+      body: { candidate_id: candidateId, declaration_text: declarationText, documents_verified: documentsVerified || null },
+      token,
+    }),
+  getImposterDeclarations: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>[]>(`/api/checks/imposter-declaration/${candidateId}`, { token }),
 };
 
 // Compliance API

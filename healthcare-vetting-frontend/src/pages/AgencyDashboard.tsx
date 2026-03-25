@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
@@ -61,6 +61,12 @@ export default function AgencyDashboard() {
   const [billingMode, setBillingMode] = useState<string>("manual_invoicing");
   const [payingInvoice, setPayingInvoice] = useState<string | null>(null);
   const [, setPaymentResult] = useState<Record<string, unknown> | null>(null);
+
+  // Imposter declaration state
+  const [imposterDeclaration, setImposterDeclaration] = useState<Record<string, unknown> | null>(null);
+  const [imposterDeclLoading, setImposterDeclLoading] = useState(false);
+  const [imposterDeclConfirmed, setImposterDeclConfirmed] = useState(false);
+  const [imposterDocsVerified, setImposterDocsVerified] = useState<string[]>([]);
 
   // Re-vet state
   const [revetModalOpen, setRevetModalOpen] = useState(false);
@@ -140,10 +146,43 @@ export default function AgencyDashboard() {
         ]);
         setCandidateCompliance(comp);
         setCandidateAlerts(alts);
+        // Load imposter declaration
+        try {
+          const decls = await checksApi.getImposterDeclarations(token, candidate.id as string);
+          setImposterDeclaration(decls && decls.length > 0 ? decls[0] : null);
+        } catch { setImposterDeclaration(null); }
       } catch {
         // ignore
       }
+      setImposterDeclConfirmed(false);
+      setImposterDocsVerified([]);
     }
+  };
+
+  const submitImposterDeclaration = async () => {
+    if (!token || !selectedCandidate || !imposterDeclConfirmed) return;
+    setImposterDeclLoading(true);
+    try {
+      const declarationText = "I confirm that I have conducted an in-person (or compliant video) imposter check and confirm the individual matches the documentation.";
+      const result = await checksApi.submitImposterDeclaration(
+        token,
+        selectedCandidate.id as string,
+        declarationText,
+        imposterDocsVerified.length > 0 ? imposterDocsVerified : undefined,
+      );
+      setImposterDeclaration(result);
+      // Refresh compliance to reflect new RTW status
+      const comp = await complianceApi.get(token, selectedCandidate.id as string).catch(() => null);
+      setCandidateCompliance(comp);
+    } catch (err) {
+      console.error("Failed to submit imposter declaration", err);
+    } finally {
+      setImposterDeclLoading(false);
+    }
+  };
+
+  const toggleImposterDoc = (doc: string) => {
+    setImposterDocsVerified(prev => prev.includes(doc) ? prev.filter(d => d !== doc) : [...prev, doc]);
   };
 
   const openRevetModal = (candidate: Record<string, unknown>) => {
@@ -1317,7 +1356,6 @@ export default function AgencyDashboard() {
                 <div className="space-y-2">
                   {[
                     { label: "Identity Verification", key: "identity_verified" },
-                    { label: "Right to Work", key: "right_to_work_valid" },
                     { label: "Enhanced DBS", key: "dbs_valid" },
                     { label: "Professional Registration", key: "registration_active" },
                     { label: "References (2+)", key: "references_verified" },
@@ -1330,6 +1368,35 @@ export default function AgencyDashboard() {
                       </div>
                     </div>
                   ))}
+                  {/* Right to Work - dual requirement: RTW check + Imposter Declaration */}
+                  <div className="p-3 bg-slate-700/50 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <CheckIcon passed={candidateCompliance.right_to_work_valid as boolean} />
+                        <span className="text-slate-200 text-sm font-medium">Right to Work</span>
+                      </div>
+                      {candidateCompliance.right_to_work_valid
+                        ? <span className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-0.5 rounded-full">Compliant</span>
+                        : <span className="text-xs bg-amber-600/20 text-amber-400 border border-amber-600/30 px-2 py-0.5 rounded-full">Pending</span>
+                      }
+                    </div>
+                    <div className="mt-2 ml-8 space-y-1 text-xs">
+                      <div className="flex items-center gap-2">
+                        {imposterDeclaration
+                          ? <CheckCircle size={14} className="text-green-400" />
+                          : <Clock size={14} className="text-amber-400" />
+                        }
+                        <span className={imposterDeclaration ? "text-green-300" : "text-amber-300"}>
+                          Imposter Check Declaration: {imposterDeclaration ? "Confirmed" : "Pending"}
+                        </span>
+                      </div>
+                      {imposterDeclaration && (
+                        <div className="ml-5 text-slate-500">
+                          Declared by {imposterDeclaration.declared_by_email as string} on {(imposterDeclaration.created_at as string)?.split("T")[0]}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 {candidateCompliance.flags ? (() => {
                   let flagList: string[] = [];
@@ -1356,6 +1423,81 @@ export default function AgencyDashboard() {
                     CQC Ready: {candidateCompliance.cqc_ready ? "Yes" : "No"}
                   </span>
                 </div>
+              </div>
+            )}
+
+            {/* Imposter Check Declaration Section */}
+            {!imposterDeclaration && (
+              <div className="bg-slate-800/80 rounded-xl border border-amber-600/40 p-6">
+                <h3 className="text-md font-semibold text-white mb-2 flex items-center gap-2">
+                  <Shield className="text-amber-400" size={18} /> Imposter Check Declaration Required
+                </h3>
+                <p className="text-slate-400 text-sm mb-4">
+                  Before Right to Work can be marked as <span className="text-green-400 font-medium">Compliant</span>, you must confirm that an in-person or video imposter check has been conducted.
+                </p>
+
+                <div className="bg-slate-900/60 rounded-lg p-4 mb-4 border border-slate-700">
+                  <p className="text-slate-300 text-sm mb-3 font-medium">Documents verified during imposter check:</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["Passport", "BRP/BRC", "Driving Licence", "Birth Certificate", "Visa Document", "Other ID"].map(doc => (
+                      <label key={doc} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={imposterDocsVerified.includes(doc)}
+                          onChange={() => toggleImposterDoc(doc)}
+                          className="rounded border-slate-600 bg-slate-700 text-blue-500"
+                        />
+                        {doc}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <label className="flex items-start gap-3 p-4 bg-slate-900/60 rounded-lg border border-slate-700 cursor-pointer mb-4">
+                  <input
+                    type="checkbox"
+                    checked={imposterDeclConfirmed}
+                    onChange={(e) => setImposterDeclConfirmed(e.target.checked)}
+                    className="mt-1 rounded border-slate-600 bg-slate-700 text-blue-500"
+                  />
+                  <span className="text-sm text-slate-200">
+                    I confirm that I have conducted an in-person (or compliant video) imposter check and confirm the individual matches the documentation.
+                  </span>
+                </label>
+
+                <button
+                  onClick={submitImposterDeclaration}
+                  disabled={!imposterDeclConfirmed || imposterDeclLoading}
+                  className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    imposterDeclConfirmed
+                      ? "bg-blue-600 hover:bg-blue-700 text-white"
+                      : "bg-slate-700 text-slate-500 cursor-not-allowed"
+                  }`}
+                >
+                  {imposterDeclLoading ? "Submitting..." : "Submit Imposter Check Declaration"}
+                </button>
+
+                <p className="text-xs text-slate-500 mt-2 text-center">
+                  This declaration is non-editable once submitted. It will be timestamped and logged in the audit trail.
+                </p>
+              </div>
+            )}
+
+            {/* Imposter Declaration Confirmed */}
+            {imposterDeclaration && (
+              <div className="bg-slate-800/80 rounded-xl border border-green-600/30 p-6">
+                <h3 className="text-md font-semibold text-white mb-2 flex items-center gap-2">
+                  <CheckCircle className="text-green-400" size={18} /> Imposter Check Declaration Confirmed
+                </h3>
+                <div className="grid grid-cols-2 gap-3 text-sm mt-3">
+                  <div><span className="text-slate-400">Declared by:</span> <span className="text-white">{imposterDeclaration.declared_by_email as string}</span></div>
+                  <div><span className="text-slate-400">Date:</span> <span className="text-white">{(imposterDeclaration.created_at as string)?.replace("T", " ").split(".")[0]} UTC</span></div>
+                  <div><span className="text-slate-400">IP Address:</span> <span className="text-white">{imposterDeclaration.ip_address as string}</span></div>
+                  {imposterDeclaration.documents_verified ? (
+                    <div><span className="text-slate-400">Documents:</span> <span className="text-white">{String((() => { try { return JSON.parse(imposterDeclaration.documents_verified as string).join(", "); } catch { return String(imposterDeclaration.documents_verified); } })())}</span></div>
+                  ) : null}
+                </div>
+                <p className="text-xs text-slate-500 mt-3 italic">This declaration is immutable and cannot be edited.</p>
               </div>
             )}
 

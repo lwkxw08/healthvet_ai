@@ -330,6 +330,24 @@ def migrate_db():
                 (_gid2(), tier_key, name, mp, pwp, mw, mc, ovr, ar, mi, mcap, mar, feats),
             )
 
+    # Create imposter_declarations table if it doesn't exist (migration for existing DBs)
+    try:
+        cursor.execute("SELECT 1 FROM imposter_declarations LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS imposter_declarations (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            agency_id TEXT NOT NULL,
+            declared_by_user_id TEXT NOT NULL,
+            declared_by_email TEXT NOT NULL,
+            declaration_text TEXT NOT NULL,
+            documents_verified TEXT,
+            ip_address TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        )""")
+
     conn.commit()
     conn.close()
 
@@ -780,6 +798,20 @@ def init_db():
             credit_value REAL DEFAULT 1.0,
             third_party_cost REAL DEFAULT 0,
             updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS imposter_declarations (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            agency_id TEXT NOT NULL,
+            declared_by_user_id TEXT NOT NULL,
+            declared_by_email TEXT NOT NULL,
+            declaration_text TEXT NOT NULL,
+            documents_verified TEXT,
+            ip_address TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
 
         CREATE TABLE IF NOT EXISTS credit_transactions (

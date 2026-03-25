@@ -74,17 +74,33 @@ class ComplianceEngine:
             if not id_pass:
                 flags.append("Identity verification incomplete or failed")
 
-            # Right to Work
-            rtw_pass = rtw and dict(rtw).get("verified") == 1
+            # Right to Work - requires BOTH verified RTW check AND imposter declaration
+            rtw_check_pass = rtw and dict(rtw).get("verified") == 1
+            imposter_decl = db.execute(
+                "SELECT * FROM imposter_declarations WHERE candidate_id=? ORDER BY created_at DESC LIMIT 1",
+                (candidate_id,),
+            ).fetchone()
+            imposter_pass = imposter_decl is not None
+            rtw_pass = rtw_check_pass and imposter_pass
             checks["right_to_work_valid"] = rtw_pass
+            rtw_details = dict(rtw)["result"] if rtw else "not_submitted"
+            if rtw_check_pass and not imposter_pass:
+                rtw_details = "rtw_verified_awaiting_imposter_check"
             audit_entries.append({
                 "check": "right_to_work",
                 "result": "passed" if rtw_pass else "failed",
                 "timestamp": now,
-                "details": dict(rtw)["result"] if rtw else "not_submitted",
+                "details": rtw_details,
+                "rtw_check_verified": rtw_check_pass,
+                "imposter_declaration_submitted": imposter_pass,
+                "imposter_declared_by": dict(imposter_decl)["declared_by_email"] if imposter_decl else None,
+                "imposter_declared_at": dict(imposter_decl)["created_at"] if imposter_decl else None,
             })
             if not rtw_pass:
-                flags.append("Right to Work verification incomplete or invalid")
+                if not rtw_check_pass:
+                    flags.append("Right to Work verification incomplete or invalid")
+                if not imposter_pass:
+                    flags.append("Imposter check declaration not submitted by agency")
 
             # DBS Check
             dbs_pass = dbs and dict(dbs).get("result") == "clear"

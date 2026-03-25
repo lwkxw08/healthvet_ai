@@ -10,7 +10,12 @@ from app.schemas.checks import (
     ReferenceRequest, ReferenceResponse, ReferenceSubmission,
     EmploymentHistoryEntry, EmploymentEntryUpdate, EmploymentEntryCreate,
     EmploymentVerificationRequest, EmploymentVerificationResponse,
+    ImposterDeclarationRequest, ImposterDeclarationResponse,
 )
+import json
+from datetime import datetime, timezone
+from app.database import get_db
+from app.utils.auth import generate_id
 from app.services.identity_verification import IdentityVerificationService
 from app.services.right_to_work import RightToWorkService
 from app.services.dbs_checks import DBSCheckService
@@ -271,3 +276,85 @@ async def send_employment_verification_reminder(ver_id: str, current_user: dict 
     if not result:
         raise HTTPException(status_code=404, detail="Employment verification not found")
     return result
+
+
+# ── Imposter Check Declarations ──────────────────────────────────
+@router.post("/imposter-declaration", response_model=ImposterDeclarationResponse)
+async def submit_imposter_declaration(
+    data: ImposterDeclarationRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Agency submits a signed imposter check declaration for a candidate.
+    This is required before RTW can be marked as compliant.
+    The declaration is timestamped, non-editable, and logged in the audit trail."""
+    if current_user.get("role") != "agency":
+        raise HTTPException(status_code=403, detail="Only agency users can submit imposter declarations")
+
+    verify_agency_owns_candidate(current_user, data.candidate_id)
+
+    ip_address = request.client.host if request.client else "unknown"
+    now = datetime.now(timezone.utc).isoformat()
+    declaration_id = generate_id()
+    docs_json = json.dumps(data.documents_verified) if data.documents_verified else None
+
+    with get_db() as db:
+        # Check if declaration already exists (non-editable - only one allowed)
+        existing = db.execute(
+            "SELECT id FROM imposter_declarations WHERE candidate_id=? AND agency_id=?",
+            (data.candidate_id, current_user["agency_id"]),
+        ).fetchone()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="Imposter declaration already submitted for this candidate. Declarations are non-editable."
+            )
+
+        db.execute(
+            """INSERT INTO imposter_declarations
+               (id, candidate_id, agency_id, declared_by_user_id, declared_by_email,
+                declaration_text, documents_verified, ip_address, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                declaration_id, data.candidate_id, current_user["agency_id"],
+                current_user["id"], current_user["email"],
+                data.declaration_text, docs_json, ip_address, now,
+            ),
+        )
+
+        # Immutable audit log entry
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (?, 'imposter_declaration', ?, 'submitted', ?, ?, ?)""",
+            (
+                generate_id(), data.candidate_id, current_user["email"],
+                json.dumps({
+                    "declaration_id": declaration_id,
+                    "declared_by_user_id": current_user["id"],
+                    "declared_by_email": current_user["email"],
+                    "agency_id": current_user["agency_id"],
+                    "ip_address": ip_address,
+                    "documents_verified": data.documents_verified,
+                    "declaration_text": data.declaration_text,
+                }),
+                now,
+            ),
+        )
+
+        row = db.execute("SELECT * FROM imposter_declarations WHERE id=?", (declaration_id,)).fetchone()
+
+    # Re-evaluate compliance now that declaration is in place
+    ComplianceEngine.evaluate_candidate(data.candidate_id)
+    return dict(row)
+
+
+@router.get("/imposter-declaration/{candidate_id}", response_model=list[ImposterDeclarationResponse])
+async def get_imposter_declarations(candidate_id: str, current_user: dict = Depends(get_current_user)):
+    """Get imposter declarations for a candidate."""
+    verify_agency_owns_candidate(current_user, candidate_id)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT * FROM imposter_declarations WHERE candidate_id=? ORDER BY created_at DESC",
+            (candidate_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]

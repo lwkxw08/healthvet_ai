@@ -286,6 +286,24 @@ class EmploymentVerificationResponse(BaseModel):
     completed_at: Optional[str] = None
 
 
+class ImposterDeclarationRequest(BaseModel):
+    candidate_id: str
+    declaration_text: str = "I confirm that I have conducted an in-person (or compliant video) imposter check and confirm the individual matches the documentation."
+    documents_verified: Optional[List[str]] = None
+
+
+class ImposterDeclarationResponse(BaseModel):
+    id: str
+    candidate_id: str
+    agency_id: str
+    declared_by_user_id: str
+    declared_by_email: str
+    declaration_text: str
+    documents_verified: Optional[str] = None
+    ip_address: Optional[str] = None
+    created_at: str
+
+
 class DashboardStats(BaseModel):
     total_candidates: int = 0
     compliant: int = 0
