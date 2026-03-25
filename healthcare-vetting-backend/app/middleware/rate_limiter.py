@@ -21,12 +21,14 @@ def _key_func(request: Request) -> str:
 
 
 # Global limiter instance — imported by route modules to apply per-endpoint limits
+_enabled = os.environ.get("RATE_LIMIT_ENABLED", "1") not in ("0", "false", "no")
 limiter = Limiter(
     key_func=_key_func,
     default_limits=[
         os.environ.get("RATE_LIMIT_DEFAULT", "100/minute"),
     ],
     storage_uri=os.environ.get("RATE_LIMIT_STORAGE", "memory://"),
+    enabled=_enabled,
 )
 
 

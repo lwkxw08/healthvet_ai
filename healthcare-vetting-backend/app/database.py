@@ -830,6 +830,101 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
+
+        -- GDPR tables
+        CREATE TABLE IF NOT EXISTS gdpr_erasure_requests (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            requested_by TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS gdpr_dpias (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            data_types TEXT NOT NULL,
+            processing_purpose TEXT NOT NULL,
+            risk_level TEXT DEFAULT 'medium',
+            mitigations TEXT,
+            status TEXT DEFAULT 'draft',
+            created_by TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS gdpr_retention_policies (
+            id TEXT PRIMARY KEY,
+            data_category TEXT UNIQUE NOT NULL,
+            retention_period_days INTEGER NOT NULL,
+            legal_basis TEXT NOT NULL,
+            description TEXT,
+            auto_delete INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT
+        );
+
+        -- API keys for external integrations
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            key_hash TEXT NOT NULL,
+            key_prefix TEXT NOT NULL,
+            name TEXT NOT NULL,
+            scopes TEXT DEFAULT '[]',
+            is_active INTEGER DEFAULT 1,
+            last_used_at TEXT,
+            expires_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+
+        -- Webhook subscriptions for agency HR integrations
+        CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            url TEXT NOT NULL,
+            secret TEXT NOT NULL,
+            events TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            failure_count INTEGER DEFAULT 0,
+            last_triggered_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+
+        -- Webhook delivery log
+        CREATE TABLE IF NOT EXISTS webhook_deliveries (
+            id TEXT PRIMARY KEY,
+            subscription_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            response_status INTEGER,
+            response_body TEXT,
+            attempt INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'pending',
+            next_retry_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            delivered_at TEXT,
+            FOREIGN KEY (subscription_id) REFERENCES webhook_subscriptions(id)
+        );
+
+        -- Celery-compatible task results (optional, for tracking)
+        CREATE TABLE IF NOT EXISTS background_tasks (
+            id TEXT PRIMARY KEY,
+            task_name TEXT NOT NULL,
+            args TEXT,
+            status TEXT DEFAULT 'pending',
+            result TEXT,
+            error TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            started_at TEXT,
+            completed_at TEXT
+        );
     """)
 
     conn.commit()

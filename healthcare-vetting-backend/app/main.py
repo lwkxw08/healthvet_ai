@@ -11,6 +11,8 @@ from app.database import init_db, migrate_db
 from app.routes import auth, candidates, checks, compliance, webhooks, agencies, admin, reports
 from app.routes import admin_extended
 from app.routes import submissions
+from app.routes import gdpr
+from app.routes import integrations
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
@@ -55,6 +57,8 @@ app.include_router(admin.router)
 app.include_router(reports.router)
 app.include_router(admin_extended.router)
 app.include_router(submissions.router)
+app.include_router(gdpr.router)
+app.include_router(integrations.router)
 
 
 @app.on_event("startup")
