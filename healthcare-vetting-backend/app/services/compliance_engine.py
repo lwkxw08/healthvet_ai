@@ -12,13 +12,14 @@ class ComplianceEngine:
     """Rule-based compliance evaluation engine."""
 
     RULES = {
-        "identity_verified": {"weight": 15, "required": True},
-        "right_to_work_valid": {"weight": 15, "required": True},
-        "dbs_valid": {"weight": 20, "required": True},
+        "identity_verified": {"weight": 13, "required": True},
+        "right_to_work_valid": {"weight": 13, "required": True},
+        "dbs_valid": {"weight": 17, "required": True},
         "cv_validated": {"weight": 5, "required": False},
-        "employment_verified": {"weight": 15, "required": True},
-        "registration_active": {"weight": 10, "required": True},
-        "references_verified": {"weight": 15, "required": True, "min_count": 2},
+        "employment_verified": {"weight": 13, "required": True},
+        "registration_active": {"weight": 9, "required": True},
+        "references_verified": {"weight": 13, "required": True, "min_count": 2},
+        "training_compliant": {"weight": 12, "required": True},
     }
 
     @staticmethod
@@ -158,6 +159,53 @@ class ComplianceEngine:
             if not cv_pass and cv:
                 flags.append(f"CV fraud risk score: {dict(cv)['fraud_risk_score']}")
 
+            # Training Compliance
+            try:
+                training_certs = db.execute(
+                    "SELECT * FROM training_certificates WHERE candidate_id=?",
+                    (candidate_id,),
+                ).fetchall()
+                # Check mandatory training certificates
+                mandatory_names = [
+                    "Manual Handling", "Infection Prevention & Control",
+                    "Safeguarding Adults", "Safeguarding Children",
+                    "Basic Life Support (BLS)", "Fire Safety", "Health & Safety",
+                ]
+                cert_map = {dict(c)["certificate_name"]: dict(c) for c in training_certs}
+                mandatory_valid = 0
+                mandatory_expired = 0
+                mandatory_missing = []
+                for name in mandatory_names:
+                    cert = cert_map.get(name)
+                    if cert and cert.get("status") == "valid":
+                        mandatory_valid += 1
+                    elif cert and cert.get("status") == "expired":
+                        mandatory_expired += 1
+                    else:
+                        mandatory_missing.append(name)
+                training_pass = mandatory_valid == len(mandatory_names)
+            except Exception:
+                # training_certificates table may not exist yet
+                training_pass = False
+                mandatory_valid = 0
+                mandatory_expired = 0
+                mandatory_missing = ["Manual Handling", "Infection Prevention & Control",
+                    "Safeguarding Adults", "Safeguarding Children",
+                    "Basic Life Support (BLS)", "Fire Safety", "Health & Safety"]
+
+            checks["training_compliant"] = training_pass
+            audit_entries.append({
+                "check": "training_compliance",
+                "result": "passed" if training_pass else "failed",
+                "timestamp": now,
+                "details": f"{mandatory_valid}/{len(mandatory_names)} mandatory certificates valid",
+            })
+            if not training_pass:
+                if mandatory_expired > 0:
+                    flags.append(f"Training: {mandatory_expired} mandatory certificate(s) expired")
+                if mandatory_missing:
+                    flags.append(f"Training: missing {', '.join(mandatory_missing[:3])}{'...' if len(mandatory_missing) > 3 else ''}")
+
             # Employment Verification
             emp_verifications = db.execute(
                 "SELECT * FROM employment_verifications WHERE candidate_id=? AND status='completed'",
@@ -217,6 +265,7 @@ class ComplianceEngine:
                        overall_status=?, score=?, identity_verified=?,
                        right_to_work_valid=?, dbs_valid=?, registration_active=?,
                        references_verified=?, cv_validated=?, employment_verified=?,
+                       training_compliant=?,
                        flags=?, audit_log=?, last_evaluated=?, cqc_ready=?
                        WHERE candidate_id=?""",
                     (
@@ -228,6 +277,7 @@ class ComplianceEngine:
                         1 if checks["references_verified"] else 0,
                         1 if checks["cv_validated"] else 0,
                         1 if checks["employment_verified"] else 0,
+                        1 if checks["training_compliant"] else 0,
                         json.dumps(flags),
                         json.dumps(audit_entries),
                         now,
@@ -241,8 +291,9 @@ class ComplianceEngine:
                        (id, candidate_id, overall_status, score, identity_verified,
                         right_to_work_valid, dbs_valid, registration_active,
                         references_verified, cv_validated, employment_verified,
+                        training_compliant,
                         flags, audit_log, last_evaluated, cqc_ready)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         generate_id(), candidate_id, overall_status, score,
                         1 if checks["identity_verified"] else 0,
@@ -252,6 +303,7 @@ class ComplianceEngine:
                         1 if checks["references_verified"] else 0,
                         1 if checks["cv_validated"] else 0,
                         1 if checks["employment_verified"] else 0,
+                        1 if checks["training_compliant"] else 0,
                         json.dumps(flags),
                         json.dumps(audit_entries),
                         now,

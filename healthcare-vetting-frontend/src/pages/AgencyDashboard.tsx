@@ -1364,6 +1364,7 @@ export default function AgencyDashboard() {
                     { label: "Professional Registration", key: "registration_active" },
                     { label: "References (2+)", key: "references_verified" },
                     { label: "CV Validation", key: "cv_validated" },
+                    { label: "Mandatory Training", key: "training_compliant" },
                   ].map((item) => (
                     <div key={item.key} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
                       <div className="flex items-center gap-3">
