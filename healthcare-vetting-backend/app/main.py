@@ -5,11 +5,15 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
 
 from app.database import init_db, migrate_db
 from app.routes import auth, candidates, checks, compliance, webhooks, agencies, admin, reports
 from app.routes import admin_extended
 from app.routes import submissions
+from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.audit import AuditMiddleware
+from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
 
 app = FastAPI(
     title="HealthVet AI - Healthcare Vetting Engine",
@@ -17,13 +21,27 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Disable CORS. Do not remove this for full-stack development.
+# ── Security Headers Middleware ──────────────────────────────────────────────
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ── Audit / Request-ID Middleware ────────────────────────────────────────────
+app.add_middleware(AuditMiddleware)
+
+# ── Rate Limiting ────────────────────────────────────────────────────────────
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+# ── CORS — environment-configurable, locked down for production ──────────────
+_default_origins = "http://localhost:5173,http://localhost:3000"
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Auth-Token"],
+    max_age=600,
 )
 
 # Include all routers
@@ -56,7 +74,19 @@ async def shutdown():
 
 @app.get("/healthz")
 async def healthz():
-    return {"status": "ok"}
+    """Health check endpoint for load balancers and container orchestration."""
+    from app.database import get_db
+    try:
+        with get_db() as db:
+            db.execute("SELECT 1")
+        db_status = "ok"
+    except Exception:
+        db_status = "degraded"
+    return {
+        "status": "ok" if db_status == "ok" else "degraded",
+        "database": db_status,
+        "version": "1.0.0",
+    }
 
 
 @app.get("/api/info")

@@ -1,12 +1,16 @@
 """Authentication routes for candidates and agencies."""
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_db
-from app.utils.auth import hash_password, verify_password, create_access_token, generate_id
+from app.utils.auth import (
+    hash_password, verify_password, create_access_token, generate_id,
+    decode_token, get_current_user,
+)
 from app.schemas.candidates import CandidateCreate, CandidateLogin, TokenResponse
 from app.schemas.agencies import AgencyCreate, AgencyLogin
+from app.middleware.rate_limiter import limiter
 
 
 class CandidateRegisterWithInvite(BaseModel):
@@ -29,7 +33,8 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 @router.post("/candidates/register", response_model=TokenResponse)
-async def register_candidate(data: CandidateRegisterWithInvite):
+@limiter.limit("5/minute")
+async def register_candidate(request: Request, data: CandidateRegisterWithInvite):
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
         existing = db.execute("SELECT id FROM candidates WHERE email=?", (data.email,)).fetchone()
@@ -85,7 +90,8 @@ async def register_candidate(data: CandidateRegisterWithInvite):
 
 
 @router.post("/candidates/login", response_model=TokenResponse)
-async def login_candidate(data: CandidateLogin):
+@limiter.limit("5/minute")
+async def login_candidate(request: Request, data: CandidateLogin):
     with get_db() as db:
         user = db.execute("SELECT * FROM candidates WHERE email=?", (data.email,)).fetchone()
         if not user:
@@ -100,7 +106,8 @@ async def login_candidate(data: CandidateLogin):
 
 
 @router.post("/agencies/register", response_model=TokenResponse)
-async def register_agency(data: AgencyCreate):
+@limiter.limit("5/minute")
+async def register_agency(request: Request, data: AgencyCreate):
     with get_db() as db:
         existing = db.execute("SELECT id FROM agencies WHERE email=?", (data.email,)).fetchone()
         if existing:
@@ -122,7 +129,8 @@ async def register_agency(data: AgencyCreate):
 
 
 @router.post("/agencies/login", response_model=TokenResponse)
-async def login_agency(data: AgencyLogin):
+@limiter.limit("5/minute")
+async def login_agency(request: Request, data: AgencyLogin):
     with get_db() as db:
         user = db.execute("SELECT * FROM agencies WHERE email=?", (data.email,)).fetchone()
         if not user:
@@ -137,9 +145,35 @@ async def login_agency(data: AgencyLogin):
 
 
 @router.post("/admin/login", response_model=TokenResponse)
-async def login_admin(data: CandidateLogin):
+@limiter.limit("5/minute")
+async def login_admin(request: Request, data: CandidateLogin):
     """Admin login with hardcoded credentials for demo."""
     if data.email == "admin@healthvet.ai" and data.password == "admin123":
         token = create_access_token("admin", "admin")
         return TokenResponse(access_token=token, user_type="admin", user_id="admin")
     raise HTTPException(status_code=401, detail="Invalid admin credentials")
+
+
+@router.post("/token/refresh", response_model=TokenResponse)
+@limiter.limit("10/minute")
+async def refresh_token(request: Request, current_user: dict = None):
+    """Refresh an access token. Requires a valid (non-expired) token."""
+    from fastapi import Depends
+    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+    # Extract token from Authorization header or X-Auth-Token
+    x_auth_token = request.headers.get("X-Auth-Token")
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if x_auth_token:
+        token = x_auth_token
+    elif auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="No token provided")
+    payload = decode_token(token)
+    user_id = payload.get("sub")
+    user_type = payload.get("type")
+    if not user_id or not user_type:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    new_token = create_access_token(user_id, user_type)
+    return TokenResponse(access_token=new_token, user_type=user_type, user_id=user_id)
