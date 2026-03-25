@@ -9,11 +9,57 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type Tab = "overview" | "candidates" | "alerts" | "monitoring" | "candidate-detail" | "settings" | "analytics" | "fraud" | "scheduler" | "subscriptions" | "overrides" | "user-management" | "audit-logs" | "agencies" | "invoicing" | "benchmarking";
+type MainTab = "overview" | "candidates" | "agencies" | "compliance" | "user-management" | "audit-logs" | "settings";
+type SubTab = string;
 
 export default function AdminPanel() {
   const { token, logout } = useAuth();
-  const [tab, setTab] = useState<Tab>("overview");
+  const [mainTab, setMainTab] = useState<MainTab>("overview");
+  const [subTab, setSubTab] = useState<SubTab>("dashboard");
+
+  // Keep legacy tab variable for content rendering compatibility
+  const tab = (() => {
+    if (mainTab === "overview") {
+      if (subTab === "analytics") return "analytics";
+      if (subTab === "benchmarking") return "benchmarking";
+      return "overview";
+    }
+    if (mainTab === "candidates") {
+      if (subTab === "candidate-detail") return "candidate-detail";
+      return "candidates";
+    }
+    if (mainTab === "agencies") {
+      if (subTab === "invoicing") return "invoicing";
+      if (subTab === "subscriptions") return "subscriptions";
+      return "agencies";
+    }
+    if (mainTab === "compliance") {
+      if (subTab === "monitoring") return "monitoring";
+      if (subTab === "fraud") return "fraud";
+      if (subTab === "scheduler") return "scheduler";
+      return "alerts";
+    }
+    if (mainTab === "user-management") {
+      if (subTab === "overrides") return "overrides";
+      return "user-management";
+    }
+    return mainTab;
+  })();
+
+  const switchMainTab = (mt: MainTab) => {
+    setMainTab(mt);
+    // Set default sub-tab for each main tab
+    const defaults: Record<MainTab, string> = {
+      "overview": "dashboard",
+      "candidates": "list",
+      "agencies": "list",
+      "compliance": "alerts",
+      "user-management": "users",
+      "audit-logs": "logs",
+      "settings": "pricing",
+    };
+    setSubTab(defaults[mt]);
+  };
   const [stats, setStats] = useState<Record<string, unknown> | null>(null);
   const [candidates, setCandidates] = useState<Record<string, unknown>[]>([]);
   const [alerts, setAlerts] = useState<Record<string, unknown>[]>([]);
@@ -284,7 +330,7 @@ export default function AdminPanel() {
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
   const viewCandidate = async (candidate: Record<string, unknown>) => {
-    setSelectedCandidate(candidate); setTab("candidate-detail");
+    setSelectedCandidate(candidate); setMainTab("candidates"); setSubTab("candidate-detail");
     if (token) {
       try { const comp = await complianceApi.get(token, candidate.id as string).catch(() => null); setCandidateCompliance(comp); } catch { /* ignore */ }
       loadCandidateDetail(candidate.id as string);
@@ -795,32 +841,75 @@ export default function AdminPanel() {
         <div className={`mx-6 mt-4 p-3 rounded-lg text-sm ${message.startsWith("Error") ? "bg-red-500/20 text-red-300 border border-red-500/30" : "bg-green-500/20 text-green-300 border border-green-500/30"}`}>{message}</div>
       )}
 
+      {/* Main Navigation — 7 tabs */}
       <div className="bg-slate-800/50 border-b border-slate-700 px-6">
         <div className="flex gap-1 overflow-x-auto">
           {([
-            { key: "overview" as Tab, label: "Overview", icon: <BarChart3 size={16} /> },
-            { key: "candidates" as Tab, label: "All Candidates", icon: <Users size={16} /> },
-            { key: "alerts" as Tab, label: `Alerts (${alerts.length})`, icon: <Bell size={16} /> },
-            { key: "monitoring" as Tab, label: "Monitoring", icon: <Eye size={16} /> },
-            { key: "analytics" as Tab, label: "Analytics", icon: <TrendingUp size={16} /> },
-            { key: "fraud" as Tab, label: "Fraud Detection", icon: <ShieldAlert size={16} /> },
-            { key: "scheduler" as Tab, label: "Scheduler", icon: <Zap size={16} /> },
-            { key: "overrides" as Tab, label: "Overrides", icon: <Edit size={16} /> },
-            { key: "agencies" as Tab, label: "Agencies", icon: <Ban size={16} /> },
-            { key: "user-management" as Tab, label: "User Mgmt", icon: <UserPlus size={16} /> },
-            { key: "audit-logs" as Tab, label: "Audit Logs", icon: <History size={16} /> },
-            { key: "invoicing" as Tab, label: "Invoicing", icon: <FileText size={16} /> },
-            { key: "subscriptions" as Tab, label: "Subscriptions", icon: <CreditCard size={16} /> },
-            { key: "benchmarking" as Tab, label: "Benchmarking", icon: <TrendingUp size={16} /> },
-            { key: "settings" as Tab, label: "Settings", icon: <Settings size={16} /> },
+            { key: "overview" as MainTab, label: "Overview", icon: <BarChart3 size={16} /> },
+            { key: "candidates" as MainTab, label: "Candidates", icon: <Users size={16} /> },
+            { key: "agencies" as MainTab, label: "Agencies & Billing", icon: <DollarSign size={16} /> },
+            { key: "compliance" as MainTab, label: "Compliance", icon: <ShieldAlert size={16} /> },
+            { key: "user-management" as MainTab, label: "User Management", icon: <UserPlus size={16} /> },
+            { key: "audit-logs" as MainTab, label: "Audit Logs", icon: <History size={16} /> },
+            { key: "settings" as MainTab, label: "Settings", icon: <Settings size={16} /> },
           ]).map((item) => (
-            <button key={item.key} onClick={() => setTab(item.key)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${tab === item.key ? "text-blue-400 border-blue-400" : "text-slate-400 border-transparent hover:text-white"}`}>
+            <button key={item.key} onClick={() => switchMainTab(item.key)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${mainTab === item.key ? "text-blue-400 border-blue-400" : "text-slate-400 border-transparent hover:text-white"}`}>
               {item.icon} {item.label}
             </button>
           ))}
         </div>
       </div>
+
+      {/* Sub-tab navigation — contextual per main tab */}
+      {mainTab === "overview" && (
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
+          <div className="flex gap-1">
+            {[{ key: "dashboard", label: "Dashboard" }, { key: "analytics", label: "Analytics" }, { key: "benchmarking", label: "Benchmarking" }].map((s) => (
+              <button key={s.key} onClick={() => setSubTab(s.key)}
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {mainTab === "agencies" && (
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
+          <div className="flex gap-1">
+            {[{ key: "list", label: "Agency List" }, { key: "invoicing", label: "Invoicing" }, { key: "subscriptions", label: "Subscription Plans" }].map((s) => (
+              <button key={s.key} onClick={() => setSubTab(s.key)}
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {mainTab === "compliance" && (
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
+          <div className="flex gap-1">
+            {[{ key: "alerts", label: `Alerts (${alerts.length})` }, { key: "monitoring", label: "Monitoring" }, { key: "fraud", label: "Fraud Detection" }, { key: "scheduler", label: "Scheduler" }].map((s) => (
+              <button key={s.key} onClick={() => setSubTab(s.key)}
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {mainTab === "user-management" && (
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
+          <div className="flex gap-1">
+            {[{ key: "users", label: "Users" }, { key: "overrides", label: "Overrides" }].map((s) => (
+              <button key={s.key} onClick={() => setSubTab(s.key)}
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <main className="p-6">
         {/* Overview Tab */}
@@ -2198,7 +2287,7 @@ export default function AdminPanel() {
 
           return (
           <div className="space-y-6">
-            <button onClick={() => setTab("candidates")} className="text-blue-400 hover:text-blue-300 text-sm">&larr; Back</button>
+            <button onClick={() => { setMainTab("candidates"); setSubTab("list"); }} className="text-blue-400 hover:text-blue-300 text-sm">&larr; Back</button>
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">{selectedCandidate.first_name as string} {selectedCandidate.last_name as string}</h2>
               <div className="flex items-center gap-3">
