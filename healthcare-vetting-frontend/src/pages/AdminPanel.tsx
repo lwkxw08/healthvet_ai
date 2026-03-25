@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type Tab = "overview" | "candidates" | "alerts" | "monitoring" | "candidate-detail" | "settings" | "analytics" | "fraud" | "scheduler" | "subscriptions" | "overrides" | "user-management" | "audit-logs" | "agencies" | "invoicing";
+type Tab = "overview" | "candidates" | "alerts" | "monitoring" | "candidate-detail" | "settings" | "analytics" | "fraud" | "scheduler" | "subscriptions" | "overrides" | "user-management" | "audit-logs" | "agencies" | "invoicing" | "benchmarking";
 
 export default function AdminPanel() {
   const { token, logout } = useAuth();
@@ -137,6 +137,27 @@ export default function AdminPanel() {
   const [monCustomFrom, setMonCustomFrom] = useState("");
   const [monCustomTo, setMonCustomTo] = useState("");
   const [monRevenueData, setMonRevenueData] = useState<Record<string, unknown> | null>(null);
+
+  // Benchmarking state
+  const [benchmarkData, setBenchmarkData] = useState<Record<string, unknown> | null>(null);
+  const [, setBenchmarkTrends] = useState<Record<string, unknown> | null>(null);
+  const [loadingBenchmark, setLoadingBenchmark] = useState(false);
+
+  const loadBenchmarkData = useCallback(async () => {
+    if (!token) return;
+    setLoadingBenchmark(true);
+    try {
+      const [agencies, trends] = await Promise.all([
+        benchmarkingApi.getAgencyBenchmarks(token),
+        benchmarkingApi.getTrends(token),
+      ]);
+      setBenchmarkData(agencies);
+      setBenchmarkTrends(trends);
+    } catch { /* ignore */ }
+    finally { setLoadingBenchmark(false); }
+  }, [token]);
+
+  useEffect(() => { if (tab === "benchmarking") loadBenchmarkData(); }, [tab, loadBenchmarkData]);
 
   const loadData = useCallback(async () => {
     if (!token) return;
@@ -790,6 +811,7 @@ export default function AdminPanel() {
             { key: "audit-logs" as Tab, label: "Audit Logs", icon: <History size={16} /> },
             { key: "invoicing" as Tab, label: "Invoicing", icon: <FileText size={16} /> },
             { key: "subscriptions" as Tab, label: "Subscriptions", icon: <CreditCard size={16} /> },
+            { key: "benchmarking" as Tab, label: "Benchmarking", icon: <TrendingUp size={16} /> },
             { key: "settings" as Tab, label: "Settings", icon: <Settings size={16} /> },
           ]).map((item) => (
             <button key={item.key} onClick={() => setTab(item.key)}
@@ -2534,6 +2556,99 @@ export default function AdminPanel() {
           </div>
           );
         })()}
+
+        {/* ── Benchmarking Tab ── */}
+        {tab === "benchmarking" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2"><TrendingUp className="text-cyan-400" size={20} /> Agency Benchmarking</h2>
+              <button onClick={loadBenchmarkData} disabled={loadingBenchmark} className="bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium border border-slate-600 cursor-pointer flex items-center gap-1">
+                <RefreshCw size={14} className={loadingBenchmark ? "animate-spin" : ""} /> {loadingBenchmark ? "Loading..." : "Refresh"}
+              </button>
+            </div>
+
+            {benchmarkData && Array.isArray((benchmarkData as Record<string, unknown>).agencies) && (
+              <div className="space-y-4">
+                {/* Summary Cards */}
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5 text-center">
+                    <div className="text-3xl font-bold text-blue-400">{((benchmarkData as Record<string, unknown>).agencies as Record<string, unknown>[]).length}</div>
+                    <div className="text-xs text-slate-400 mt-1">Total Agencies</div>
+                  </div>
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5 text-center">
+                    <div className="text-3xl font-bold text-green-400">{((benchmarkData as Record<string, unknown>).agencies as Record<string, unknown>[]).filter((a) => Number(a.compliance_rate || 0) >= 80).length}</div>
+                    <div className="text-xs text-slate-400 mt-1">High Compliance (&ge;80%)</div>
+                  </div>
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5 text-center">
+                    <div className="text-3xl font-bold text-amber-400">{((benchmarkData as Record<string, unknown>).agencies as Record<string, unknown>[]).filter((a) => Number(a.compliance_rate || 0) >= 50 && Number(a.compliance_rate || 0) < 80).length}</div>
+                    <div className="text-xs text-slate-400 mt-1">Medium (50-79%)</div>
+                  </div>
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5 text-center">
+                    <div className="text-3xl font-bold text-red-400">{((benchmarkData as Record<string, unknown>).agencies as Record<string, unknown>[]).filter((a) => Number(a.compliance_rate || 0) < 50).length}</div>
+                    <div className="text-xs text-slate-400 mt-1">Low Compliance (&lt;50%)</div>
+                  </div>
+                </div>
+
+                {/* Agency Table */}
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                  <h3 className="text-md font-semibold text-white mb-4">Agency Comparison</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-700">
+                          <th className="text-left text-slate-400 py-2 px-3 font-medium">Agency</th>
+                          <th className="text-center text-slate-400 py-2 px-3 font-medium">Candidates</th>
+                          <th className="text-center text-slate-400 py-2 px-3 font-medium">Compliance Rate</th>
+                          <th className="text-center text-slate-400 py-2 px-3 font-medium">Avg Vetting Time</th>
+                          <th className="text-center text-slate-400 py-2 px-3 font-medium">Revenue</th>
+                          <th className="text-center text-slate-400 py-2 px-3 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {((benchmarkData as Record<string, unknown>).agencies as Record<string, unknown>[]).map((agency) => (
+                          <tr key={String(agency.agency_id)} className="border-b border-slate-700/50 hover:bg-slate-700/20">
+                            <td className="py-3 px-3 text-white font-medium">{String(agency.agency_name || agency.agency_id)}</td>
+                            <td className="py-3 px-3 text-center text-slate-300">{String(agency.total_candidates || 0)}</td>
+                            <td className="py-3 px-3 text-center">
+                              <span className={`font-bold ${Number(agency.compliance_rate || 0) >= 80 ? "text-green-400" : Number(agency.compliance_rate || 0) >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                                {Number(agency.compliance_rate || 0).toFixed(1)}%
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center text-slate-300">{Number(agency.avg_vetting_hours || 0).toFixed(1)}h</td>
+                            <td className="py-3 px-3 text-center text-emerald-400 font-medium">£{Number(agency.total_revenue || 0).toFixed(2)}</td>
+                            <td className="py-3 px-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${agency.status === "active" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>{String(agency.status || "active")}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Bar Chart */}
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                  <h3 className="text-md font-semibold text-white mb-4">Compliance Rate by Agency</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={((benchmarkData as Record<string, unknown>).agencies as Record<string, unknown>[]).map((a) => ({ name: String(a.agency_name || "").slice(0, 15), rate: Number(a.compliance_rate || 0) }))}>
+                      <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} domain={[0, 100]} />
+                      <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "white" }} />
+                      <Bar dataKey="rate" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {!benchmarkData && !loadingBenchmark && (
+              <div className="text-center py-12 text-slate-500">
+                <TrendingUp size={40} className="mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No benchmarking data available. Click Refresh to load.</p>
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );

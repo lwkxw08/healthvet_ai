@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
-  DollarSign, FileText, Briefcase, CreditCard, Download,
+  DollarSign, FileText, Briefcase, CreditCard, Download, Upload, UserPlus, Activity,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type Tab = "dashboard" | "candidates" | "alerts" | "candidate-detail" | "invites" | "billing" | "audit";
+type Tab = "dashboard" | "candidates" | "alerts" | "candidate-detail" | "invites" | "billing" | "audit" | "bulk-import" | "sub-accounts" | "notifications";
 
 export default function AgencyDashboard() {
   const { token, logout } = useAuth();
@@ -77,6 +77,29 @@ export default function AgencyDashboard() {
   const [revetResult, setRevetResult] = useState<Record<string, unknown> | null>(null);
   const [revetRequests, setRevetRequests] = useState<Record<string, unknown>[]>([]);
 
+  // Bulk Import state
+  const [bulkCsvText, setBulkCsvText] = useState("");
+  const [bulkSendInvites, setBulkSendInvites] = useState(true);
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkResult, setBulkResult] = useState<Record<string, unknown> | null>(null);
+  const [bulkError, setBulkError] = useState("");
+
+  // Sub-Accounts state
+  const [subAccounts, setSubAccounts] = useState<Record<string, unknown>[]>([]);
+  const [newSubAccount, setNewSubAccount] = useState({ email: "", password: "", first_name: "", last_name: "", role: "recruiter" });
+  const [creatingSubAccount, setCreatingSubAccount] = useState(false);
+  const [subAccountError, setSubAccountError] = useState("");
+  const [subAccountSuccess, setSubAccountSuccess] = useState("");
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<Record<string, unknown>[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifCategoryFilter, setNotifCategoryFilter] = useState("all");
+  const [seedingNotifs, setSeedingNotifs] = useState(false);
+
+  // Shift Readiness state
+  const [shiftOverview, setShiftOverview] = useState<Record<string, unknown> | null>(null);
+
   const loadData = useCallback(async () => {
     if (!token) return;
     try {
@@ -128,6 +151,16 @@ export default function AgencyDashboard() {
       try {
         const rr = await agencyRevetApi.listRevetRequests(token);
         setRevetRequests(rr);
+      } catch { /* ignore */ }
+      // Load notifications unread count
+      try {
+        const nc = await notificationsApi.getUnreadCount(token);
+        setUnreadCount(nc.unread_count);
+      } catch { /* ignore */ }
+      // Load shift readiness overview
+      try {
+        const sr = await shiftReadinessApi.getAgencyOverview(token);
+        setShiftOverview(sr);
       } catch { /* ignore */ }
     } catch (err) {
       console.error("Failed to load data", err);
@@ -494,6 +527,113 @@ export default function AgencyDashboard() {
     return sum + (opt?.price || 0);
   }, 0);
 
+  // ── Bulk Import Handlers ──
+  const handleBulkImport = async () => {
+    if (!token || !bulkCsvText.trim()) return;
+    setBulkImporting(true);
+    setBulkError("");
+    setBulkResult(null);
+    try {
+      const result = await bulkImportApi.importCandidates(token, bulkCsvText, bulkSendInvites);
+      setBulkResult(result);
+      setBulkCsvText("");
+      await loadData();
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setBulkImporting(false);
+    }
+  };
+
+  const handleCsvFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { setBulkCsvText(ev.target?.result as string || ""); };
+    reader.readAsText(file);
+  };
+
+  // ── Sub-Account Handlers ──
+  const loadSubAccounts = async () => {
+    if (!token) return;
+    try { const sa = await subAccountsApi.list(token); setSubAccounts(sa); } catch { /* ignore */ }
+  };
+
+  const createSubAccount = async () => {
+    if (!token) return;
+    setCreatingSubAccount(true);
+    setSubAccountError("");
+    setSubAccountSuccess("");
+    try {
+      await subAccountsApi.create(token, newSubAccount);
+      setSubAccountSuccess(`Sub-account created for ${newSubAccount.email}`);
+      setNewSubAccount({ email: "", password: "", first_name: "", last_name: "", role: "recruiter" });
+      await loadSubAccounts();
+    } catch (err) {
+      setSubAccountError(err instanceof Error ? err.message : "Failed to create sub-account");
+    } finally {
+      setCreatingSubAccount(false);
+    }
+  };
+
+  const deleteSubAccount = async (accountId: string) => {
+    if (!token) return;
+    try { await subAccountsApi.remove(token, accountId); await loadSubAccounts(); } catch { /* ignore */ }
+  };
+
+  const updateSubAccountRole = async (accountId: string, role: string) => {
+    if (!token) return;
+    try { await subAccountsApi.update(token, accountId, { role }); await loadSubAccounts(); } catch { /* ignore */ }
+  };
+
+  // ── Notification Handlers ──
+  const loadNotifications = async () => {
+    if (!token) return;
+    try {
+      const params: { category?: string } = {};
+      if (notifCategoryFilter !== "all") params.category = notifCategoryFilter;
+      const result = await notificationsApi.getNotifications(token, params);
+      setNotifications(result.notifications);
+      setUnreadCount(result.unread_count);
+    } catch { /* ignore */ }
+  };
+
+  const markNotificationRead = async (notifId: string) => {
+    if (!token) return;
+    try { await notificationsApi.markRead(token, notifId); await loadNotifications(); } catch { /* ignore */ }
+  };
+
+  const markAllNotificationsRead = async () => {
+    if (!token) return;
+    try { await notificationsApi.markAllRead(token); await loadNotifications(); } catch { /* ignore */ }
+  };
+
+  const deleteNotification = async (notifId: string) => {
+    if (!token) return;
+    try { await notificationsApi.deleteNotification(token, notifId); await loadNotifications(); } catch { /* ignore */ }
+  };
+
+  const seedNotifications = async () => {
+    if (!token) return;
+    setSeedingNotifs(true);
+    try { await notificationsApi.seedNotifications(token); await loadNotifications(); } catch { /* ignore */ }
+    finally { setSeedingNotifs(false); }
+  };
+
+  // Load data for specific tabs
+  useEffect(() => { if (tab === "sub-accounts") loadSubAccounts(); }, [tab]);
+  useEffect(() => { if (tab === "notifications") loadNotifications(); }, [tab, notifCategoryFilter]);
+
+  // Shift readiness badge helper
+  const getShiftBadge = (candidate: Record<string, unknown>) => {
+    const rag = getRagStatus(candidate);
+    const status = String(candidate.compliance_status || "incomplete");
+    const score = Number(candidate.compliance_score || 0);
+    if (status === "compliant" && score >= 95) return { label: "READY", color: "bg-green-500/20 text-green-400 border-green-500/30" };
+    if (rag.label === "AMBER") return { label: "CONDITIONAL", color: "bg-amber-500/20 text-amber-400 border-amber-500/30" };
+    return { label: "NOT READY", color: "bg-red-500/20 text-red-400 border-red-500/30" };
+  };
+
   const filteredCandidates = candidatesWithStatus.filter((c) => {
     const empStatus = (c.employment_status as string) || "vetting";
     const passesStatus = statusFilter === "all" || empStatus === statusFilter;
@@ -525,6 +665,9 @@ export default function AgencyDashboard() {
             { key: "dashboard" as Tab, label: "Dashboard", icon: <BarChart3 size={16} /> },
             { key: "candidates" as Tab, label: "Candidates", icon: <Users size={16} /> },
             { key: "invites" as Tab, label: `Invites (${invites.length})`, icon: <Mail size={16} /> },
+            { key: "bulk-import" as Tab, label: "Bulk Import", icon: <Upload size={16} /> },
+            { key: "sub-accounts" as Tab, label: "Team", icon: <UserPlus size={16} /> },
+            { key: "notifications" as Tab, label: `Notifications${unreadCount > 0 ? ` (${unreadCount})` : ""}`, icon: <Activity size={16} /> },
             { key: "alerts" as Tab, label: `Alerts (${alerts.length})`, icon: <Bell size={16} /> },
             { key: "audit" as Tab, label: "CQC Audit", icon: <FileText size={16} /> },
             { key: "billing" as Tab, label: "Billing", icon: <CreditCard size={16} /> },
@@ -896,6 +1039,7 @@ export default function AgencyDashboard() {
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Registration</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Score</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">RAG</th>
+                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Shift Ready</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Compliance</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Employment Status</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Actions</th>
@@ -912,6 +1056,7 @@ export default function AgencyDashboard() {
                           <td className="px-4 py-3 text-sm text-slate-300">{(c.registration_body as string) || "N/A"} {(c.registration_number as string) || ""}</td>
                           <td className="px-4 py-3 text-sm font-medium text-white">{c.compliance_score as number}%</td>
                           <td className="px-4 py-3"><RagBadge candidate={c} /></td>
+                          <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold border ${getShiftBadge(c).color}`}>{getShiftBadge(c).label}</span></td>
                           <td className="px-4 py-3"><StatusBadge status={c.compliance_status as string} /></td>
                           <td className="px-4 py-3">
                             <select
@@ -1741,6 +1886,207 @@ export default function AgencyDashboard() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Bulk Import Tab ── */}
+        {tab === "bulk-import" && (
+          <div className="space-y-6">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2"><Upload className="text-blue-400" size={20} /> Bulk Candidate Import</h3>
+              <p className="text-slate-400 text-sm mb-4">Upload a CSV file or paste CSV data to import multiple candidates at once. Required columns: <span className="text-blue-300">email, first_name, last_name</span>. Optional: <span className="text-slate-300">phone, profession</span>.</p>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-300 mb-2">Upload CSV File</label>
+                <input type="file" accept=".csv" onChange={handleCsvFileUpload} className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-700 file:cursor-pointer" />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-300 mb-2">Or Paste CSV Data</label>
+                <textarea value={bulkCsvText} onChange={(e) => setBulkCsvText(e.target.value)} rows={8} placeholder={"email,first_name,last_name,phone,profession\njohn@example.com,John,Doe,07700900001,Nurse\njane@example.com,Jane,Smith,07700900002,Healthcare Assistant"} className="w-full bg-slate-700/50 border border-slate-600 rounded-lg p-3 text-slate-200 text-sm font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+
+              <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                <input type="checkbox" checked={bulkSendInvites} onChange={(e) => setBulkSendInvites(e.target.checked)} className="w-4 h-4 rounded accent-blue-500" />
+                <span className="text-sm text-slate-300">Send invite emails to imported candidates</span>
+              </label>
+
+              {bulkError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">{bulkError}</div>}
+
+              {bulkResult && (
+                <div className="mb-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <div className="text-green-400 font-semibold text-sm mb-2">Import Complete</div>
+                  <div className="grid grid-cols-3 gap-3 text-sm">
+                    <div className="text-center"><div className="text-2xl font-bold text-green-400">{String(bulkResult.created || 0)}</div><div className="text-slate-400">Created</div></div>
+                    <div className="text-center"><div className="text-2xl font-bold text-amber-400">{String(bulkResult.skipped || 0)}</div><div className="text-slate-400">Skipped</div></div>
+                    <div className="text-center"><div className="text-2xl font-bold text-red-400">{String(bulkResult.errors_count || 0)}</div><div className="text-slate-400">Errors</div></div>
+                  </div>
+                  {(() => {
+                    const errs = bulkResult.errors as Array<{row: number; error: string}> | undefined;
+                    if (!errs || !Array.isArray(errs) || errs.length === 0) return null;
+                    return (
+                      <div className="mt-3 space-y-1">
+                        {errs.map((err, i) => (
+                          <div key={i} className="text-xs text-red-300">Row {err.row}: {err.error}</div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              <button onClick={handleBulkImport} disabled={bulkImporting || !bulkCsvText.trim()} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50 text-white rounded-lg px-6 py-2.5 text-sm font-medium flex items-center gap-2 border-none cursor-pointer">
+                <Upload size={16} /> {bulkImporting ? "Importing..." : "Import Candidates"}
+              </button>
+            </div>
+
+            {/* Shift Readiness Overview */}
+            {shiftOverview && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><Shield className="text-emerald-400" size={20} /> Shift Readiness Overview</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-green-400">{String((shiftOverview.summary as Record<string, unknown>)?.ready || 0)}</div>
+                    <div className="text-xs text-green-300 mt-1 font-bold">READY TO WORK</div>
+                  </div>
+                  <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-amber-400">{String((shiftOverview.summary as Record<string, unknown>)?.conditional || 0)}</div>
+                    <div className="text-xs text-amber-300 mt-1 font-bold">CONDITIONAL</div>
+                  </div>
+                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-red-400">{String((shiftOverview.summary as Record<string, unknown>)?.not_ready || 0)}</div>
+                    <div className="text-xs text-red-300 mt-1 font-bold">NOT READY</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Sub-Accounts Tab ── */}
+        {tab === "sub-accounts" && (
+          <div className="space-y-6">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><UserPlus className="text-purple-400" size={20} /> Team Sub-Accounts</h3>
+              <p className="text-slate-400 text-sm mb-4">Create sub-accounts for your team with role-based access. Roles: <span className="text-purple-300">Owner</span> (full access), <span className="text-blue-300">Manager</span> (manage candidates &amp; view reports), <span className="text-emerald-300">Compliance Officer</span> (view compliance &amp; reports), <span className="text-amber-300">Recruiter</span> (view &amp; invite candidates).</p>
+
+              {subAccountError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">{subAccountError}</div>}
+              {subAccountSuccess && <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">{subAccountSuccess}</div>}
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <input type="text" placeholder="First Name" value={newSubAccount.first_name} onChange={(e) => setNewSubAccount({ ...newSubAccount, first_name: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                <input type="text" placeholder="Last Name" value={newSubAccount.last_name} onChange={(e) => setNewSubAccount({ ...newSubAccount, last_name: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                <input type="email" placeholder="Email" value={newSubAccount.email} onChange={(e) => setNewSubAccount({ ...newSubAccount, email: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                <input type="password" placeholder="Password" value={newSubAccount.password} onChange={(e) => setNewSubAccount({ ...newSubAccount, password: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+              </div>
+              <div className="flex items-center gap-3 mb-4">
+                <select value={newSubAccount.role} onChange={(e) => setNewSubAccount({ ...newSubAccount, role: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500">
+                  <option value="recruiter">Recruiter</option>
+                  <option value="compliance_officer">Compliance Officer</option>
+                  <option value="manager">Manager</option>
+                  <option value="owner">Owner</option>
+                </select>
+                <button onClick={createSubAccount} disabled={creatingSubAccount || !newSubAccount.email || !newSubAccount.password || !newSubAccount.first_name || !newSubAccount.last_name} className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 disabled:opacity-50 text-white rounded-lg px-4 py-2 text-sm font-medium flex items-center gap-2 border-none cursor-pointer">
+                  <UserPlus size={14} /> {creatingSubAccount ? "Creating..." : "Create Sub-Account"}
+                </button>
+              </div>
+            </div>
+
+            {subAccounts.length > 0 && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h4 className="text-md font-semibold text-white mb-3">Existing Sub-Accounts ({subAccounts.length})</h4>
+                <div className="space-y-2">
+                  {subAccounts.map((sa) => (
+                    <div key={String(sa.id)} className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg border border-slate-600/50">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 text-xs font-bold">{String(sa.first_name || "").charAt(0)}{String(sa.last_name || "").charAt(0)}</div>
+                        <div>
+                          <div className="text-sm text-white font-medium">{String(sa.first_name)} {String(sa.last_name)}</div>
+                          <div className="text-xs text-slate-400">{String(sa.email)}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <select value={String(sa.role)} onChange={(e) => updateSubAccountRole(String(sa.id), e.target.value)} className="bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-xs text-white">
+                          <option value="recruiter">Recruiter</option>
+                          <option value="compliance_officer">Compliance Officer</option>
+                          <option value="manager">Manager</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sa.is_active ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>{sa.is_active ? "Active" : "Inactive"}</span>
+                        <button onClick={() => deleteSubAccount(String(sa.id))} className="text-red-400 hover:text-red-300 text-xs border-none bg-transparent cursor-pointer"><Trash2 size={14} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Notifications Tab ── */}
+        {tab === "notifications" && (
+          <div className="space-y-6">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2"><Activity className="text-cyan-400" size={20} /> Notification Centre</h3>
+                <div className="flex items-center gap-2">
+                  <button onClick={seedNotifications} disabled={seedingNotifs} className="bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium border border-slate-600 cursor-pointer">{seedingNotifs ? "Generating..." : "Generate Notifications"}</button>
+                  {unreadCount > 0 && (
+                    <button onClick={markAllNotificationsRead} className="bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg px-3 py-1.5 text-xs font-medium border border-blue-500/30 cursor-pointer">Mark All Read</button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2 mb-4">
+                {["all", "expiry_warning", "completion", "action_required", "payment"].map((cat) => (
+                  <button key={cat} onClick={() => setNotifCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium border cursor-pointer ${notifCategoryFilter === cat ? "bg-cyan-600/20 text-cyan-400 border-cyan-500/30" : "bg-slate-700/50 text-slate-400 border-slate-600 hover:text-white"}`}>
+                    {cat === "all" ? "All" : cat.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                  </button>
+                ))}
+              </div>
+
+              {notifications.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">
+                  <Activity size={40} className="mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No notifications yet. Click &quot;Generate Notifications&quot; to create activity-based alerts.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {notifications.map((n) => {
+                    const severityColors: Record<string, string> = {
+                      success: "border-l-green-500 bg-green-500/5",
+                      warning: "border-l-amber-500 bg-amber-500/5",
+                      error: "border-l-red-500 bg-red-500/5",
+                      info: "border-l-blue-500 bg-blue-500/5",
+                    };
+                    const severity = String(n.severity || "info");
+                    return (
+                      <div key={String(n.id)} className={`p-3 rounded-lg border border-slate-700 border-l-4 ${severityColors[severity] || severityColors.info} ${n.is_read ? "opacity-60" : ""}`}>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-white">{String(n.title)}</span>
+                              {!n.is_read && <span className="w-2 h-2 rounded-full bg-cyan-400" />}
+                            </div>
+                            <p className="text-xs text-slate-400 mt-1">{String(n.message)}</p>
+                            <div className="flex items-center gap-3 mt-2">
+                              <span className="text-xs text-slate-500">{new Date(String(n.created_at)).toLocaleString()}</span>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700/50 text-slate-400">{String(n.category || "general").replace(/_/g, " ")}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 ml-2">
+                            {!n.is_read && (
+                              <button onClick={() => markNotificationRead(String(n.id))} className="text-slate-400 hover:text-blue-400 text-xs border-none bg-transparent cursor-pointer p-1" title="Mark read"><Eye size={14} /></button>
+                            )}
+                            <button onClick={() => deleteNotification(String(n.id))} className="text-slate-400 hover:text-red-400 text-xs border-none bg-transparent cursor-pointer p-1" title="Delete"><Trash2 size={14} /></button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

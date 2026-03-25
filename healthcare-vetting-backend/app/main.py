@@ -13,6 +13,11 @@ from app.routes import admin_extended
 from app.routes import submissions
 from app.routes import gdpr
 from app.routes import integrations
+from app.routes import bulk_import
+from app.routes import shift_readiness
+from app.routes import sub_accounts
+from app.routes import notifications
+from app.routes import benchmarking
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
@@ -59,6 +64,11 @@ app.include_router(admin_extended.router)
 app.include_router(submissions.router)
 app.include_router(gdpr.router)
 app.include_router(integrations.router)
+app.include_router(bulk_import.router)
+app.include_router(shift_readiness.router)
+app.include_router(sub_accounts.router)
+app.include_router(notifications.router)
+app.include_router(benchmarking.router)
 
 
 @app.on_event("startup")

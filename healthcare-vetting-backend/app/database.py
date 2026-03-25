@@ -928,6 +928,37 @@ def init_db():
             started_at TEXT,
             completed_at TEXT
         );
+
+        -- In-App Notifications
+        CREATE TABLE IF NOT EXISTS in_app_notifications (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            user_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            category TEXT DEFAULT 'general',
+            severity TEXT DEFAULT 'info',
+            link TEXT,
+            metadata TEXT,
+            is_read INTEGER DEFAULT 0,
+            read_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Agency Sub-Accounts
+        CREATE TABLE IF NOT EXISTS agency_sub_accounts (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            email TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            role TEXT DEFAULT 'recruiter',
+            is_active INTEGER DEFAULT 1,
+            last_login_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
     """)
 
     conn.commit()

@@ -426,15 +426,64 @@ export const reportsApi = {
   },
 };
 
-// Notifications API
+// Notifications API (In-App Notification Centre)
 export const notificationsApi = {
-  getNotifications: (token: string, recipientEmail?: string, notificationType?: string, limit?: number) => {
+  getNotifications: (token: string, params?: { unread_only?: boolean; category?: string; limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
-    if (recipientEmail) qs.set("recipient_email", recipientEmail);
-    if (notificationType) qs.set("notification_type", notificationType);
-    if (limit) qs.set("limit", limit.toString());
-    return apiRequest<Record<string, unknown>[]>(`/api/notifications?${qs.toString()}`, { token });
+    if (params?.unread_only) qs.set("unread_only", "true");
+    if (params?.category) qs.set("category", params.category);
+    if (params?.limit) qs.set("limit", params.limit.toString());
+    if (params?.offset) qs.set("offset", params.offset.toString());
+    return apiRequest<{ notifications: Record<string, unknown>[]; unread_count: number; total: number }>(`/api/notifications?${qs.toString()}`, { token });
   },
+  getUnreadCount: (token: string) =>
+    apiRequest<{ unread_count: number }>("/api/notifications/unread-count", { token }),
+  markRead: (token: string, notificationId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/notifications/${notificationId}/read`, { method: "POST", token }),
+  markAllRead: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/notifications/mark-all-read", { method: "POST", token }),
+  deleteNotification: (token: string, notificationId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/notifications/${notificationId}`, { method: "DELETE", token }),
+  seedNotifications: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/notifications/seed", { method: "POST", token }),
+};
+
+// Bulk Import API
+export const bulkImportApi = {
+  importCandidates: (token: string, csvData: string, sendInvites: boolean = true) =>
+    apiRequest<Record<string, unknown>>("/api/agencies/bulk-import", { method: "POST", body: { csv_data: csvData, send_invites: sendInvites }, token }),
+  getTemplate: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/agencies/bulk-import/template", { token }),
+};
+
+// Shift Readiness API
+export const shiftReadinessApi = {
+  getReadiness: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/shift-readiness/${candidateId}`, { token }),
+  getAgencyOverview: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/shift-readiness/agency/overview", { token }),
+};
+
+// Sub-Accounts API
+export const subAccountsApi = {
+  getRoles: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/agencies/sub-accounts/roles", { token }),
+  list: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/agencies/sub-accounts", { token }),
+  create: (token: string, data: { email: string; password: string; first_name: string; last_name: string; role: string }) =>
+    apiRequest<Record<string, unknown>>("/api/agencies/sub-accounts", { method: "POST", body: data, token }),
+  update: (token: string, accountId: string, data: { role?: string; is_active?: boolean }) =>
+    apiRequest<Record<string, unknown>>(`/api/agencies/sub-accounts/${accountId}`, { method: "PUT", body: data, token }),
+  remove: (token: string, accountId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/agencies/sub-accounts/${accountId}`, { method: "DELETE", token }),
+};
+
+// Benchmarking API (Admin)
+export const benchmarkingApi = {
+  getAgencyBenchmarks: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/benchmarking/agencies", { token }),
+  getTrends: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/benchmarking/trends", { token }),
 };
 
 // Scheduler API
