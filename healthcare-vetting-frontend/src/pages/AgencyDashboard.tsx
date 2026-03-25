@@ -67,6 +67,7 @@ export default function AgencyDashboard() {
   const [imposterDeclLoading, setImposterDeclLoading] = useState(false);
   const [imposterDeclConfirmed, setImposterDeclConfirmed] = useState(false);
   const [imposterDocsVerified, setImposterDocsVerified] = useState<string[]>([]);
+  const [imposterDeclError, setImposterDeclError] = useState<string | null>(null);
 
   // Re-vet state
   const [revetModalOpen, setRevetModalOpen] = useState(false);
@@ -162,6 +163,7 @@ export default function AgencyDashboard() {
   const submitImposterDeclaration = async () => {
     if (!token || !selectedCandidate || !imposterDeclConfirmed) return;
     setImposterDeclLoading(true);
+    setImposterDeclError(null);
     try {
       const declarationText = "I confirm that I have conducted an in-person (or compliant video) imposter check and confirm the individual matches the documentation.";
       const result = await checksApi.submitImposterDeclaration(
@@ -175,6 +177,8 @@ export default function AgencyDashboard() {
       const comp = await complianceApi.get(token, selectedCandidate.id as string).catch(() => null);
       setCandidateCompliance(comp);
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to submit imposter declaration";
+      setImposterDeclError(msg);
       console.error("Failed to submit imposter declaration", err);
     } finally {
       setImposterDeclLoading(false);
@@ -1476,6 +1480,12 @@ export default function AgencyDashboard() {
                 >
                   {imposterDeclLoading ? "Submitting..." : "Submit Imposter Check Declaration"}
                 </button>
+
+                {imposterDeclError && (
+                  <p className="text-xs text-red-400 mt-2 text-center bg-red-900/20 border border-red-600/30 rounded p-2">
+                    {imposterDeclError}
+                  </p>
+                )}
 
                 <p className="text-xs text-slate-500 mt-2 text-center">
                   This declaration is non-editable once submitted. It will be timestamped and logged in the audit trail.

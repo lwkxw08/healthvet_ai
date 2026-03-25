@@ -288,21 +288,27 @@ async def submit_imposter_declaration(
     """Agency submits a signed imposter check declaration for a candidate.
     This is required before RTW can be marked as compliant.
     The declaration is timestamped, non-editable, and logged in the audit trail."""
-    if current_user.get("role") != "agency":
+    if current_user.get("type") != "agency":
         raise HTTPException(status_code=403, detail="Only agency users can submit imposter declarations")
 
     verify_agency_owns_candidate(current_user, data.candidate_id)
 
+    # JWT only contains sub (user_id) and type — look up agency details from DB
+    agency_id = current_user["sub"]
     ip_address = request.client.host if request.client else "unknown"
     now = datetime.now(timezone.utc).isoformat()
     declaration_id = generate_id()
     docs_json = json.dumps(data.documents_verified) if data.documents_verified else None
 
     with get_db() as db:
+        # Look up agency email from the database
+        agency_row = db.execute("SELECT email FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        agency_email = dict(agency_row)["email"] if agency_row else "unknown"
+
         # Check if declaration already exists (non-editable - only one allowed)
         existing = db.execute(
             "SELECT id FROM imposter_declarations WHERE candidate_id=? AND agency_id=?",
-            (data.candidate_id, current_user["agency_id"]),
+            (data.candidate_id, agency_id),
         ).fetchone()
         if existing:
             raise HTTPException(
@@ -316,8 +322,8 @@ async def submit_imposter_declaration(
                 declaration_text, documents_verified, ip_address, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                declaration_id, data.candidate_id, current_user["agency_id"],
-                current_user["id"], current_user["email"],
+                declaration_id, data.candidate_id, agency_id,
+                agency_id, agency_email,
                 data.declaration_text, docs_json, ip_address, now,
             ),
         )
@@ -327,12 +333,12 @@ async def submit_imposter_declaration(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
                VALUES (?, 'imposter_declaration', ?, 'submitted', ?, ?, ?)""",
             (
-                generate_id(), data.candidate_id, current_user["email"],
+                generate_id(), data.candidate_id, agency_email,
                 json.dumps({
                     "declaration_id": declaration_id,
-                    "declared_by_user_id": current_user["id"],
-                    "declared_by_email": current_user["email"],
-                    "agency_id": current_user["agency_id"],
+                    "declared_by_user_id": agency_id,
+                    "declared_by_email": agency_email,
+                    "agency_id": agency_id,
                     "ip_address": ip_address,
                     "documents_verified": data.documents_verified,
                     "declaration_text": data.declaration_text,
