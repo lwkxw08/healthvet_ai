@@ -340,6 +340,30 @@ def migrate_db():
     except Exception:
         pass
 
+    # Add industry_template_id column to agency_sub_accounts if missing
+    try:
+        existing_sa_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_sub_accounts)").fetchall()}
+        if "industry_template_id" not in existing_sa_cols:
+            cursor.execute("ALTER TABLE agency_sub_accounts ADD COLUMN industry_template_id TEXT")
+    except Exception:
+        pass
+
+    # Add invited_by_sub_account_id column to agency_candidates if missing
+    try:
+        existing_ac_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_candidates)").fetchall()}
+        if "invited_by_sub_account_id" not in existing_ac_cols:
+            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN invited_by_sub_account_id TEXT")
+    except Exception:
+        pass
+
+    # Add sub_account_id column to agency_invites if missing
+    try:
+        existing_ai_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_invites)").fetchall()}
+        if "sub_account_id" not in existing_ai_cols:
+            cursor.execute("ALTER TABLE agency_invites ADD COLUMN sub_account_id TEXT")
+    except Exception:
+        pass
+
     # Create industry_templates and seed defaults if needed
     try:
         cursor.execute("SELECT 1 FROM industry_templates LIMIT 1")
@@ -1095,6 +1119,7 @@ def init_db():
             first_name TEXT NOT NULL,
             last_name TEXT NOT NULL,
             role TEXT DEFAULT 'recruiter',
+            industry_template_id TEXT,
             is_active INTEGER DEFAULT 1,
             last_login_at TEXT,
             created_at TEXT DEFAULT (datetime('now')),

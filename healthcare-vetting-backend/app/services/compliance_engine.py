@@ -26,23 +26,41 @@ class ComplianceEngine:
     @staticmethod
     def _get_template_for_candidate(db, candidate_id: str) -> tuple:
         """Get the industry template for a candidate based on their agency assignment.
+        Resolution chain: sub-account template → agency template → default template → hardcoded defaults.
         Returns (rules_dict, template_config, compliance_label, compliance_threshold)."""
-        # Find the agency this candidate belongs to
+        # Find the agency (and possibly sub-account) this candidate belongs to
         agency_link = db.execute(
-            "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1",
+            "SELECT agency_id, invited_by_sub_account_id FROM agency_candidates WHERE candidate_id=? LIMIT 1",
             (candidate_id,),
         ).fetchone()
 
         if not agency_link:
             return ComplianceEngine.DEFAULT_RULES, {}, "CQC Ready", 95.0
 
-        agency = db.execute(
-            "SELECT industry_template_id FROM agencies WHERE id=?",
-            (dict(agency_link)["agency_id"],),
-        ).fetchone()
+        agency_link_data = dict(agency_link)
+        template_id = None
 
-        if not agency or not dict(agency).get("industry_template_id"):
-            # No template assigned — try default template
+        # 1. Check if the inviting sub-account has a specific industry template
+        sub_account_id = agency_link_data.get("invited_by_sub_account_id")
+        if sub_account_id:
+            sub_acc = db.execute(
+                "SELECT industry_template_id FROM agency_sub_accounts WHERE id=? AND is_active=1",
+                (sub_account_id,),
+            ).fetchone()
+            if sub_acc and dict(sub_acc).get("industry_template_id"):
+                template_id = dict(sub_acc)["industry_template_id"]
+
+        # 2. Fall back to agency-level template
+        if not template_id:
+            agency = db.execute(
+                "SELECT industry_template_id FROM agencies WHERE id=?",
+                (agency_link_data["agency_id"],),
+            ).fetchone()
+            if agency and dict(agency).get("industry_template_id"):
+                template_id = dict(agency)["industry_template_id"]
+
+        # 3. Fall back to default template
+        if not template_id:
             default_tmpl = db.execute(
                 "SELECT * FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
             ).fetchone()
@@ -51,14 +69,17 @@ class ComplianceEngine:
             template_id = dict(default_tmpl)["id"]
             template_data = dict(default_tmpl)
         else:
-            template_id = dict(agency).get("industry_template_id")
-            template_data = db.execute(
+            template_data = None
+
+        # Load the template
+        if template_data is None:
+            template_row = db.execute(
                 "SELECT * FROM industry_templates WHERE id=? AND is_active=1",
                 (template_id,),
             ).fetchone()
-            if not template_data:
+            if not template_row:
                 return ComplianceEngine.DEFAULT_RULES, {}, "CQC Ready", 95.0
-            template_data = dict(template_data)
+            template_data = dict(template_row)
 
         # Load checks for this template
         checks = db.execute(

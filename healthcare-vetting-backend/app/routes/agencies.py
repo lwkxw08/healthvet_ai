@@ -90,10 +90,11 @@ async def create_invite(data: InviteCreate, current_user: dict = Depends(get_cur
             monitoring_cost = monitoring_cost * (1 - discount_pct / 100)
 
         db.execute(
-            """INSERT INTO agency_invites (id, agency_id, candidate_email, invite_code, status, created_at, include_monitoring, vetting_cost, monitoring_cost)
-               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
+            """INSERT INTO agency_invites (id, agency_id, candidate_email, invite_code, status, created_at, include_monitoring, vetting_cost, monitoring_cost, sub_account_id)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)""",
             (invite_id, agency_id, data.candidate_email, invite_code, now,
-             1 if data.include_monitoring else 0, round(vetting_cost, 2), round(monitoring_cost, 2)),
+             1 if data.include_monitoring else 0, round(vetting_cost, 2), round(monitoring_cost, 2),
+             data.sub_account_id),
         )
 
         # Route based on billing_mode
@@ -291,10 +292,11 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
         include_monitoring = invite.get("include_monitoring", 0)
         vetting_cost = invite.get("vetting_cost", 0)
         monitoring_cost = invite.get("monitoring_cost", 0)
+        sub_account_id = invite.get("sub_account_id")
         db.execute(
-            """INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at, annual_monitoring, vetting_cost_accepted, monitoring_cost_accepted)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (invite["agency_id"], candidate_id, now, include_monitoring, vetting_cost, monitoring_cost),
+            """INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at, annual_monitoring, vetting_cost_accepted, monitoring_cost_accepted, invited_by_sub_account_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (invite["agency_id"], candidate_id, now, include_monitoring, vetting_cost, monitoring_cost, sub_account_id),
         )
 
         # Update invite status

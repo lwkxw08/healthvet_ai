@@ -86,10 +86,11 @@ export default function AgencyDashboard() {
 
   // Sub-Accounts state
   const [subAccounts, setSubAccounts] = useState<Record<string, unknown>[]>([]);
-  const [newSubAccount, setNewSubAccount] = useState({ email: "", password: "", first_name: "", last_name: "", role: "recruiter" });
+  const [newSubAccount, setNewSubAccount] = useState({ email: "", password: "", first_name: "", last_name: "", role: "recruiter", industry_template_id: "" });
   const [creatingSubAccount, setCreatingSubAccount] = useState(false);
   const [subAccountError, setSubAccountError] = useState("");
   const [subAccountSuccess, setSubAccountSuccess] = useState("");
+  const [availableTemplates, setAvailableTemplates] = useState<Record<string, unknown>[]>([]);
 
   // Notifications state
   const [notifications, setNotifications] = useState<Record<string, unknown>[]>([]);
@@ -559,15 +560,20 @@ export default function AgencyDashboard() {
     try { const sa = await subAccountsApi.list(token); setSubAccounts(sa); } catch { /* ignore */ }
   };
 
+  const loadAvailableTemplates = async () => {
+    if (!token) return;
+    try { const tpls = await subAccountsApi.listTemplates(token); setAvailableTemplates(tpls); } catch { /* ignore */ }
+  };
+
   const createSubAccount = async () => {
     if (!token) return;
     setCreatingSubAccount(true);
     setSubAccountError("");
     setSubAccountSuccess("");
     try {
-      await subAccountsApi.create(token, newSubAccount);
+      await subAccountsApi.create(token, newSubAccount.industry_template_id ? newSubAccount : { ...newSubAccount, industry_template_id: undefined });
       setSubAccountSuccess(`Sub-account created for ${newSubAccount.email}`);
-      setNewSubAccount({ email: "", password: "", first_name: "", last_name: "", role: "recruiter" });
+      setNewSubAccount({ email: "", password: "", first_name: "", last_name: "", role: "recruiter", industry_template_id: "" });
       await loadSubAccounts();
     } catch (err) {
       setSubAccountError(err instanceof Error ? err.message : "Failed to create sub-account");
@@ -584,6 +590,11 @@ export default function AgencyDashboard() {
   const updateSubAccountRole = async (accountId: string, role: string) => {
     if (!token) return;
     try { await subAccountsApi.update(token, accountId, { role }); await loadSubAccounts(); } catch { /* ignore */ }
+  };
+
+  const updateSubAccountTemplate = async (accountId: string, templateId: string) => {
+    if (!token) return;
+    try { await subAccountsApi.update(token, accountId, { industry_template_id: templateId || "" }); await loadSubAccounts(); } catch { /* ignore */ }
   };
 
   // ── Notification Handlers ──
@@ -621,7 +632,7 @@ export default function AgencyDashboard() {
   };
 
   // Load data for specific tabs
-  useEffect(() => { if (tab === "sub-accounts") loadSubAccounts(); }, [tab]);
+  useEffect(() => { if (tab === "sub-accounts") { loadSubAccounts(); loadAvailableTemplates(); } }, [tab]);
   useEffect(() => { if (tab === "notifications") loadNotifications(); }, [tab, notifCategoryFilter]);
 
   // Shift readiness badge helper
@@ -1980,12 +1991,16 @@ export default function AgencyDashboard() {
                 <input type="email" placeholder="Email" value={newSubAccount.email} onChange={(e) => setNewSubAccount({ ...newSubAccount, email: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
                 <input type="password" placeholder="Password" value={newSubAccount.password} onChange={(e) => setNewSubAccount({ ...newSubAccount, password: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
               </div>
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
                 <select value={newSubAccount.role} onChange={(e) => setNewSubAccount({ ...newSubAccount, role: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500">
                   <option value="recruiter">Recruiter</option>
                   <option value="compliance_officer">Compliance Officer</option>
                   <option value="manager">Manager</option>
                   <option value="owner">Owner</option>
+                </select>
+                <select value={newSubAccount.industry_template_id} onChange={(e) => setNewSubAccount({ ...newSubAccount, industry_template_id: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500">
+                  <option value="">Industry: Inherit from Agency</option>
+                  {availableTemplates.map((t) => <option key={String(t.id)} value={String(t.id)}>{String(t.name)}</option>)}
                 </select>
                 <button onClick={createSubAccount} disabled={creatingSubAccount || !newSubAccount.email || !newSubAccount.password || !newSubAccount.first_name || !newSubAccount.last_name} className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 disabled:opacity-50 text-white rounded-lg px-4 py-2 text-sm font-medium flex items-center gap-2 border-none cursor-pointer">
                   <UserPlus size={14} /> {creatingSubAccount ? "Creating..." : "Create Sub-Account"}
@@ -2006,13 +2021,18 @@ export default function AgencyDashboard() {
                           <div className="text-xs text-slate-400">{String(sa.email)}</div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <select value={String(sa.role)} onChange={(e) => updateSubAccountRole(String(sa.id), e.target.value)} className="bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-xs text-white">
                           <option value="recruiter">Recruiter</option>
                           <option value="compliance_officer">Compliance Officer</option>
                           <option value="manager">Manager</option>
                           <option value="owner">Owner</option>
                         </select>
+                        <select value={String(sa.industry_template_id || "")} onChange={(e) => updateSubAccountTemplate(String(sa.id), e.target.value)} className="bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-xs text-white" title="Industry template for candidates invited by this sub-account">
+                          <option value="">Industry: Inherit</option>
+                          {availableTemplates.map((t) => <option key={String(t.id)} value={String(t.id)}>{String(t.name)}</option>)}
+                        </select>
+                        {sa.industry_template_name ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">{String(sa.industry_template_name)}</span> : null}
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sa.is_active ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>{sa.is_active ? "Active" : "Inactive"}</span>
                         <button onClick={() => deleteSubAccount(String(sa.id))} className="text-red-400 hover:text-red-300 text-xs border-none bg-transparent cursor-pointer"><Trash2 size={14} /></button>
                       </div>

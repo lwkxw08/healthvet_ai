@@ -48,6 +48,7 @@ class SubAccountCreate(BaseModel):
     first_name: str
     last_name: str
     role: str  # owner, manager, compliance_officer, recruiter
+    industry_template_id: Optional[str] = None
 
 
 class SubAccountUpdate(BaseModel):
@@ -55,6 +56,7 @@ class SubAccountUpdate(BaseModel):
     last_name: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    industry_template_id: Optional[str] = None
 
 
 class SubAccountLogin(BaseModel):
@@ -81,7 +83,7 @@ async def list_sub_accounts(current_user: dict = Depends(get_current_user)):
 
     with get_db() as db:
         rows = db.execute(
-            """SELECT id, agency_id, email, first_name, last_name, role, is_active,
+            """SELECT id, agency_id, email, first_name, last_name, role, industry_template_id, is_active,
                       last_login_at, created_at
                FROM agency_sub_accounts WHERE agency_id=? ORDER BY created_at""",
             (agency_id,),
@@ -93,6 +95,12 @@ async def list_sub_accounts(current_user: dict = Depends(get_current_user)):
             role_info = ROLE_PERMISSIONS.get(d["role"], {})
             d["role_label"] = role_info.get("label", d["role"])
             d["permissions"] = role_info.get("permissions", [])
+            # Resolve template name if assigned
+            if d.get("industry_template_id"):
+                tmpl = db.execute("SELECT name FROM industry_templates WHERE id=?", (d["industry_template_id"],)).fetchone()
+                d["industry_template_name"] = dict(tmpl)["name"] if tmpl else None
+            else:
+                d["industry_template_name"] = None
             results.append(d)
 
         return results
@@ -122,10 +130,10 @@ async def create_sub_account(data: SubAccountCreate, current_user: dict = Depend
 
         db.execute(
             """INSERT INTO agency_sub_accounts
-               (id, agency_id, email, password_hash, first_name, last_name, role, is_active, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+               (id, agency_id, email, password_hash, first_name, last_name, role, industry_template_id, is_active, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
             (account_id, agency_id, data.email.lower(), hash_password(data.password),
-             data.first_name, data.last_name, data.role, now),
+             data.first_name, data.last_name, data.role, data.industry_template_id, now),
         )
 
         # Log the action
@@ -134,6 +142,12 @@ async def create_sub_account(data: SubAccountCreate, current_user: dict = Depend
             (generate_id(), "sub_account", account_id, "sub_account_created",
              current_user["sub"], f"Created sub-account {data.email} with role {data.role}", now),
         )
+
+        # Resolve template name
+        template_name = None
+        if data.industry_template_id:
+            tmpl = db.execute("SELECT name FROM industry_templates WHERE id=?", (data.industry_template_id,)).fetchone()
+            template_name = dict(tmpl)["name"] if tmpl else None
 
         return {
             "id": account_id,
@@ -144,6 +158,8 @@ async def create_sub_account(data: SubAccountCreate, current_user: dict = Depend
             "role": data.role,
             "role_label": ROLE_PERMISSIONS[data.role]["label"],
             "permissions": ROLE_PERMISSIONS[data.role]["permissions"],
+            "industry_template_id": data.industry_template_id,
+            "industry_template_name": template_name,
             "is_active": True,
             "created_at": now,
         }
@@ -176,6 +192,8 @@ async def update_sub_account(account_id: str, data: SubAccountUpdate, current_us
             updates["role"] = data.role
         if data.is_active is not None:
             updates["is_active"] = 1 if data.is_active else 0
+        if data.industry_template_id is not None:
+            updates["industry_template_id"] = data.industry_template_id if data.industry_template_id else None
 
         if updates:
             set_clause = ", ".join(f"{k}=?" for k in updates.keys())
@@ -183,13 +201,18 @@ async def update_sub_account(account_id: str, data: SubAccountUpdate, current_us
             db.execute(f"UPDATE agency_sub_accounts SET {set_clause} WHERE id=?", values)
 
         row = db.execute(
-            "SELECT id, agency_id, email, first_name, last_name, role, is_active, last_login_at, created_at FROM agency_sub_accounts WHERE id=?",
+            "SELECT id, agency_id, email, first_name, last_name, role, industry_template_id, is_active, last_login_at, created_at FROM agency_sub_accounts WHERE id=?",
             (account_id,),
         ).fetchone()
         d = dict(row)
         role_info = ROLE_PERMISSIONS.get(d["role"], {})
         d["role_label"] = role_info.get("label", d["role"])
         d["permissions"] = role_info.get("permissions", [])
+        if d.get("industry_template_id"):
+            tmpl = db.execute("SELECT name FROM industry_templates WHERE id=?", (d["industry_template_id"],)).fetchone()
+            d["industry_template_name"] = dict(tmpl)["name"] if tmpl else None
+        else:
+            d["industry_template_name"] = None
         return d
 
 
@@ -256,4 +279,5 @@ async def sub_account_login(data: SubAccountLogin):
             "role_label": ROLE_PERMISSIONS.get(account["role"], {}).get("label", account["role"]),
             "permissions": ROLE_PERMISSIONS.get(account["role"], {}).get("permissions", []),
             "name": f"{account['first_name']} {account['last_name']}",
+            "industry_template_id": account.get("industry_template_id"),
         }

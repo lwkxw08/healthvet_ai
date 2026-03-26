@@ -7,9 +7,12 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 from app.database import get_db
-from app.utils.auth import get_current_admin, generate_id
+from app.utils.auth import get_current_admin, get_current_user, generate_id
 
 router = APIRouter(prefix="/api/admin/industry-templates", tags=["Industry Templates"])
+
+# Agency-accessible endpoint (read-only list for sub-account template assignment)
+agency_router = APIRouter(prefix="/api/industry-templates", tags=["Industry Templates (Agency)"])
 
 
 class TemplateCheckInput(BaseModel):
@@ -290,3 +293,17 @@ async def get_agency_template(agency_id: str, admin=Depends(get_current_admin)):
             except (json.JSONDecodeError, TypeError):
                 c["config"] = {}
         return td
+
+
+# ── Agency-accessible read-only endpoint ─────────────────────────
+@agency_router.get("/list")
+async def list_templates_for_agency(current_user: dict = Depends(get_current_user)):
+    """List all active industry templates (read-only, for agency sub-account assignment)."""
+    if current_user["type"] not in ("agency", "admin"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    with get_db() as db:
+        templates = db.execute(
+            "SELECT id, name, description, compliance_label, compliance_threshold FROM industry_templates WHERE is_active=1 ORDER BY is_default DESC, name ASC"
+        ).fetchall()
+        return [dict(t) for t in templates]

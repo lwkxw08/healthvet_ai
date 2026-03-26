@@ -39,6 +39,7 @@ class AgencyLogin(BaseModel):
 class InviteCreate(BaseModel):
     candidate_email: str = Field(..., max_length=254)
     include_monitoring: bool = False
+    sub_account_id: Optional[str] = None
 
     @field_validator("candidate_email")
     @classmethod

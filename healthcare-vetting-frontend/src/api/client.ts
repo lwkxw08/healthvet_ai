@@ -470,12 +470,14 @@ export const subAccountsApi = {
     apiRequest<Record<string, unknown>>("/api/agencies/sub-accounts/roles", { token }),
   list: (token: string) =>
     apiRequest<Record<string, unknown>[]>("/api/agencies/sub-accounts", { token }),
-  create: (token: string, data: { email: string; password: string; first_name: string; last_name: string; role: string }) =>
+  create: (token: string, data: { email: string; password: string; first_name: string; last_name: string; role: string; industry_template_id?: string }) =>
     apiRequest<Record<string, unknown>>("/api/agencies/sub-accounts", { method: "POST", body: data, token }),
-  update: (token: string, accountId: string, data: { role?: string; is_active?: boolean }) =>
+  update: (token: string, accountId: string, data: { role?: string; is_active?: boolean; industry_template_id?: string }) =>
     apiRequest<Record<string, unknown>>(`/api/agencies/sub-accounts/${accountId}`, { method: "PUT", body: data, token }),
   remove: (token: string, accountId: string) =>
     apiRequest<Record<string, unknown>>(`/api/agencies/sub-accounts/${accountId}`, { method: "DELETE", token }),
+  listTemplates: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/industry-templates/list", { token }),
 };
 
 // Benchmarking API (Admin)
@@ -550,8 +552,8 @@ export const agencyRevetApi = {
 export const agencyInvitesApi = {
   getVettingPricing: (token: string) =>
     apiRequest<{ vetting_total: number; monitoring_annual_price: number }>("/api/agencies/vetting-pricing", { token }),
-  createInvite: (token: string, candidateEmail: string, includeMonitoring: boolean = false) =>
-    apiRequest<Record<string, unknown>>("/api/agencies/invites", { method: "POST", body: { candidate_email: candidateEmail, include_monitoring: includeMonitoring }, token }),
+  createInvite: (token: string, candidateEmail: string, includeMonitoring: boolean = false, subAccountId?: string) =>
+    apiRequest<Record<string, unknown>>("/api/agencies/invites", { method: "POST", body: { candidate_email: candidateEmail, include_monitoring: includeMonitoring, sub_account_id: subAccountId }, token }),
   listInvites: (token: string) =>
     apiRequest<Record<string, unknown>[]>("/api/agencies/invites", { token }),
   revokeInvite: (token: string, inviteId: string) =>

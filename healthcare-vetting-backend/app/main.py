@@ -71,6 +71,7 @@ app.include_router(sub_accounts.router)
 app.include_router(notifications.router)
 app.include_router(benchmarking.router)
 app.include_router(industry_templates.router)
+app.include_router(industry_templates.agency_router)
 
 
 @app.on_event("startup")
