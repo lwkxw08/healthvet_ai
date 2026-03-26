@@ -515,6 +515,136 @@ def migrate_db():
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         )""")
 
+    # Create lead generation tables if they don't exist
+    try:
+        cursor.execute("SELECT 1 FROM scrape_jobs LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS scrape_jobs (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            industry TEXT,
+            industry_slug TEXT,
+            config TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'pending',
+            started_at TEXT,
+            completed_at TEXT,
+            results_count INTEGER DEFAULT 0,
+            error_message TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )""")
+    try:
+        cursor.execute("SELECT 1 FROM leads LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS leads (
+            id TEXT PRIMARY KEY,
+            scrape_job_id TEXT,
+            source TEXT NOT NULL,
+            industry TEXT,
+            industry_slug TEXT,
+            agency_name TEXT NOT NULL,
+            description TEXT,
+            website TEXT,
+            email TEXT,
+            phone TEXT,
+            location TEXT,
+            coverage TEXT,
+            employment_types TEXT,
+            salary_range TEXT,
+            source_url TEXT,
+            verified INTEGER DEFAULT 0,
+            social_links TEXT DEFAULT '{}',
+            extra TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'new',
+            notes TEXT,
+            scraped_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (scrape_job_id) REFERENCES scrape_jobs(id)
+        )""")
+
+    # Create registration_scrape_results table for real professional register scraping
+    try:
+        cursor.execute("SELECT 1 FROM registration_scrape_results LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS registration_scrape_results (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            registration_check_id TEXT,
+            body TEXT NOT NULL,
+            registration_number TEXT NOT NULL,
+            scrape_source TEXT NOT NULL,
+            registrant_name TEXT,
+            registration_status TEXT,
+            expiry_date TEXT,
+            sanctions TEXT DEFAULT '[]',
+            conditions TEXT DEFAULT '[]',
+            raw_data TEXT DEFAULT '{}',
+            scraped_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        )""")
+
+    # Create industry_plan_links table (Option A: Industry-Specific Plans)
+    try:
+        cursor.execute("SELECT 1 FROM industry_plan_links LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS industry_plan_links (
+            id TEXT PRIMARY KEY,
+            tier_key TEXT NOT NULL,
+            industry_template_id TEXT NOT NULL,
+            custom_monthly_price REAL,
+            custom_per_worker_price REAL,
+            custom_monthly_checks INTEGER,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
+            UNIQUE(tier_key, industry_template_id)
+        )""")
+
+    # Create industry_check_pricing table (Option C: Per-Element Industry Pricing)
+    try:
+        cursor.execute("SELECT 1 FROM industry_check_pricing LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS industry_check_pricing (
+            id TEXT PRIMARY KEY,
+            industry_template_id TEXT NOT NULL,
+            check_type TEXT NOT NULL,
+            label TEXT,
+            credit_value REAL DEFAULT 1.0,
+            third_party_cost REAL DEFAULT 0,
+            sell_price REAL DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
+            UNIQUE(industry_template_id, check_type)
+        )""")
+
+    # Add industry_template_id column to subscription_tier_config if missing
+    try:
+        existing_stc_cols = {row[1] for row in cursor.execute("PRAGMA table_info(subscription_tier_config)").fetchall()}
+        if "industry_template_id" not in existing_stc_cols:
+            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN industry_template_id TEXT")
+        if "industry_name" not in existing_stc_cols:
+            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN industry_name TEXT")
+    except Exception:
+        pass
+
+    # Add industry_template_id column to agency_subscriptions if missing
+    try:
+        existing_as_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_subscriptions)").fetchall()}
+        if "industry_template_id" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN industry_template_id TEXT")
+        if "credits_total" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN credits_total REAL DEFAULT 0")
+        if "credits_used" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN credits_used REAL DEFAULT 0")
+        if "rollover_credits" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN rollover_credits REAL DEFAULT 0")
+        if "allow_rollover" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN allow_rollover INTEGER DEFAULT 0")
+        if "overage_rate" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN overage_rate REAL DEFAULT 0")
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()
 
@@ -1152,6 +1282,95 @@ def init_db():
             sort_order INTEGER DEFAULT 0,
             FOREIGN KEY (template_id) REFERENCES industry_templates(id),
             UNIQUE(template_id, check_key)
+        );
+
+        -- Lead Generation: Scrape Jobs
+        CREATE TABLE IF NOT EXISTS scrape_jobs (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            industry TEXT,
+            industry_slug TEXT,
+            config TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'pending',
+            started_at TEXT,
+            completed_at TEXT,
+            results_count INTEGER DEFAULT 0,
+            error_message TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Lead Generation: Leads
+        CREATE TABLE IF NOT EXISTS leads (
+            id TEXT PRIMARY KEY,
+            scrape_job_id TEXT,
+            source TEXT NOT NULL,
+            industry TEXT,
+            industry_slug TEXT,
+            agency_name TEXT NOT NULL,
+            description TEXT,
+            website TEXT,
+            email TEXT,
+            phone TEXT,
+            location TEXT,
+            coverage TEXT,
+            employment_types TEXT,
+            salary_range TEXT,
+            source_url TEXT,
+            verified INTEGER DEFAULT 0,
+            social_links TEXT DEFAULT '{}',
+            extra TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'new',
+            notes TEXT,
+            scraped_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (scrape_job_id) REFERENCES scrape_jobs(id)
+        );
+
+        -- Professional Registration Scrape Results
+        CREATE TABLE IF NOT EXISTS registration_scrape_results (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            registration_check_id TEXT,
+            body TEXT NOT NULL,
+            registration_number TEXT NOT NULL,
+            scrape_source TEXT NOT NULL,
+            registrant_name TEXT,
+            registration_status TEXT,
+            expiry_date TEXT,
+            sanctions TEXT DEFAULT '[]',
+            conditions TEXT DEFAULT '[]',
+            raw_data TEXT DEFAULT '{}',
+            scraped_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        -- Industry-Specific Plan Links (Option A)
+        CREATE TABLE IF NOT EXISTS industry_plan_links (
+            id TEXT PRIMARY KEY,
+            tier_key TEXT NOT NULL,
+            industry_template_id TEXT NOT NULL,
+            custom_monthly_price REAL,
+            custom_per_worker_price REAL,
+            custom_monthly_checks INTEGER,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
+            UNIQUE(tier_key, industry_template_id)
+        );
+
+        -- Per-Element Industry Pricing (Option C)
+        CREATE TABLE IF NOT EXISTS industry_check_pricing (
+            id TEXT PRIMARY KEY,
+            industry_template_id TEXT NOT NULL,
+            check_type TEXT NOT NULL,
+            label TEXT,
+            credit_value REAL DEFAULT 1.0,
+            third_party_cost REAL DEFAULT 0,
+            sell_price REAL DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
+            UNIQUE(industry_template_id, check_type)
         );
     """)
 

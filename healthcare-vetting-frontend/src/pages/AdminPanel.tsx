@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi } from "../api/client";
+import LeadGenerationPanel from "./LeadGenerationPanel";
+import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
@@ -9,7 +11,7 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type MainTab = "overview" | "candidates" | "agencies" | "compliance" | "user-management" | "audit-logs" | "settings";
+type MainTab = "overview" | "candidates" | "agencies" | "compliance" | "user-management" | "audit-logs" | "settings" | "lead-generation";
 type SubTab = string;
 
 export default function AdminPanel() {
@@ -43,6 +45,7 @@ export default function AdminPanel() {
       if (subTab === "overrides") return "overrides";
       return "user-management";
     }
+    if (mainTab === "lead-generation") return "lead-generation";
     return mainTab;
   })();
 
@@ -57,6 +60,7 @@ export default function AdminPanel() {
       "user-management": "users",
       "audit-logs": "logs",
       "settings": "pricing",
+      "lead-generation": "scrape",
     };
     setSubTab(defaults[mt]);
   };
@@ -949,6 +953,7 @@ export default function AdminPanel() {
             { key: "compliance" as MainTab, label: "Compliance", icon: <ShieldAlert size={16} /> },
             { key: "user-management" as MainTab, label: "User Management", icon: <UserPlus size={16} /> },
             { key: "audit-logs" as MainTab, label: "Audit Logs", icon: <History size={16} /> },
+            { key: "lead-generation" as MainTab, label: "Lead Generation", icon: <Zap size={16} /> },
             { key: "settings" as MainTab, label: "Settings", icon: <Settings size={16} /> },
           ]).map((item) => (
             <button key={item.key} onClick={() => switchMainTab(item.key)}
@@ -999,7 +1004,7 @@ export default function AdminPanel() {
       {mainTab === "settings" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "alerts-config", label: "Alert Settings" }].map((s) => (
+            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "alerts-config", label: "Alert Settings" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -1022,6 +1027,12 @@ export default function AdminPanel() {
       )}
 
       <main className="p-6">
+        {/* Lead Generation Tab */}
+        {tab === "lead-generation" && <LeadGenerationPanel />}
+
+        {/* Industry Plans Sub-tab under Settings */}
+        {mainTab === "settings" && subTab === "industry-plans" && <SubscriptionPlansPanel />}
+
         {/* Overview Tab */}
         {tab === "overview" && stats && (
           <div className="space-y-6">

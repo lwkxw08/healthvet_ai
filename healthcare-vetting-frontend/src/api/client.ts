@@ -538,6 +538,58 @@ export const industryTemplatesApi = {
     apiRequest<Record<string, unknown>>(`/api/admin/industry-templates/agency/${agencyId}`, { token }),
 };
 
+// Lead Generation API (Admin)
+export const leadGenerationApi = {
+  getSources: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/lead-generation/sources", { token }),
+  triggerScrape: (token: string, data: { source: string; industry?: string; industry_slug?: string; config?: Record<string, unknown> }) =>
+    apiRequest<Record<string, unknown>>("/api/lead-generation/scrape", { method: "POST", body: data, token }),
+  getJobs: (token: string, params?: { source?: string; status?: string }) =>
+    apiRequest<Record<string, unknown>[]>(`/api/lead-generation/jobs${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`, { token }),
+  getJob: (token: string, jobId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/lead-generation/jobs/${jobId}`, { token }),
+  getLeads: (token: string, params?: Record<string, string>) =>
+    apiRequest<Record<string, unknown>>(`/api/lead-generation/leads${params ? '?' + new URLSearchParams(params).toString() : ''}`, { token }),
+  getLeadStats: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/lead-generation/leads/stats", { token }),
+  updateLead: (token: string, leadId: string, data: { status?: string; notes?: string }) =>
+    apiRequest<Record<string, unknown>>(`/api/lead-generation/leads/${leadId}`, { method: "PUT", body: data, token }),
+  deleteLead: (token: string, leadId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/lead-generation/leads/${leadId}`, { method: "DELETE", token }),
+  exportLeads: (token: string, params?: Record<string, string>) =>
+    apiRequest<Record<string, unknown>>("/api/lead-generation/leads/export", { method: "POST", body: params, token }),
+  scrapeRegistration: (token: string, data: { candidate_id: string; body: string; registration_number: string }) =>
+    apiRequest<Record<string, unknown>>("/api/lead-generation/registration-scrape", { method: "POST", body: data, token }),
+  getRegistrationScrapes: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>[]>(`/api/lead-generation/registration-scrape/${candidateId}`, { token }),
+};
+
+// Subscription Plans API (Admin - Industry-Specific)
+export const subscriptionPlansApi = {
+  getIndustryPlans: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/subscription-plans/industry-plans", { token }),
+  createIndustryPlan: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/subscription-plans/industry-plans", { method: "POST", body: data, token }),
+  updateIndustryPlan: (token: string, linkId: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/subscription-plans/industry-plans/${linkId}`, { method: "PUT", body: data, token }),
+  deleteIndustryPlan: (token: string, linkId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/subscription-plans/industry-plans/${linkId}`, { method: "DELETE", token }),
+  getIndustryPricing: (token: string, templateId?: string) =>
+    apiRequest<Record<string, unknown>[]>(`/api/subscription-plans/industry-pricing${templateId ? '?industry_template_id=' + templateId : ''}`, { token }),
+  createIndustryPricing: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/subscription-plans/industry-pricing", { method: "POST", body: data, token }),
+  updateIndustryPricing: (token: string, pricingId: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/subscription-plans/industry-pricing/${pricingId}`, { method: "PUT", body: data, token }),
+  deleteIndustryPricing: (token: string, pricingId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/subscription-plans/industry-pricing/${pricingId}`, { method: "DELETE", token }),
+  bulkSetPricing: (token: string, data: { industry_template_id: string; pricing: Record<string, unknown>[] }) =>
+    apiRequest<Record<string, unknown>>("/api/subscription-plans/industry-pricing/bulk", { method: "POST", body: data, token }),
+  getPlansByIndustry: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/subscription-plans/by-industry", { token }),
+  getPricingMatrix: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/subscription-plans/pricing-matrix", { token }),
+};
+
 // Agency Re-vet API
 export const agencyRevetApi = {
   requestRevet: (token: string, candidateId: string, sections: string[]) =>
