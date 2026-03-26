@@ -1,6 +1,6 @@
 """
 Compliance Engine - The Core
-Rule-based compliance scoring with CQC-ready audit logs.
+Rule-based compliance scoring with industry-configurable templates and audit logs.
 """
 import json
 from datetime import datetime, timezone
@@ -9,9 +9,10 @@ from app.utils.auth import generate_id
 
 
 class ComplianceEngine:
-    """Rule-based compliance evaluation engine."""
+    """Rule-based compliance evaluation engine with industry template support."""
 
-    RULES = {
+    # Default rules (Healthcare CQC) — used as fallback when no template is assigned
+    DEFAULT_RULES = {
         "identity_verified": {"weight": 13, "required": True},
         "right_to_work_valid": {"weight": 13, "required": True},
         "dbs_valid": {"weight": 17, "required": True},
@@ -23,10 +24,83 @@ class ComplianceEngine:
     }
 
     @staticmethod
+    def _get_template_for_candidate(db, candidate_id: str) -> tuple:
+        """Get the industry template for a candidate based on their agency assignment.
+        Returns (rules_dict, template_config, compliance_label, compliance_threshold)."""
+        # Find the agency this candidate belongs to
+        agency_link = db.execute(
+            "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1",
+            (candidate_id,),
+        ).fetchone()
+
+        if not agency_link:
+            return ComplianceEngine.DEFAULT_RULES, {}, "CQC Ready", 95.0
+
+        agency = db.execute(
+            "SELECT industry_template_id FROM agencies WHERE id=?",
+            (dict(agency_link)["agency_id"],),
+        ).fetchone()
+
+        if not agency or not dict(agency).get("industry_template_id"):
+            # No template assigned — try default template
+            default_tmpl = db.execute(
+                "SELECT * FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
+            ).fetchone()
+            if not default_tmpl:
+                return ComplianceEngine.DEFAULT_RULES, {}, "CQC Ready", 95.0
+            template_id = dict(default_tmpl)["id"]
+            template_data = dict(default_tmpl)
+        else:
+            template_id = dict(agency).get("industry_template_id")
+            template_data = db.execute(
+                "SELECT * FROM industry_templates WHERE id=? AND is_active=1",
+                (template_id,),
+            ).fetchone()
+            if not template_data:
+                return ComplianceEngine.DEFAULT_RULES, {}, "CQC Ready", 95.0
+            template_data = dict(template_data)
+
+        # Load checks for this template
+        checks = db.execute(
+            "SELECT * FROM industry_template_checks WHERE template_id=? AND is_enabled=1 ORDER BY sort_order ASC",
+            (template_id,),
+        ).fetchall()
+
+        if not checks:
+            return ComplianceEngine.DEFAULT_RULES, {}, "CQC Ready", 95.0
+
+        rules = {}
+        template_config = {}
+        for c in checks:
+            cd = dict(c)
+            config = {}
+            try:
+                config = json.loads(cd["config"]) if cd["config"] else {}
+            except (json.JSONDecodeError, TypeError):
+                config = {}
+
+            rules[cd["check_key"]] = {
+                "weight": cd["weight"],
+                "required": bool(cd["is_required"]),
+                "label": cd["check_label"],
+                **config,
+            }
+            template_config[cd["check_key"]] = config
+
+        compliance_label = template_data.get("compliance_label", "Compliant")
+        compliance_threshold = template_data.get("compliance_threshold", 95.0)
+
+        return rules, template_config, compliance_label, compliance_threshold
+
+    @staticmethod
     def evaluate_candidate(candidate_id: str) -> dict:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
+            # Load template-specific rules
+            rules, template_config, compliance_label, compliance_threshold = \
+                ComplianceEngine._get_template_for_candidate(db, candidate_id)
+
             # Gather all check results
             identity = db.execute(
                 "SELECT * FROM identity_checks WHERE candidate_id=? ORDER BY started_at DESC LIMIT 1",
@@ -58,191 +132,228 @@ class ComplianceEngine:
                 (candidate_id,),
             ).fetchone()
 
-            # Evaluate each rule
+            # Evaluate each rule based on template
             checks = {}
             audit_entries = []
             flags = []
 
             # Identity verification
-            id_pass = identity and dict(identity).get("result") == "clear"
-            checks["identity_verified"] = id_pass
-            audit_entries.append({
-                "check": "identity_verification",
-                "result": "passed" if id_pass else "failed",
-                "timestamp": now,
-                "details": dict(identity)["result"] if identity else "not_submitted",
-            })
-            if not id_pass:
-                flags.append("Identity verification incomplete or failed")
+            if "identity_verified" in rules:
+                id_pass = identity and dict(identity).get("result") == "clear"
+                checks["identity_verified"] = id_pass
+                audit_entries.append({
+                    "check": "identity_verification",
+                    "result": "passed" if id_pass else "failed",
+                    "timestamp": now,
+                    "details": dict(identity)["result"] if identity else "not_submitted",
+                })
+                if not id_pass:
+                    flags.append("Identity verification incomplete or failed")
 
-            # Right to Work - requires BOTH verified RTW check AND imposter declaration
-            rtw_check_pass = rtw and dict(rtw).get("verified") == 1
-            imposter_decl = db.execute(
-                "SELECT * FROM imposter_declarations WHERE candidate_id=? ORDER BY created_at DESC LIMIT 1",
-                (candidate_id,),
-            ).fetchone()
-            imposter_pass = imposter_decl is not None
-            rtw_pass = rtw_check_pass and imposter_pass
-            checks["right_to_work_valid"] = rtw_pass
-            rtw_details = dict(rtw)["result"] if rtw else "not_submitted"
-            if rtw_check_pass and not imposter_pass:
-                rtw_details = "rtw_verified_awaiting_imposter_check"
-            audit_entries.append({
-                "check": "right_to_work",
-                "result": "passed" if rtw_pass else "failed",
-                "timestamp": now,
-                "details": rtw_details,
-                "rtw_check_verified": rtw_check_pass,
-                "imposter_declaration_submitted": imposter_pass,
-                "imposter_declared_by": dict(imposter_decl)["declared_by_email"] if imposter_decl else None,
-                "imposter_declared_at": dict(imposter_decl)["created_at"] if imposter_decl else None,
-            })
-            if not rtw_pass:
-                if not rtw_check_pass:
-                    flags.append("Right to Work verification incomplete or invalid")
-                if not imposter_pass:
-                    flags.append("Imposter check declaration not submitted by agency")
+            # Right to Work
+            if "right_to_work_valid" in rules:
+                rtw_config = template_config.get("right_to_work_valid", {})
+                requires_imposter = rtw_config.get("requires_imposter_check", True)
+
+                rtw_check_pass = rtw and dict(rtw).get("verified") == 1
+                if requires_imposter:
+                    imposter_decl = db.execute(
+                        "SELECT * FROM imposter_declarations WHERE candidate_id=? ORDER BY created_at DESC LIMIT 1",
+                        (candidate_id,),
+                    ).fetchone()
+                    imposter_pass = imposter_decl is not None
+                    rtw_pass = rtw_check_pass and imposter_pass
+                else:
+                    imposter_pass = True
+                    imposter_decl = None
+                    rtw_pass = rtw_check_pass
+
+                checks["right_to_work_valid"] = rtw_pass
+                rtw_details = dict(rtw)["result"] if rtw else "not_submitted"
+                if rtw_check_pass and not imposter_pass:
+                    rtw_details = "rtw_verified_awaiting_imposter_check"
+                audit_entries.append({
+                    "check": "right_to_work",
+                    "result": "passed" if rtw_pass else "failed",
+                    "timestamp": now,
+                    "details": rtw_details,
+                    "rtw_check_verified": rtw_check_pass,
+                    "imposter_declaration_submitted": imposter_pass,
+                    "imposter_declared_by": dict(imposter_decl)["declared_by_email"] if imposter_decl else None,
+                    "imposter_declared_at": dict(imposter_decl)["created_at"] if imposter_decl else None,
+                })
+                if not rtw_pass:
+                    if not rtw_check_pass:
+                        flags.append("Right to Work verification incomplete or invalid")
+                    if requires_imposter and not imposter_pass:
+                        flags.append("Imposter check declaration not submitted by agency")
 
             # DBS Check
-            dbs_pass = dbs and dict(dbs).get("result") == "clear"
-            checks["dbs_valid"] = dbs_pass
-            audit_entries.append({
-                "check": "dbs_check",
-                "result": "passed" if dbs_pass else "failed",
-                "timestamp": now,
-                "details": dict(dbs)["result"] if dbs else "not_submitted",
-            })
-            if not dbs_pass:
-                dbs_result = dict(dbs)["result"] if dbs else "not_submitted"
-                if dbs_result == "has_information":
-                    flags.append("DBS check returned information - requires review")
-                elif dbs_result == "flagged":
-                    flags.append("DBS check flagged - DO NOT CLEAR")
+            if "dbs_valid" in rules:
+                dbs_config = template_config.get("dbs_valid", {})
+                dbs_level = dbs_config.get("level", "enhanced_barred")
+
+                if dbs_level == "none":
+                    checks["dbs_valid"] = True
+                    audit_entries.append({
+                        "check": "dbs_check", "result": "passed",
+                        "timestamp": now, "details": "not_required_for_industry",
+                    })
                 else:
-                    flags.append("DBS check incomplete")
+                    dbs_pass = dbs and dict(dbs).get("result") == "clear"
+                    checks["dbs_valid"] = dbs_pass
+                    audit_entries.append({
+                        "check": "dbs_check",
+                        "result": "passed" if dbs_pass else "failed",
+                        "timestamp": now,
+                        "details": dict(dbs)["result"] if dbs else "not_submitted",
+                        "required_level": dbs_level,
+                    })
+                    if not dbs_pass:
+                        dbs_result = dict(dbs)["result"] if dbs else "not_submitted"
+                        if dbs_result == "has_information":
+                            flags.append("DBS check returned information - requires review")
+                        elif dbs_result == "flagged":
+                            flags.append("DBS check flagged - DO NOT CLEAR")
+                        else:
+                            flags.append(f"DBS check incomplete (required: {dbs_level})")
 
             # Registration
-            reg_pass = reg and dict(reg).get("is_active") == 1
-            checks["registration_active"] = reg_pass
-            reg_result = dict(reg)["result"] if reg else "not_submitted"
-            audit_entries.append({
-                "check": "registration",
-                "result": "passed" if reg_pass else "failed",
-                "timestamp": now,
-                "details": reg_result,
-            })
-            if not reg_pass:
-                flags.append("Professional registration not active or not verified")
+            if "registration_active" in rules:
+                reg_pass = reg and dict(reg).get("is_active") == 1
+                checks["registration_active"] = reg_pass
+                reg_result = dict(reg)["result"] if reg else "not_submitted"
+                reg_config = template_config.get("registration_active", {})
+                bodies = reg_config.get("bodies", [])
+                audit_entries.append({
+                    "check": "registration",
+                    "result": "passed" if reg_pass else "failed",
+                    "timestamp": now,
+                    "details": reg_result,
+                    "accepted_bodies": bodies,
+                })
+                if not reg_pass:
+                    body_str = ", ".join(bodies) if bodies else "professional body"
+                    flags.append(f"Professional registration not active ({body_str})")
 
-            # References (need at least 2 completed)
-            completed_refs = len(refs)
-            refs_pass = completed_refs >= 2
-            checks["references_verified"] = refs_pass
-            audit_entries.append({
-                "check": "references",
-                "result": "passed" if refs_pass else "failed",
-                "timestamp": now,
-                "details": f"{completed_refs} of 2 required references completed",
-            })
-            if not refs_pass:
-                flags.append(f"References: {completed_refs}/2 completed")
+            # References
+            if "references_verified" in rules:
+                ref_config = template_config.get("references_verified", {})
+                min_refs = ref_config.get("min_count", rules.get("references_verified", {}).get("min_count", 2))
+                completed_refs = len(refs)
+                refs_pass = completed_refs >= min_refs
+                checks["references_verified"] = refs_pass
+                audit_entries.append({
+                    "check": "references",
+                    "result": "passed" if refs_pass else "failed",
+                    "timestamp": now,
+                    "details": f"{completed_refs} of {min_refs} required references completed",
+                })
+                if not refs_pass:
+                    flags.append(f"References: {completed_refs}/{min_refs} completed")
 
             # CV Validation
-            cv_pass = cv and dict(cv).get("fraud_risk_score", 1.0) < 0.5
-            checks["cv_validated"] = cv_pass
-            audit_entries.append({
-                "check": "cv_validation",
-                "result": "passed" if cv_pass else "failed",
-                "timestamp": now,
-                "details": f"Fraud risk: {dict(cv)['fraud_risk_score']}" if cv else "not_submitted",
-            })
-            if not cv_pass and cv:
-                flags.append(f"CV fraud risk score: {dict(cv)['fraud_risk_score']}")
+            if "cv_validated" in rules:
+                cv_pass = cv and dict(cv).get("fraud_risk_score", 1.0) < 0.5
+                checks["cv_validated"] = cv_pass
+                audit_entries.append({
+                    "check": "cv_validation",
+                    "result": "passed" if cv_pass else "failed",
+                    "timestamp": now,
+                    "details": f"Fraud risk: {dict(cv)['fraud_risk_score']}" if cv else "not_submitted",
+                })
+                if not cv_pass and cv:
+                    flags.append(f"CV fraud risk score: {dict(cv)['fraud_risk_score']}")
 
             # Training Compliance
-            try:
-                training_certs = db.execute(
-                    "SELECT * FROM training_certificates WHERE candidate_id=?",
-                    (candidate_id,),
-                ).fetchall()
-                # Check mandatory training certificates
-                mandatory_names = [
+            if "training_compliant" in rules:
+                training_config = template_config.get("training_compliant", {})
+                mandatory_names = training_config.get("certificates", [
                     "Manual Handling", "Infection Prevention & Control",
                     "Safeguarding Adults", "Safeguarding Children",
                     "Basic Life Support (BLS)", "Fire Safety", "Health & Safety",
-                ]
-                cert_map = {dict(c)["certificate_name"]: dict(c) for c in training_certs}
-                mandatory_valid = 0
-                mandatory_expired = 0
-                mandatory_missing = []
-                for name in mandatory_names:
-                    cert = cert_map.get(name)
-                    if cert and cert.get("status") == "valid":
-                        mandatory_valid += 1
-                    elif cert and cert.get("status") == "expired":
-                        mandatory_expired += 1
-                    else:
-                        mandatory_missing.append(name)
-                training_pass = mandatory_valid == len(mandatory_names)
-            except Exception:
-                # training_certificates table may not exist yet
-                training_pass = False
-                mandatory_valid = 0
-                mandatory_expired = 0
-                mandatory_missing = ["Manual Handling", "Infection Prevention & Control",
-                    "Safeguarding Adults", "Safeguarding Children",
-                    "Basic Life Support (BLS)", "Fire Safety", "Health & Safety"]
+                ])
+                try:
+                    training_certs = db.execute(
+                        "SELECT * FROM training_certificates WHERE candidate_id=?",
+                        (candidate_id,),
+                    ).fetchall()
+                    cert_map = {dict(c)["certificate_name"]: dict(c) for c in training_certs}
+                    mandatory_valid = 0
+                    mandatory_expired = 0
+                    mandatory_missing = []
+                    for name in mandatory_names:
+                        cert = cert_map.get(name)
+                        if cert and cert.get("status") == "valid":
+                            mandatory_valid += 1
+                        elif cert and cert.get("status") == "expired":
+                            mandatory_expired += 1
+                        else:
+                            mandatory_missing.append(name)
+                    training_pass = mandatory_valid == len(mandatory_names) if mandatory_names else True
+                except Exception:
+                    training_pass = False
+                    mandatory_valid = 0
+                    mandatory_expired = 0
+                    mandatory_missing = list(mandatory_names)
 
-            checks["training_compliant"] = training_pass
-            audit_entries.append({
-                "check": "training_compliance",
-                "result": "passed" if training_pass else "failed",
-                "timestamp": now,
-                "details": f"{mandatory_valid}/{len(mandatory_names)} mandatory certificates valid",
-            })
-            if not training_pass:
-                if mandatory_expired > 0:
-                    flags.append(f"Training: {mandatory_expired} mandatory certificate(s) expired")
-                if mandatory_missing:
-                    flags.append(f"Training: missing {', '.join(mandatory_missing[:3])}{'...' if len(mandatory_missing) > 3 else ''}")
+                checks["training_compliant"] = training_pass
+                audit_entries.append({
+                    "check": "training_compliance",
+                    "result": "passed" if training_pass else "failed",
+                    "timestamp": now,
+                    "details": f"{mandatory_valid}/{len(mandatory_names)} mandatory certificates valid",
+                })
+                if not training_pass:
+                    if mandatory_expired > 0:
+                        flags.append(f"Training: {mandatory_expired} mandatory certificate(s) expired")
+                    if mandatory_missing:
+                        flags.append(f"Training: missing {', '.join(mandatory_missing[:3])}{'...' if len(mandatory_missing) > 3 else ''}")
 
             # Employment Verification
-            emp_verifications = db.execute(
-                "SELECT * FROM employment_verifications WHERE candidate_id=? AND status='completed'",
-                (candidate_id,),
-            ).fetchall()
-            emp_entries = db.execute(
-                "SELECT COUNT(*) as cnt FROM employment_history WHERE candidate_id=?",
-                (candidate_id,),
-            ).fetchone()
-            total_entries = dict(emp_entries)["cnt"] if emp_entries else 0
-            verified_count = len(emp_verifications)
-            # Employment is verified if there are entries and at least 1 is verified
-            emp_pass = total_entries > 0 and verified_count > 0
-            checks["employment_verified"] = emp_pass
-            audit_entries.append({
-                "check": "employment_verification",
-                "result": "passed" if emp_pass else "failed",
-                "timestamp": now,
-                "details": f"{verified_count} of {total_entries} employment entries verified",
-            })
-            if not emp_pass:
-                if total_entries == 0:
-                    flags.append("No employment history entries added")
-                else:
-                    flags.append(f"Employment: {verified_count}/{total_entries} verified")
+            if "employment_verified" in rules:
+                emp_verifications = db.execute(
+                    "SELECT * FROM employment_verifications WHERE candidate_id=? AND status='completed'",
+                    (candidate_id,),
+                ).fetchall()
+                emp_entries = db.execute(
+                    "SELECT COUNT(*) as cnt FROM employment_history WHERE candidate_id=?",
+                    (candidate_id,),
+                ).fetchone()
+                total_entries = dict(emp_entries)["cnt"] if emp_entries else 0
+                verified_count = len(emp_verifications)
+                emp_pass = total_entries > 0 and verified_count > 0
+                checks["employment_verified"] = emp_pass
+                audit_entries.append({
+                    "check": "employment_verification",
+                    "result": "passed" if emp_pass else "failed",
+                    "timestamp": now,
+                    "details": f"{verified_count} of {total_entries} employment entries verified",
+                })
+                if not emp_pass:
+                    if total_entries == 0:
+                        flags.append("No employment history entries added")
+                    else:
+                        flags.append(f"Employment: {verified_count}/{total_entries} verified")
 
-            # Calculate compliance score
+            # Calculate compliance score (only from enabled checks in the template)
             score = 0.0
+            total_weight = 0.0
             for check_name, passed in checks.items():
-                if passed:
-                    score += ComplianceEngine.RULES[check_name]["weight"]
+                if check_name in rules:
+                    total_weight += rules[check_name]["weight"]
+                    if passed:
+                        score += rules[check_name]["weight"]
 
-            # Determine overall status
-            required_checks = [k for k, v in ComplianceEngine.RULES.items() if v["required"]]
+            # Normalise score to 0-100 if total weight != 100
+            if total_weight > 0 and total_weight != 100:
+                score = (score / total_weight) * 100
+
+            # Determine overall status using template threshold
+            required_checks = [k for k, v in rules.items() if v.get("required", False)]
             all_required_pass = all(checks.get(c, False) for c in required_checks)
 
-            if all_required_pass and score >= 95:
+            if all_required_pass and score >= compliance_threshold:
                 overall_status = "compliant"
             elif score >= 60:
                 overall_status = "pending_review"
@@ -270,14 +381,14 @@ class ComplianceEngine:
                        WHERE candidate_id=?""",
                     (
                         overall_status, score,
-                        1 if checks["identity_verified"] else 0,
-                        1 if checks["right_to_work_valid"] else 0,
-                        1 if checks["dbs_valid"] else 0,
-                        1 if checks["registration_active"] else 0,
-                        1 if checks["references_verified"] else 0,
-                        1 if checks["cv_validated"] else 0,
-                        1 if checks["employment_verified"] else 0,
-                        1 if checks["training_compliant"] else 0,
+                        1 if checks.get("identity_verified") else 0,
+                        1 if checks.get("right_to_work_valid") else 0,
+                        1 if checks.get("dbs_valid") else 0,
+                        1 if checks.get("registration_active") else 0,
+                        1 if checks.get("references_verified") else 0,
+                        1 if checks.get("cv_validated") else 0,
+                        1 if checks.get("employment_verified") else 0,
+                        1 if checks.get("training_compliant") else 0,
                         json.dumps(flags),
                         json.dumps(audit_entries),
                         now,
@@ -296,14 +407,14 @@ class ComplianceEngine:
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         generate_id(), candidate_id, overall_status, score,
-                        1 if checks["identity_verified"] else 0,
-                        1 if checks["right_to_work_valid"] else 0,
-                        1 if checks["dbs_valid"] else 0,
-                        1 if checks["registration_active"] else 0,
-                        1 if checks["references_verified"] else 0,
-                        1 if checks["cv_validated"] else 0,
-                        1 if checks["employment_verified"] else 0,
-                        1 if checks["training_compliant"] else 0,
+                        1 if checks.get("identity_verified") else 0,
+                        1 if checks.get("right_to_work_valid") else 0,
+                        1 if checks.get("dbs_valid") else 0,
+                        1 if checks.get("registration_active") else 0,
+                        1 if checks.get("references_verified") else 0,
+                        1 if checks.get("cv_validated") else 0,
+                        1 if checks.get("employment_verified") else 0,
+                        1 if checks.get("training_compliant") else 0,
                         json.dumps(flags),
                         json.dumps(audit_entries),
                         now,
@@ -323,7 +434,11 @@ class ComplianceEngine:
                    VALUES (?, 'compliance', ?, 'evaluated', 'compliance_engine', ?, ?)""",
                 (
                     generate_id(), candidate_id,
-                    json.dumps({"score": score, "status": overall_status, "flags": len(flags)}),
+                    json.dumps({
+                        "score": score, "status": overall_status, "flags": len(flags),
+                        "compliance_label": compliance_label, "threshold": compliance_threshold,
+                        "template_checks": list(rules.keys()),
+                    }),
                     now,
                 ),
             )
@@ -332,7 +447,11 @@ class ComplianceEngine:
                 "SELECT * FROM compliance_records WHERE candidate_id=?",
                 (candidate_id,),
             ).fetchone()
-            return dict(row)
+            result = dict(row)
+            result["compliance_label"] = compliance_label
+            result["compliance_threshold"] = compliance_threshold
+            result["template_checks"] = list(rules.keys())
+            return result
 
     @staticmethod
     def get_compliance(candidate_id: str) -> dict:

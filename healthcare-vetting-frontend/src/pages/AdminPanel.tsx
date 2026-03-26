@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
@@ -189,6 +189,15 @@ export default function AdminPanel() {
   const [, setBenchmarkTrends] = useState<Record<string, unknown> | null>(null);
   const [loadingBenchmark, setLoadingBenchmark] = useState(false);
 
+  // Industry Templates state
+  const [indTemplates, setIndTemplates] = useState<Record<string, unknown>[]>([]);
+  const [editingTemplate, setEditingTemplate] = useState<Record<string, unknown> | null>(null);
+  const [templateChecks, setTemplateChecks] = useState<Record<string, unknown>[]>([]);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [cloningTemplate, setCloningTemplate] = useState("");
+  const [assigningAgency, setAssigningAgency] = useState<string | null>(null);
+  const [assignTemplateId, setAssignTemplateId] = useState("");
+
   const loadBenchmarkData = useCallback(async () => {
     if (!token) return;
     setLoadingBenchmark(true);
@@ -317,12 +326,17 @@ export default function AdminPanel() {
     try { const mc = await adminExtendedApi.getCandidatesMonitoring(token); setMonitoringCandidates(mc); } catch { /* ignore */ }
   }, [token]);
 
+  const loadIndustryTemplates = useCallback(async () => {
+    if (!token) return;
+    try { const data = await industryTemplatesApi.list(token); setIndTemplates(data); } catch { /* ignore */ }
+  }, [token]);
+
   useEffect(() => { if (tab === "fraud") loadFraudData(); }, [tab, loadFraudData]);
   useEffect(() => { if (tab === "scheduler") loadSchedulerStatus(); }, [tab, loadSchedulerStatus]);
-  useEffect(() => { if (tab === "settings") { loadPricing(); loadAlertSettings(); } }, [tab, loadPricing, loadAlertSettings]);
+  useEffect(() => { if (tab === "settings") { loadPricing(); loadAlertSettings(); loadIndustryTemplates(); } }, [tab, loadPricing, loadAlertSettings, loadIndustryTemplates]);
   useEffect(() => { if (tab === "analytics") loadAnalytics(); }, [tab, loadAnalytics]);
   useEffect(() => { if (tab === "monitoring") { loadMonitoringRevenue(); loadMonitoringCandidates(); } }, [tab, loadMonitoringRevenue, loadMonitoringCandidates]);
-  useEffect(() => { if (tab === "agencies" || tab === "user-management" || tab === "invoicing") loadAgencies(); }, [tab, loadAgencies]);
+  useEffect(() => { if (tab === "agencies" || tab === "user-management" || tab === "invoicing") { loadAgencies(); loadIndustryTemplates(); } }, [tab, loadAgencies, loadIndustryTemplates]);
   useEffect(() => { if (tab === "audit-logs") loadAuditLogs(); }, [tab, loadAuditLogs]);
   useEffect(() => { if (tab === "invoicing") loadAdminInvoices(); }, [tab, loadAdminInvoices]);
   useEffect(() => { if (tab === "subscriptions") { loadSubscriptionTiers(); loadCreditRates(); } }, [tab]);
@@ -705,6 +719,90 @@ export default function AdminPanel() {
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
   };
 
+  const handleSaveTemplate = async () => {
+    if (!token || !editingTemplate) return;
+    setSavingTemplate(true);
+    try {
+      const payload = {
+        name: editingTemplate.name,
+        description: editingTemplate.description,
+        compliance_label: editingTemplate.compliance_label || "Compliant",
+        compliance_threshold: Number(editingTemplate.compliance_threshold) || 95,
+        checks: templateChecks.map((c) => ({
+          check_key: c.check_key,
+          check_label: c.check_label,
+          is_required: c.is_required ?? true,
+          is_enabled: c.is_enabled ?? true,
+          weight: Number(c.weight) || 10,
+          config: typeof c.config === "string" ? JSON.parse(c.config as string || "{}") : (c.config || {}),
+          sort_order: Number(c.sort_order) || 0,
+        })),
+      };
+      if (editingTemplate.id) {
+        await industryTemplatesApi.update(token, editingTemplate.id as string, payload);
+        showMessage("Template updated");
+      } else {
+        await industryTemplatesApi.create(token, payload);
+        showMessage("Template created");
+      }
+      setEditingTemplate(null);
+      setTemplateChecks([]);
+      loadIndustryTemplates();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setSavingTemplate(false); }
+  };
+
+  const handleCloneTemplate = async (templateId: string) => {
+    if (!token) return;
+    setCloningTemplate(templateId);
+    try {
+      await industryTemplatesApi.clone(token, templateId);
+      showMessage("Template cloned");
+      loadIndustryTemplates();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setCloningTemplate(""); }
+  };
+
+  const handleDeleteTemplate = async (templateId: string) => {
+    if (!token) return;
+    if (!confirm("Delete this template? Only possible if no agencies are using it.")) return;
+    try {
+      await industryTemplatesApi.remove(token, templateId);
+      showMessage("Template deleted");
+      loadIndustryTemplates();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  const handleAssignTemplate = async (agencyId: string, templateId: string) => {
+    if (!token || !agencyId || !templateId) return;
+    try {
+      await industryTemplatesApi.assignToAgency(token, agencyId, templateId);
+      showMessage("Industry template assigned to agency");
+      setAssigningAgency(null);
+      loadAgencies();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  const startEditTemplate = (tmpl: Record<string, unknown>) => {
+    setEditingTemplate({ ...tmpl });
+    const checks = (tmpl.checks || []) as Record<string, unknown>[];
+    setTemplateChecks(checks.map((c) => ({ ...c })));
+  };
+
+  const startNewTemplate = () => {
+    setEditingTemplate({ name: "", description: "", compliance_label: "Compliant", compliance_threshold: 95 });
+    setTemplateChecks([
+      { check_key: "identity_verified", check_label: "Identity Verification", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 1 },
+      { check_key: "right_to_work_valid", check_label: "Right to Work", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 2 },
+      { check_key: "dbs_valid", check_label: "DBS Check", is_required: true, is_enabled: true, weight: 17, config: {}, sort_order: 3 },
+      { check_key: "employment_verified", check_label: "Employment Verification", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 4 },
+      { check_key: "references_verified", check_label: "References", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 5 },
+      { check_key: "registration_active", check_label: "Professional Registration", is_required: false, is_enabled: true, weight: 9, config: {}, sort_order: 6 },
+      { check_key: "cv_validated", check_label: "CV Validation", is_required: false, is_enabled: true, weight: 5, config: {}, sort_order: 7 },
+      { check_key: "training_compliant", check_label: "Training Compliance", is_required: true, is_enabled: true, weight: 12, config: {}, sort_order: 8 },
+    ]);
+  };
+
   const handleGenerateGroupedInvoice = async (agencyId: string, dateFrom: string, dateTo: string, setLoading: (v: boolean) => void) => {
     if (!token || !agencyId || !dateFrom || !dateTo) { showMessage("Error: Please select an agency and date range"); return; }
     setLoading(true);
@@ -890,6 +988,18 @@ export default function AdminPanel() {
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
             {[{ key: "alerts", label: `Alerts (${alerts.length})` }, { key: "monitoring", label: "Monitoring" }, { key: "fraud", label: "Fraud Detection" }, { key: "scheduler", label: "Scheduler" }].map((s) => (
+              <button key={s.key} onClick={() => setSubTab(s.key)}
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {mainTab === "settings" && (
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
+          <div className="flex gap-1">
+            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "alerts-config", label: "Alert Settings" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -1787,12 +1897,35 @@ export default function AdminPanel() {
             </div>
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
               <table className="w-full"><thead><tr className="border-b border-slate-700">
-                {["Agency Name","Email","Discount","Billing Mode","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+                {["Agency Name","Email","Industry","Discount","Billing Mode","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
-                {agencies.map((a) => (
+                {agencies.map((a) => {
+                  const currentTemplateId = String(a.industry_template_id || "");
+                  const currentTemplateName = indTemplates.find((t) => String(t.id) === currentTemplateId)?.name;
+                  return (
                   <tr key={String(a.id)} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="px-4 py-3 text-sm text-white font-medium">{String(a.name)}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{String(a.email)}</td>
+                    <td className="px-4 py-3">
+                      {assigningAgency === String(a.id) ? (
+                        <div className="flex items-center gap-1">
+                          <select value={assignTemplateId} onChange={(e) => setAssignTemplateId(e.target.value)}
+                            className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs">
+                            <option value="">Select Industry...</option>
+                            {indTemplates.map((t) => <option key={String(t.id)} value={String(t.id)}>{String(t.name)}</option>)}
+                          </select>
+                          <button onClick={() => handleAssignTemplate(String(a.id), assignTemplateId)} disabled={!assignTemplateId}
+                            className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-1 rounded hover:bg-green-600/30 disabled:opacity-50">Save</button>
+                          <button onClick={() => setAssigningAgency(null)}
+                            className="text-xs text-slate-400 hover:text-white">Cancel</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setAssigningAgency(String(a.id)); setAssignTemplateId(currentTemplateId); loadIndustryTemplates(); }}
+                          className={`text-xs px-2 py-1 rounded border ${currentTemplateName ? "bg-purple-600/20 text-purple-300 border-purple-600/30" : "bg-slate-600/20 text-slate-400 border-slate-600/30"} hover:opacity-80`}>
+                          {currentTemplateName ? String(currentTemplateName) : "Assign Industry"}
+                        </button>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       {editingDiscount === String(a.id) ? (
                         <div className="flex items-center gap-1">
@@ -1837,8 +1970,9 @@ export default function AdminPanel() {
                       </div>
                     </td>
                   </tr>
-                ))}
-                {agencies.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500 text-sm">No agencies found</td></tr>}
+                  );
+                })}
+                {agencies.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500 text-sm">No agencies found</td></tr>}
               </tbody></table>
             </div>
           </div>
@@ -2194,14 +2328,14 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* Settings Tab */}
-        {tab === "settings" && (
+        {/* Settings Tab — Pricing sub-tab */}
+        {tab === "settings" && subTab === "pricing" && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings className="text-blue-400" size={22} /> Pricing Configuration</h2>
-            <p className="text-slate-400 text-sm">Set cost prices (what you pay) and sell prices (what agencies are charged) for each check type. Changes here affect all future invoices and revenue calculations.</p>
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings className="text-blue-400" size={22} /> Per-Element Pricing Configuration</h2>
+            <p className="text-slate-400 text-sm">Set cost prices (what you pay) and sell prices (what agencies are charged) for each individual check element. This includes DBS variants (Standard, Enhanced, Enhanced + Barred), training verification, and imposter checks.</p>
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
               <table className="w-full"><thead><tr className="border-b border-slate-700">
-                {["Check Type","Label","Cost Price (£)","Sell Price (£)","Margin","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+                {["Check Type","Label","Cost Price (\u00A3)","Sell Price (\u00A3)","Margin","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {pricing.map((p) => {
                   const ct = p.check_type as string;
@@ -2214,9 +2348,9 @@ export default function AdminPanel() {
                     <tr key={ct} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                       <td className="px-4 py-3 text-sm text-slate-300 font-mono">{ct}</td>
                       <td className="px-4 py-3 text-sm text-white">{p.label as string}</td>
-                      <td className="px-4 py-3">{isE ? <input type="number" step="0.01" value={editingPricing[ct].cost_price} onChange={(e) => setEditingPricing((prev) => ({ ...prev, [ct]: { ...prev[ct], cost_price: e.target.value } }))} className="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm" /> : <span className="text-amber-400 text-sm font-medium">£{(p.cost_price as number).toFixed(2)}</span>}</td>
-                      <td className="px-4 py-3">{isE ? <input type="number" step="0.01" value={editingPricing[ct].sell_price} onChange={(e) => setEditingPricing((prev) => ({ ...prev, [ct]: { ...prev[ct], sell_price: e.target.value } }))} className="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm" /> : <span className="text-green-400 text-sm font-medium">£{(p.sell_price as number).toFixed(2)}</span>}</td>
-                      <td className="px-4 py-3"><span className={`text-sm font-medium ${margin >= 0 ? "text-emerald-400" : "text-red-400"}`}>£{margin.toFixed(2)} ({marginPct}%)</span></td>
+                      <td className="px-4 py-3">{isE ? <input type="number" step="0.01" value={editingPricing[ct].cost_price} onChange={(e) => setEditingPricing((prev) => ({ ...prev, [ct]: { ...prev[ct], cost_price: e.target.value } }))} className="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm" /> : <span className="text-amber-400 text-sm font-medium">{"\u00A3"}{(p.cost_price as number).toFixed(2)}</span>}</td>
+                      <td className="px-4 py-3">{isE ? <input type="number" step="0.01" value={editingPricing[ct].sell_price} onChange={(e) => setEditingPricing((prev) => ({ ...prev, [ct]: { ...prev[ct], sell_price: e.target.value } }))} className="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm" /> : <span className="text-green-400 text-sm font-medium">{"\u00A3"}{(p.sell_price as number).toFixed(2)}</span>}</td>
+                      <td className="px-4 py-3"><span className={`text-sm font-medium ${margin >= 0 ? "text-emerald-400" : "text-red-400"}`}>{"\u00A3"}{margin.toFixed(2)} ({marginPct}%)</span></td>
                       <td className="px-4 py-3">{isE ? (
                         <div className="flex gap-2">
                           <button onClick={() => savePricingItem(ct)} disabled={savingPricing === ct} className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-3 py-1 rounded-full hover:bg-green-600/30 disabled:opacity-50">{savingPricing === ct ? "Saving..." : "Save"}</button>
@@ -2228,9 +2362,136 @@ export default function AdminPanel() {
                 })}
               </tbody></table>
             </div>
+          </div>
+        )}
 
-            {/* Alert Settings */}
-            <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-8"><Bell className="text-amber-400" size={22} /> Alert &amp; Expiry Warning Settings</h2>
+        {/* Settings Tab — Industry Templates sub-tab */}
+        {tab === "settings" && subTab === "templates" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2"><ShieldAlert className="text-purple-400" size={22} /> Industry Compliance Templates</h2>
+                <p className="text-slate-400 text-sm mt-1">Configure which compliance checks are required for each industry. Agencies are assigned a template that determines their compliance requirements.</p>
+              </div>
+              <button onClick={startNewTemplate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"><PlusCircle size={16} /> New Template</button>
+            </div>
+
+            {/* Template Editor Modal */}
+            {editingTemplate && (
+              <div className="bg-slate-800/90 rounded-xl border border-blue-500/30 p-6 space-y-4">
+                <h3 className="text-lg font-bold text-white">{editingTemplate.id ? "Edit Template" : "Create New Template"}</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Template Name</label>
+                    <input value={String(editingTemplate.name || "")} onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm" placeholder="e.g. Healthcare (CQC)" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Compliance Label</label>
+                    <input value={String(editingTemplate.compliance_label || "")} onChange={(e) => setEditingTemplate({ ...editingTemplate, compliance_label: e.target.value })}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm" placeholder="e.g. CQC Ready" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Description</label>
+                    <input value={String(editingTemplate.description || "")} onChange={(e) => setEditingTemplate({ ...editingTemplate, description: e.target.value })}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm" placeholder="Description of this template" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Compliance Threshold (%)</label>
+                    <input type="number" min={0} max={100} value={String(editingTemplate.compliance_threshold || 95)} onChange={(e) => setEditingTemplate({ ...editingTemplate, compliance_threshold: Number(e.target.value) })}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm" />
+                  </div>
+                </div>
+
+                <h4 className="text-sm font-semibold text-white mt-4">Check Configuration</h4>
+                <p className="text-xs text-slate-400">Toggle checks on/off, set required status, and configure weights for each compliance check.</p>
+                <div className="space-y-2">
+                  {templateChecks.map((check, idx) => (
+                    <div key={idx} className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg border border-slate-600/30">
+                      <div className="flex items-center gap-2 w-8">
+                        <input type="checkbox" checked={Boolean(check.is_enabled)} onChange={(e) => {
+                          const updated = [...templateChecks]; updated[idx] = { ...updated[idx], is_enabled: e.target.checked }; setTemplateChecks(updated);
+                        }} className="rounded" />
+                      </div>
+                      <div className="flex-1">
+                        <input value={String(check.check_label || "")} onChange={(e) => {
+                          const updated = [...templateChecks]; updated[idx] = { ...updated[idx], check_label: e.target.value }; setTemplateChecks(updated);
+                        }} className="bg-transparent text-white text-sm font-medium w-full outline-none" />
+                        <span className="text-xs text-slate-500 font-mono">{String(check.check_key)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-400">Required</label>
+                        <input type="checkbox" checked={Boolean(check.is_required)} onChange={(e) => {
+                          const updated = [...templateChecks]; updated[idx] = { ...updated[idx], is_required: e.target.checked }; setTemplateChecks(updated);
+                        }} className="rounded" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-400">Weight</label>
+                        <input type="number" min={0} max={100} value={String(check.weight || 0)} onChange={(e) => {
+                          const updated = [...templateChecks]; updated[idx] = { ...updated[idx], weight: Number(e.target.value) }; setTemplateChecks(updated);
+                        }} className="w-16 bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs text-center" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-3 mt-4">
+                  <button onClick={handleSaveTemplate} disabled={savingTemplate}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-6 py-2 rounded-lg text-sm font-medium">
+                    {savingTemplate ? "Saving..." : (editingTemplate.id ? "Update Template" : "Create Template")}
+                  </button>
+                  <button onClick={() => { setEditingTemplate(null); setTemplateChecks([]); }} className="text-slate-400 hover:text-white text-sm px-4 py-2">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* Templates List */}
+            <div className="grid grid-cols-1 gap-4">
+              {indTemplates.map((tmpl) => {
+                const checks = (tmpl.checks || []) as Record<string, unknown>[];
+                const enabledChecks = checks.filter((c) => c.is_enabled);
+                const requiredChecks = checks.filter((c) => c.is_required && c.is_enabled);
+                const agencyCount = (tmpl.agency_count as number) || 0;
+                return (
+                  <div key={tmpl.id as string} className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-white font-semibold">{tmpl.name as string}</h3>
+                        {tmpl.is_default ? <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/30">Default</span> : null}
+                        <span className="text-xs bg-slate-600/50 text-slate-300 px-2 py-0.5 rounded-full">{agencyCount} {agencyCount === 1 ? "agency" : "agencies"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => startEditTemplate(tmpl)} className="text-xs text-blue-400 hover:text-blue-300 px-2 py-1"><Edit size={14} className="inline mr-1" />Edit</button>
+                        <button onClick={() => handleCloneTemplate(tmpl.id as string)} disabled={cloningTemplate === (tmpl.id as string)}
+                          className="text-xs text-purple-400 hover:text-purple-300 px-2 py-1">{cloningTemplate === (tmpl.id as string) ? "Cloning..." : "Clone"}</button>
+                        {!tmpl.is_default && agencyCount === 0 && (
+                          <button onClick={() => handleDeleteTemplate(tmpl.id as string)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1"><Trash2 size={14} className="inline mr-1" />Delete</button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-slate-400 text-xs mb-3">{tmpl.description as string}</p>
+                    <div className="flex items-center gap-4 mb-2">
+                      <span className="text-xs text-slate-400">Label: <span className="text-white font-medium">{tmpl.compliance_label as string}</span></span>
+                      <span className="text-xs text-slate-400">Threshold: <span className="text-white font-medium">{tmpl.compliance_threshold as number}%</span></span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {enabledChecks.map((c) => (
+                        <span key={c.check_key as string} className={`text-xs px-2 py-1 rounded-full border ${c.is_required ? "bg-green-500/10 text-green-400 border-green-500/30" : "bg-slate-600/30 text-slate-300 border-slate-500/30"}`}>
+                          {c.check_label as string} <span className="text-slate-500">({c.weight as number}%)</span>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-2 text-xs text-slate-500">{enabledChecks.length} checks enabled, {requiredChecks.length} required</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Settings Tab — Alert Settings sub-tab */}
+        {tab === "settings" && subTab === "alerts-config" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><Bell className="text-amber-400" size={22} /> Alert &amp; Expiry Warning Settings</h2>
             <p className="text-slate-400 text-sm">Configure the number of days before expiry that triggers a warning notification for each document type.</p>
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
               <div className="grid grid-cols-2 gap-4 mb-4">

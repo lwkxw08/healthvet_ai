@@ -516,6 +516,26 @@ export const submissionsApi = {
     apiRequest<Record<string, unknown>>(`/api/submissions/revet-info/${revetToken}`, {}),
 };
 
+// Industry Templates API (Admin)
+export const industryTemplatesApi = {
+  list: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/industry-templates", { token }),
+  get: (token: string, templateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/industry-templates/${templateId}`, { token }),
+  create: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/industry-templates", { method: "POST", body: data, token }),
+  update: (token: string, templateId: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/industry-templates/${templateId}`, { method: "PUT", body: data, token }),
+  remove: (token: string, templateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/industry-templates/${templateId}`, { method: "DELETE", token }),
+  clone: (token: string, templateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/industry-templates/clone/${templateId}`, { method: "POST", token }),
+  assignToAgency: (token: string, agencyId: string, templateId: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/industry-templates/assign", { method: "POST", body: { agency_id: agencyId, template_id: templateId }, token }),
+  getAgencyTemplate: (token: string, agencyId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/industry-templates/agency/${agencyId}`, { token }),
+};
+
 // Agency Re-vet API
 export const agencyRevetApi = {
   requestRevet: (token: string, candidateId: string, sections: string[]) =>

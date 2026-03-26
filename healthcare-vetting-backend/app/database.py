@@ -332,6 +332,147 @@ def migrate_db():
                 (_gid2(), tier_key, name, mp, pwp, mw, mc, ovr, ar, mi, mcap, mar, feats),
             )
 
+    # Add industry_template_id column to agencies if missing
+    try:
+        existing_ag2_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agencies)").fetchall()}
+        if "industry_template_id" not in existing_ag2_cols:
+            cursor.execute("ALTER TABLE agencies ADD COLUMN industry_template_id TEXT")
+    except Exception:
+        pass
+
+    # Create industry_templates and seed defaults if needed
+    try:
+        cursor.execute("SELECT 1 FROM industry_templates LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS industry_templates (
+            id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT,
+            compliance_label TEXT DEFAULT 'Compliant', compliance_threshold REAL DEFAULT 95.0,
+            is_default INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')), updated_at TEXT
+        )""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS industry_template_checks (
+            id TEXT PRIMARY KEY, template_id TEXT NOT NULL, check_key TEXT NOT NULL,
+            check_label TEXT NOT NULL, is_required INTEGER DEFAULT 1, is_enabled INTEGER DEFAULT 1,
+            weight REAL DEFAULT 10.0, config TEXT DEFAULT '{}', sort_order INTEGER DEFAULT 0,
+            FOREIGN KEY (template_id) REFERENCES industry_templates(id), UNIQUE(template_id, check_key)
+        )""")
+
+    # Seed default industry templates if table is empty
+    try:
+        tmpl_count = cursor.execute("SELECT COUNT(*) FROM industry_templates").fetchone()[0]
+    except Exception:
+        tmpl_count = 0
+    if tmpl_count == 0:
+        from app.utils.auth import generate_id as _tid
+        import json as _tjson
+        _templates = [
+            ("healthcare_cqc", "Healthcare (CQC)", "CQC-regulated healthcare staffing — nurses, care workers, allied health professionals", "CQC Ready", 95.0, 1, [
+                ("identity_verified", "Identity Verification", 1, 1, 13, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 13, _tjson.dumps({"requires_imposter_check": True}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 17, _tjson.dumps({"level": "enhanced_barred", "workforce": "adults"}), 3),
+                ("registration_active", "Professional Registration", 1, 1, 9, _tjson.dumps({"bodies": ["NMC", "GMC", "HCPC", "GPhC", "GOC", "GDC"]}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 13, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 13, _tjson.dumps({"min_count": 2}), 7),
+                ("training_compliant", "Mandatory Training", 1, 1, 12, _tjson.dumps({"certificates": ["Manual Handling", "Infection Prevention & Control", "Safeguarding Adults", "Safeguarding Children", "Basic Life Support (BLS)", "Fire Safety", "Health & Safety"]}), 8),
+            ]),
+            ("education", "Education", "Schools, colleges, and educational institutions", "Safeguarding Compliant", 95.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 15, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 15, _tjson.dumps({"requires_imposter_check": True}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 20, _tjson.dumps({"level": "enhanced_barred", "workforce": "children"}), 3),
+                ("registration_active", "Teaching Registration", 0, 1, 5, _tjson.dumps({"bodies": ["TRA", "EWC", "GTCS"]}), 4),
+                ("cv_validated", "CV Validation", 1, 1, 10, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 15, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 15, _tjson.dumps({"min_count": 2}), 7),
+                ("training_compliant", "Safeguarding Training", 1, 1, 5, _tjson.dumps({"certificates": ["Safeguarding Children", "Prevent Duty", "First Aid"]}), 8),
+            ]),
+            ("construction", "Construction (CSCS)", "Construction sites and trades — requires CSCS card verification", "Site Ready", 90.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 20, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 20, _tjson.dumps({"requires_imposter_check": False}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 15, _tjson.dumps({"level": "basic"}), 3),
+                ("registration_active", "CSCS Card", 0, 0, 0, _tjson.dumps({"bodies": ["CSCS"]}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 15, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 15, _tjson.dumps({"min_count": 1}), 7),
+                ("training_compliant", "Site Safety Training", 1, 1, 10, _tjson.dumps({"certificates": ["CSCS Health & Safety", "Working at Heights", "Manual Handling"]}), 8),
+            ]),
+            ("social_care", "Social Care", "Domiciliary care, residential care homes, supported living", "CQC Ready", 95.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 13, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 13, _tjson.dumps({"requires_imposter_check": True}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 17, _tjson.dumps({"level": "enhanced_barred", "workforce": "adults"}), 3),
+                ("registration_active", "Professional Registration", 0, 1, 5, _tjson.dumps({"bodies": ["Social Work England"]}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 13, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 17, _tjson.dumps({"min_count": 2}), 7),
+                ("training_compliant", "Care Training", 1, 1, 12, _tjson.dumps({"certificates": ["Manual Handling", "Medication Administration", "Safeguarding Adults", "Infection Prevention & Control", "First Aid", "Fire Safety"]}), 8),
+            ]),
+            ("finance", "Finance (FCA)", "FCA-regulated financial services — banking, insurance, fintech", "FCA Compliant", 95.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 15, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 15, _tjson.dumps({"requires_imposter_check": False}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 10, _tjson.dumps({"level": "basic"}), 3),
+                ("registration_active", "FCA Register", 1, 1, 15, _tjson.dumps({"bodies": ["FCA"]}), 4),
+                ("cv_validated", "CV Validation", 1, 1, 10, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 15, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 15, _tjson.dumps({"min_count": 2}), 7),
+                ("training_compliant", "Compliance Training", 0, 1, 5, _tjson.dumps({"certificates": ["AML Training", "GDPR Training"]}), 8),
+            ]),
+            ("logistics", "Logistics & Warehouse", "Warehouse, delivery, distribution, and logistics operations", "Cleared", 85.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 25, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 25, _tjson.dumps({"requires_imposter_check": False}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 15, _tjson.dumps({"level": "basic"}), 3),
+                ("registration_active", "Registration", 0, 0, 0, _tjson.dumps({}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 0, 1, 10, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 10, _tjson.dumps({"min_count": 1}), 7),
+                ("training_compliant", "Safety Training", 0, 1, 10, _tjson.dumps({"certificates": ["Manual Handling", "Health & Safety"]}), 8),
+            ]),
+            ("retail_hospitality", "Retail & Hospitality", "Shops, restaurants, hotels, and hospitality venues", "Cleared", 80.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 30, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 30, _tjson.dumps({"requires_imposter_check": False}), 2),
+                ("dbs_valid", "DBS Check", 0, 0, 0, _tjson.dumps({"level": "none"}), 3),
+                ("registration_active", "Registration", 0, 0, 0, _tjson.dumps({}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 0, 1, 10, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 15, _tjson.dumps({"min_count": 1}), 7),
+                ("training_compliant", "Training", 0, 1, 10, _tjson.dumps({"certificates": ["Food Hygiene", "Health & Safety"]}), 8),
+            ]),
+        ]
+        for tkey, tname, tdesc, tlabel, tthresh, tdefault, tchecks in _templates:
+            tid = _tid()
+            cursor.execute(
+                """INSERT INTO industry_templates (id, name, description, compliance_label, compliance_threshold, is_default, is_active)
+                   VALUES (?, ?, ?, ?, ?, ?, 1)""",
+                (tid, tname, tdesc, tlabel, tthresh, tdefault),
+            )
+            for ck, cl, creq, cen, cw, ccfg, csort in tchecks:
+                cursor.execute(
+                    """INSERT INTO industry_template_checks (id, template_id, check_key, check_label, is_required, is_enabled, weight, config, sort_order)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (_tid(), tid, ck, cl, creq, cen, cw, ccfg, csort),
+                )
+
+    # Seed expanded pricing elements if not present
+    try:
+        existing_pricing_types = {row[0] for row in cursor.execute("SELECT check_type FROM pricing_settings").fetchall()}
+    except Exception:
+        existing_pricing_types = set()
+    expanded_pricing = [
+        ("standard_dbs", "Standard DBS Check", 18.0, 45.0),
+        ("enhanced_dbs", "Enhanced DBS Check (no barred)", 38.0, 65.0),
+        ("enhanced_barred_dbs", "Enhanced DBS + Barred List", 49.0, 85.0),
+        ("basic_dbs", "Basic DBS Check", 18.0, 35.0),
+        ("dbs_update_service", "DBS Update Service Check", 1.0, 15.0),
+        ("training_verification", "Training Certificate Verification", 1.0, 8.0),
+        ("imposter_check", "Imposter Check (in-person/video)", 0.0, 5.0),
+    ]
+    for ct, lbl, cost, sell in expanded_pricing:
+        if ct not in existing_pricing_types:
+            from app.utils.auth import generate_id as _pid
+            cursor.execute(
+                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (?, ?, ?, ?, ?)",
+                (_pid(), ct, lbl, cost, sell),
+            )
+
     # Create imposter_declarations table if it doesn't exist (migration for existing DBs)
     try:
         cursor.execute("SELECT 1 FROM imposter_declarations LIMIT 1")
@@ -958,6 +1099,34 @@ def init_db():
             last_login_at TEXT,
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+
+        -- Industry Templates
+        CREATE TABLE IF NOT EXISTS industry_templates (
+            id TEXT PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            compliance_label TEXT DEFAULT 'Compliant',
+            compliance_threshold REAL DEFAULT 95.0,
+            is_default INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT
+        );
+
+        -- Industry Template Checks — configurable checks per industry
+        CREATE TABLE IF NOT EXISTS industry_template_checks (
+            id TEXT PRIMARY KEY,
+            template_id TEXT NOT NULL,
+            check_key TEXT NOT NULL,
+            check_label TEXT NOT NULL,
+            is_required INTEGER DEFAULT 1,
+            is_enabled INTEGER DEFAULT 1,
+            weight REAL DEFAULT 10.0,
+            config TEXT DEFAULT '{}',
+            sort_order INTEGER DEFAULT 0,
+            FOREIGN KEY (template_id) REFERENCES industry_templates(id),
+            UNIQUE(template_id, check_key)
         );
     """)
 

@@ -18,6 +18,7 @@ from app.routes import shift_readiness
 from app.routes import sub_accounts
 from app.routes import notifications
 from app.routes import benchmarking
+from app.routes import industry_templates
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
@@ -69,6 +70,7 @@ app.include_router(shift_readiness.router)
 app.include_router(sub_accounts.router)
 app.include_router(notifications.router)
 app.include_router(benchmarking.router)
+app.include_router(industry_templates.router)
 
 
 @app.on_event("startup")
