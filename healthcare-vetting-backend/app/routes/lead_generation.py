@@ -120,7 +120,7 @@ def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: 
 @router.post("/scrape")
 async def trigger_scrape(data: ScrapeJobRequest, current_user: dict = Depends(get_current_user)):
     """Trigger a new scrape job. Runs in background."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
     valid_sources = ["agencycentral", "indeed", "cqc", "nhs_jobs"]
@@ -165,7 +165,7 @@ async def list_scrape_jobs(
     current_user: dict = Depends(get_current_user),
 ):
     """List scrape jobs with optional filters."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
     query = "SELECT * FROM scrape_jobs WHERE 1=1"
@@ -187,7 +187,7 @@ async def list_scrape_jobs(
 @router.get("/jobs/{job_id}")
 async def get_scrape_job(job_id: str, current_user: dict = Depends(get_current_user)):
     """Get details of a specific scrape job."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
@@ -212,7 +212,7 @@ async def list_leads(
     current_user: dict = Depends(get_current_user),
 ):
     """List leads with optional filters."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
     query = "SELECT * FROM leads WHERE 1=1"
@@ -264,7 +264,7 @@ async def list_leads(
 @router.get("/leads/stats")
 async def get_lead_stats(current_user: dict = Depends(get_current_user)):
     """Get aggregate stats for leads."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
@@ -297,7 +297,7 @@ async def get_lead_stats(current_user: dict = Depends(get_current_user)):
 @router.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, data: LeadUpdateRequest, current_user: dict = Depends(get_current_user)):
     """Update a lead's status or notes."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
@@ -325,7 +325,7 @@ async def update_lead(lead_id: str, data: LeadUpdateRequest, current_user: dict 
 @router.delete("/leads/{lead_id}")
 async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_user)):
     """Delete a lead."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
@@ -344,7 +344,7 @@ async def export_leads(
     current_user: dict = Depends(get_current_user),
 ):
     """Export leads as JSON (for CSV conversion on frontend)."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
     query = "SELECT * FROM leads WHERE 1=1"
@@ -444,7 +444,7 @@ async def get_registration_scrapes(candidate_id: str, current_user: dict = Depen
 @router.get("/sources")
 async def get_available_sources(current_user: dict = Depends(get_current_user)):
     """Get available scrape sources and their supported industries."""
-    if current_user.get("role") != "admin":
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
     from app.services.lead_scrapers import AGENCY_CENTRAL_INDUSTRIES
