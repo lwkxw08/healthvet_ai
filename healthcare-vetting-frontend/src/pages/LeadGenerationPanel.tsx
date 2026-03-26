@@ -227,10 +227,13 @@ export default function LeadGenerationPanel() {
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-3">Registration Bodies</h3>
                 <div className="space-y-2">
-                  {((sources as Record<string, unknown>).registration_bodies as string[] || []).map((body: string) => (
-                    <div key={body} className="flex items-center gap-2 p-2 bg-slate-700/30 rounded-lg">
+                  {((sources as Record<string, unknown>).registration_bodies as Record<string, unknown>[] || []).map((body: Record<string, unknown>) => (
+                    <div key={String(body.id)} className="flex items-center gap-2 p-2 bg-slate-700/30 rounded-lg">
                       <CheckCircle size={14} className="text-green-400" />
-                      <span className="text-slate-300 text-xs uppercase">{body}</span>
+                      <div>
+                        <span className="text-slate-300 text-xs font-medium">{String(body.id)}</span>
+                        <span className="text-slate-500 text-xs ml-2">{String(body.name)}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
