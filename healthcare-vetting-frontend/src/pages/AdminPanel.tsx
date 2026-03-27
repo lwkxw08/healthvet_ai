@@ -980,7 +980,7 @@ export default function AdminPanel() {
       {mainTab === "agencies" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "list", label: "Agency List" }, { key: "invoicing", label: "Invoicing" }, { key: "subscriptions", label: "Subscription Plans" }].map((s) => (
+            {[{ key: "list", label: "Agency List" }, { key: "invoicing", label: "Invoicing" }, { key: "subscriptions", label: "Credit Packs" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -1565,7 +1565,7 @@ export default function AdminPanel() {
             {/* Editable Subscription Tiers */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-md font-semibold text-white">Subscription Plans</h3>
+                <h3 className="text-md font-semibold text-white">Credit Packs</h3>
                 <button onClick={() => setCreatingTier(true)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-xs font-medium border-none cursor-pointer flex items-center gap-1">
                   + New Plan
                 </button>
