@@ -132,8 +132,9 @@ def _fetch_agency_api_data(slug: str) -> dict:
 
 def _enrich_lead_from_profile(driver, lead: dict) -> None:
     """
-    Stage 1.5: Visit the AgencyCentral profile page and click contact
-    buttons to reveal website URL, email, and phone number.
+    Stage 1.5: Visit the AgencyCentral profile page and extract contact
+    details from the window.stores JavaScript object which contains
+    branch-level email, phone, address, and social link data.
     """
     profile_url = lead.get("source_url", "")
     if not profile_url:
@@ -143,135 +144,165 @@ def _enrich_lead_from_profile(driver, lead: dict) -> None:
         driver.get(profile_url)
         _random_delay(1.5, 3.0)
 
-        # Click each contact button and check what gets revealed.
-        # AgencyCentral uses React; buttons reveal content via state.
-        for btn_label, field in [("Visit Website", "website"), ("Email Agency", "email"), ("Phone Number", "phone")]:
+        # Extract data from window.stores — AgencyCentral embeds full
+        # agency + branch data in a JS object on every profile page.
+        stores_data = driver.execute_script('''
+            var s = window.stores || {};
+            var agency = s.agency ? s.agency.agency : null;
+            var branches = s.agency ? s.agency.branches : [];
+            var hq = branches && branches.length > 0 ? branches[0] : null;
+            return { agency: agency, branch: hq };
+        ''')
+
+        branch = stores_data.get("branch") if stores_data else None
+        agency_data = stores_data.get("agency") if stores_data else None
+
+        if branch:
+            # Email: EmployerEmail or mailToEmployerEmail
+            if not lead.get("email"):
+                email = (branch.get("EmployerEmail") or
+                         branch.get("mailToEmployerEmail") or
+                         branch.get("Email") or "")
+                if email and "@" in email:
+                    lead["email"] = email.strip()
+                    logger.info(f"Found email from stores: {email}")
+
+            # Phone: EmployerTelephone
+            if not lead.get("phone"):
+                phone = (branch.get("EmployerTelephone") or
+                         branch.get("Telephone") or
+                         branch.get("AssistedContactTelephone") or "")
+                if phone:
+                    # Take first number if multiple separated by /
+                    phone = phone.split("/")[0].strip()
+                    phone_clean = re.sub(r'[\s\-()]', '', phone)
+                    if len(phone_clean) >= 10:
+                        lead["phone"] = phone_clean
+                        logger.info(f"Found phone from stores: {phone_clean}")
+
+            # Location: from branch address
+            if not lead.get("location"):
+                location = branch.get("Location") or branch.get("Town") or ""
+                county = branch.get("County") or ""
+                postcode = branch.get("PostCode") or ""
+                parts = [p for p in [location, county, postcode] if p]
+                if parts:
+                    lead["location"] = ", ".join(parts)
+
+            # Full address in extra
+            full_addr = branch.get("FullPostalAddress") or branch.get("FormattedAddress") or ""
+            if full_addr:
+                lead.setdefault("extra", {})
+                if isinstance(lead["extra"], str):
+                    try:
+                        lead["extra"] = json.loads(lead["extra"])
+                    except (json.JSONDecodeError, TypeError):
+                        lead["extra"] = {}
+                lead["extra"]["address"] = full_addr.replace("\n", ", ")
+
+            # Social links from branch
+            social = lead.get("social_links", {})
+            if isinstance(social, str):
+                try:
+                    social = json.loads(social)
+                except (json.JSONDecodeError, TypeError):
+                    social = {}
+            fb = branch.get("social_facebook") or ""
+            if fb:
+                social["facebook"] = f"https://facebook.com/{fb}" if not fb.startswith("http") else fb
+            if social:
+                lead["social_links"] = social
+
+        if agency_data:
+            # Description from agency data (richer than listing)
+            if not lead.get("description"):
+                desc = agency_data.get("BriefDescription") or agency_data.get("Description") or ""
+                if desc:
+                    lead["description"] = desc[:500]
+
+            # Social links from agency level
+            social = lead.get("social_links", {})
+            if isinstance(social, str):
+                try:
+                    social = json.loads(social)
+                except (json.JSONDecodeError, TypeError):
+                    social = {}
+            fb = agency_data.get("social_facebook") or ""
+            if fb and "facebook" not in social:
+                social["facebook"] = f"https://facebook.com/{fb}" if not fb.startswith("http") else fb
+            if social:
+                lead["social_links"] = social
+
+        # Try to get website via "Visit Website" button click
+        if not lead.get("website"):
             try:
-                # Click the button via JS
-                clicked = driver.execute_script(f'''
+                clicked = driver.execute_script('''
                     var btns = document.querySelectorAll('button');
-                    for (var i = 0; i < btns.length; i++) {{
-                        if (btns[i].textContent.trim().includes('{btn_label}')) {{
+                    for (var i = 0; i < btns.length; i++) {
+                        if (btns[i].textContent.trim().includes('Visit Website')) {
                             btns[i].click();
                             return true;
-                        }}
-                    }}
+                        }
+                    }
                     return false;
                 ''')
                 if clicked:
-                    _random_delay(1.0, 2.0)
+                    _random_delay(2.0, 3.5)
+                    handles = driver.window_handles
+                    if len(handles) > 1:
+                        driver.switch_to.window(handles[-1])
+                        _random_delay(1.5, 2.5)
+                        current_url = driver.current_url
 
-                    # Check for new window/tab (Visit Website may open one)
-                    if field == "website":
-                        handles = driver.window_handles
-                        if len(handles) > 1:
-                            driver.switch_to.window(handles[-1])
-                            _random_delay(1.5, 2.5)
-                            current_url = driver.current_url
-
-                            # AgencyCentral shows an interstitial page asking
-                            # for your company name with a "Skip this step"
-                            # link. We need to click that to reach the real
-                            # agency website.
-                            if "agencycentral" in current_url:
-                                try:
-                                    # Try clicking "Skip this step" link
-                                    skip_clicked = driver.execute_script('''
-                                        var links = document.querySelectorAll('a');
-                                        for (var i = 0; i < links.length; i++) {
-                                            var txt = links[i].textContent.trim().toLowerCase();
-                                            if (txt.includes('skip this step') || txt.includes('skip')) {
-                                                links[i].click();
-                                                return true;
-                                            }
+                        # Handle interstitial "Skip this step" page
+                        if "agencycentral" in current_url:
+                            try:
+                                skip_clicked = driver.execute_script('''
+                                    var links = document.querySelectorAll('a');
+                                    for (var i = 0; i < links.length; i++) {
+                                        var txt = links[i].textContent.trim().toLowerCase();
+                                        if (txt.includes('skip this step') || txt.includes('skip')) {
+                                            links[i].click();
+                                            return true;
                                         }
-                                        return false;
-                                    ''')
-                                    if skip_clicked:
-                                        _random_delay(2.0, 3.5)
-                                        # After skip, check if we're on a new
-                                        # non-agencycentral URL or a new tab
-                                        final_handles = driver.window_handles
-                                        if len(final_handles) > len(handles):
-                                            # Skip opened yet another tab
-                                            driver.switch_to.window(final_handles[-1])
-                                            _random_delay(1.0, 2.0)
-                                        final_url = driver.current_url
-                                        if final_url and "agencycentral" not in final_url and final_url.startswith("http"):
-                                            lead["website"] = final_url
-                                            logger.info(f"Found website via Skip this step: {final_url}")
-                                    else:
-                                        # Try finding a direct outbound link on the interstitial
-                                        isoup = BeautifulSoup(driver.page_source, "html.parser")
-                                        for a_tag in isoup.select("a[href]"):
-                                            href = a_tag.get("href", "")
-                                            if href.startswith("http") and "agencycentral" not in href:
-                                                lead["website"] = href
-                                                logger.info(f"Found website via interstitial link: {href}")
-                                                break
-                                except Exception as skip_err:
-                                    logger.debug(f"Error handling interstitial: {skip_err}")
-                            elif current_url and current_url.startswith("http"):
-                                # Went directly to agency website (no interstitial)
-                                lead["website"] = current_url
-                                logger.info(f"Found website via direct tab: {current_url}")
+                                    }
+                                    return false;
+                                ''')
+                                if skip_clicked:
+                                    _random_delay(2.0, 3.5)
+                                    final_handles = driver.window_handles
+                                    if len(final_handles) > len(handles):
+                                        driver.switch_to.window(final_handles[-1])
+                                        _random_delay(1.0, 2.0)
+                                    final_url = driver.current_url
+                                    if final_url and "agencycentral" not in final_url and final_url.startswith("http"):
+                                        lead["website"] = final_url
+                                        logger.info(f"Found website via Skip: {final_url}")
+                                else:
+                                    # Try outbound link on interstitial
+                                    isoup = BeautifulSoup(driver.page_source, "html.parser")
+                                    for a_tag in isoup.select("a[href]"):
+                                        href = a_tag.get("href", "")
+                                        if href.startswith("http") and "agencycentral" not in href:
+                                            lead["website"] = href
+                                            logger.info(f"Found website via interstitial: {href}")
+                                            break
+                            except Exception as skip_err:
+                                logger.debug(f"Error handling interstitial: {skip_err}")
+                        elif current_url and current_url.startswith("http"):
+                            lead["website"] = current_url
+                            logger.info(f"Found website via direct tab: {current_url}")
 
-                            # Close extra tabs and return to main window
-                            for h in driver.window_handles[1:]:
-                                try:
-                                    driver.switch_to.window(h)
-                                    driver.close()
-                                except Exception:
-                                    pass
-                            driver.switch_to.window(driver.window_handles[0])
-
-                    # Check page source for revealed contact info
-                    soup = BeautifulSoup(driver.page_source, "html.parser")
-                    page_text = soup.get_text()
-
-                    if field == "email" and not lead.get("email"):
-                        # Look for mailto links revealed after click
-                        for a in soup.select('a[href^="mailto:"]'):
-                            email_val = a["href"].replace("mailto:", "").split("?")[0].strip()
-                            if email_val and "@" in email_val:
-                                lead["email"] = email_val
-                                break
-                        if not lead.get("email"):
-                            emails = _extract_emails(page_text)
-                            if emails:
-                                lead["email"] = emails[0]
-
-                    if field == "phone" and not lead.get("phone"):
-                        for a in soup.select('a[href^="tel:"]'):
-                            phone_val = a["href"].replace("tel:", "").strip()
-                            if phone_val:
-                                lead["phone"] = re.sub(r'[\s\-()]', '', phone_val)
-                                break
-                        if not lead.get("phone"):
-                            phones = _extract_phones(page_text)
-                            if phones:
-                                lead["phone"] = phones[0]
-
+                        # Close extra tabs
+                        for h in driver.window_handles[1:]:
+                            try:
+                                driver.switch_to.window(h)
+                                driver.close()
+                            except Exception:
+                                pass
+                        driver.switch_to.window(driver.window_handles[0])
             except Exception as e:
-                logger.debug(f"Error clicking {btn_label}: {e}")
-                continue
-
-        # Also extract social links from profile page
-        try:
-            soup = BeautifulSoup(driver.page_source, "html.parser")
-            social = {}
-            for a in soup.select("a[href]"):
-                href = a.get("href", "")
-                if "linkedin.com" in href:
-                    social["linkedin"] = href
-                elif "twitter.com" in href or "x.com" in href:
-                    social["twitter"] = href
-                elif "facebook.com" in href and "agencycentral" not in href:
-                    social["facebook"] = href
-            if social:
-                lead["social_links"] = social
-        except Exception:
-            pass
+                logger.debug(f"Error getting website via button: {e}")
 
     except Exception as e:
         logger.warning(f"Error enriching from profile {profile_url}: {e}")
