@@ -409,10 +409,10 @@ async def use_subscription_check(data: dict, user=Depends(get_current_user)):
 # EMAIL NOTIFICATIONS
 # ============================================================
 
-@router.get("/notifications")
-async def get_notifications(recipient_email: str = None, notification_type: str = None,
+@router.get("/email-notifications")
+async def get_email_notifications(recipient_email: str = None, notification_type: str = None,
                             limit: int = 50, user=Depends(get_current_user)):
-    """Get email notifications."""
+    """Get email notifications (sent emails log)."""
     from app.services.email_service import EmailService
     return EmailService.get_notifications(recipient_email, notification_type, limit)
 
