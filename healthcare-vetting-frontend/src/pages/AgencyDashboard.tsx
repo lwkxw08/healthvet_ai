@@ -1458,9 +1458,9 @@ export default function AgencyDashboard() {
                     <div key={pack.key} onClick={() => setSelectedTier(pack.key)}
                       className={`p-5 bg-slate-700/50 rounded-xl border cursor-pointer transition-all ${selectedTier === pack.key ? "border-blue-400 ring-2 ring-blue-400/30" : pack.color + " hover:border-slate-500"}`}>
                       <p className="text-white font-bold text-lg mb-1">{pack.name}</p>
-                      <p className="text-blue-400 text-2xl font-bold mb-1">\u00A3{pack.price}</p>
+                      <p className="text-blue-400 text-2xl font-bold mb-1">£{pack.price}</p>
                       <p className="text-slate-300 text-sm mb-1">{pack.credits} credits</p>
-                      <p className="text-slate-400 text-xs">\u00A3{pack.perCredit} per credit</p>
+                      <p className="text-slate-400 text-xs">£{pack.perCredit} per credit</p>
                       {pack.saving && <p className="text-green-400 text-xs mt-1 font-medium">{pack.saving}</p>}
                       <p className="text-slate-500 text-xs mt-1">Valid for 12 months</p>
                     </div>
@@ -1494,7 +1494,7 @@ export default function AgencyDashboard() {
                     {billingHistory.map((item, i) => (
                       <tr key={i} className="border-b border-slate-700/50">
                         <td className="px-4 py-3 text-sm text-white">{String(item.description || item.tier || "Invoice")}</td>
-                        <td className="px-4 py-3 text-sm text-green-400">\u00A3{Number(item.amount || item.sell_amount || item.monthly_amount || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-green-400">£{Number(item.amount || item.sell_amount || item.monthly_amount || 0).toFixed(2)}</td>
                         <td className="px-4 py-3"><StatusBadge status={String(item.status || "pending")} /></td>
                         <td className="px-4 py-3 text-sm text-slate-400">{String(item.created_at || item.date || "").split("T")[0]}</td>
                         <td className="px-4 py-3">
