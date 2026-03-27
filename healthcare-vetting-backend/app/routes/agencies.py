@@ -101,7 +101,7 @@ async def create_invite(data: InviteCreate, current_user: dict = Depends(get_cur
         payment_info = {"billing_mode": billing_mode, "payment_required": False}
         cost_amount = round(sum(c["sell_price"] * 0.3 for c in checks if c["check_type"] != "monitoring"), 2)
 
-        if billing_mode == "subscription":
+        if billing_mode in ("subscription", "credit_pack"):
             # Try to use subscription credits first
             from app.services.billing import BillingService
             result = BillingService.use_subscription_check(

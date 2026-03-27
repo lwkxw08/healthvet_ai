@@ -679,7 +679,7 @@ class BillingService:
     @staticmethod
     def set_agency_billing_mode(agency_id: str, billing_mode: str, stripe_customer_id: str = None) -> dict:
         """Set the billing mode for an agency (admin only)."""
-        valid_modes = {"manual_invoicing", "online_payment", "subscription"}
+        valid_modes = {"manual_invoicing", "online_payment", "subscription", "credit_pack"}
         if billing_mode not in valid_modes:
             raise ValueError(f"Invalid billing_mode. Valid: {', '.join(valid_modes)}")
 

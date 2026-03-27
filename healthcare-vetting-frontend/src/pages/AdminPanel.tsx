@@ -1966,7 +1966,7 @@ export default function AdminPanel() {
                       >
                         <option value="manual_invoicing">Manual Invoicing</option>
                         <option value="online_payment">Online Payment (PAYG)</option>
-                        <option value="subscription">Subscription</option>
+                        <option value="credit_pack">Credit Pack</option>
                       </select>
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={String(a.status || "active")} /></td>
