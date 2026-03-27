@@ -33,6 +33,12 @@ export default function SubscriptionPlansPanel() {
   // Pricing matrix state
   const [pricingMatrix, setPricingMatrix] = useState<Record<string, unknown> | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixSelectedIndustry, setMatrixSelectedIndustry] = useState<string>("");
+  const [matrixIndustryPricing, setMatrixIndustryPricing] = useState<Record<string, unknown>[]>([]);
+  const [matrixEditingId, setMatrixEditingId] = useState<string | null>(null);
+  const [matrixEditData, setMatrixEditData] = useState({ label: "", credit_value: "", third_party_cost: "", sell_price: "" });
+  const [matrixAddingCheck, setMatrixAddingCheck] = useState(false);
+  const [matrixNewCheck, setMatrixNewCheck] = useState({ check_type: "", label: "", credit_value: "1", third_party_cost: "0", sell_price: "0" });
 
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
@@ -155,6 +161,68 @@ export default function SubscriptionPlansPanel() {
       third_party_cost: String(pricing.third_party_cost || 0),
       sell_price: String(pricing.sell_price || 0),
     });
+  };
+
+  // Matrix tab helpers
+  const loadMatrixIndustryPricing = useCallback(async (industryId: string) => {
+    if (!token || !industryId) { setMatrixIndustryPricing([]); return; }
+    try {
+      const cp = await subscriptionPlansApi.getIndustryPricing(token, industryId);
+      setMatrixIndustryPricing(cp);
+    } catch { setMatrixIndustryPricing([]); }
+  }, [token]);
+
+  useEffect(() => {
+    if (activeTab === "matrix" && matrixSelectedIndustry) loadMatrixIndustryPricing(matrixSelectedIndustry);
+  }, [activeTab, matrixSelectedIndustry, loadMatrixIndustryPricing]);
+
+  const matrixStartEdit = (p: Record<string, unknown>) => {
+    setMatrixEditingId(String(p.id));
+    setMatrixEditData({
+      label: String(p.label || ""), credit_value: String(p.credit_value || 1),
+      third_party_cost: String(p.third_party_cost || 0), sell_price: String(p.sell_price || 0),
+    });
+  };
+
+  const matrixSaveEdit = async (pricingId: string) => {
+    if (!token) return;
+    try {
+      await subscriptionPlansApi.updateIndustryPricing(token, pricingId, {
+        label: matrixEditData.label, credit_value: parseFloat(matrixEditData.credit_value),
+        third_party_cost: parseFloat(matrixEditData.third_party_cost), sell_price: parseFloat(matrixEditData.sell_price),
+      });
+      showMessage("Pricing updated");
+      setMatrixEditingId(null);
+      loadMatrixIndustryPricing(matrixSelectedIndustry);
+      loadPricingMatrix();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  const matrixDeleteCheck = async (pricingId: string) => {
+    if (!token) return;
+    try {
+      await subscriptionPlansApi.deleteIndustryPricing(token, pricingId);
+      showMessage("Check pricing deleted");
+      loadMatrixIndustryPricing(matrixSelectedIndustry);
+      loadPricingMatrix();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  const matrixAddCheck = async () => {
+    if (!token || !matrixSelectedIndustry || !matrixNewCheck.check_type) return;
+    try {
+      await subscriptionPlansApi.createIndustryPricing(token, {
+        industry_template_id: matrixSelectedIndustry, check_type: matrixNewCheck.check_type,
+        label: matrixNewCheck.label || matrixNewCheck.check_type.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()),
+        credit_value: parseFloat(matrixNewCheck.credit_value) || 1, third_party_cost: parseFloat(matrixNewCheck.third_party_cost) || 0,
+        sell_price: parseFloat(matrixNewCheck.sell_price) || 0,
+      });
+      showMessage("Check pricing added");
+      setMatrixAddingCheck(false);
+      setMatrixNewCheck({ check_type: "", label: "", credit_value: "1", third_party_cost: "0", sell_price: "0" });
+      loadMatrixIndustryPricing(matrixSelectedIndustry);
+      loadPricingMatrix();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
   };
 
   const checkTypeOptions = [
@@ -461,74 +529,232 @@ export default function SubscriptionPlansPanel() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-white">Pricing Matrix</h3>
-              <p className="text-slate-400 text-xs mt-0.5">Overview of all per-check pricing across industries</p>
+              <p className="text-slate-400 text-xs mt-0.5">View and edit per-check pricing for each industry</p>
             </div>
-            <button onClick={loadPricingMatrix} className="text-slate-400 hover:text-white flex items-center gap-1 text-sm">
+            <button onClick={() => { loadPricingMatrix(); if (matrixSelectedIndustry) loadMatrixIndustryPricing(matrixSelectedIndustry); }}
+              className="text-slate-400 hover:text-white flex items-center gap-1 text-sm">
               <RefreshCw size={14} className={matrixLoading ? "animate-spin" : ""} /> Refresh
             </button>
           </div>
 
-          {matrixLoading ? (
-            <div className="text-center py-8"><RefreshCw size={24} className="animate-spin mx-auto text-slate-400" /></div>
-          ) : !pricingMatrix ? (
-            <div className="text-center py-12 text-slate-500">
-              <CreditCard size={40} className="mx-auto mb-3 opacity-50" />
-              <p className="text-sm">No pricing matrix data available.</p>
-            </div>
-          ) : (
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-700/50">
-                  <tr>
-                    <th className="py-3 px-3 text-left text-slate-400 sticky left-0 bg-slate-700/50">Check Type</th>
-                    {((pricingMatrix as Record<string, unknown>).industries as Record<string, unknown>[] || []).map((ind) => (
-                      <th key={String(ind.id)} className="py-3 px-3 text-center text-slate-400">{String(ind.name || "").slice(0, 15)}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/50">
-                  {((pricingMatrix as Record<string, unknown>).check_types as string[] || []).map((ct) => (
-                    <tr key={ct} className="hover:bg-slate-700/20">
-                      <td className="py-2 px-3 text-white font-medium sticky left-0 bg-slate-800/80">{ct.replace(/_/g, " ")}</td>
-                      {((pricingMatrix as Record<string, unknown>).industries as Record<string, unknown>[] || []).map((ind) => {
-                        const matrix = (pricingMatrix as Record<string, unknown>).matrix as Record<string, Record<string, Record<string, number>>>;
-                        const data = matrix?.[String(ind.name)]?.[ct];
-                        return (
-                          <td key={String(ind.id)} className="py-2 px-3 text-center">
-                            {data ? (
-                              <div className="space-y-0.5">
-                                <div className="text-emerald-400 font-medium">{"\u00A3"}{data.sell_price?.toFixed(2)}</div>
-                                <div className="text-slate-500">{data.credit_value?.toFixed(1)} cr</div>
-                              </div>
-                            ) : (
-                              <span className="text-slate-600">-</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {/* Clickable industry tabs */}
+          <div className="flex gap-1 overflow-x-auto pb-1">
+            {templates.map((ind) => (
+              <button key={String(ind.id)}
+                onClick={() => setMatrixSelectedIndustry(matrixSelectedIndustry === String(ind.id) ? "" : String(ind.id))}
+                className={`px-4 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                  matrixSelectedIndustry === String(ind.id)
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-700/50 text-slate-300 hover:bg-slate-600/50"
+                }`}>
+                {String(ind.name)}
+              </button>
+            ))}
+          </div>
 
-          {/* Default rates reference */}
-          {pricingMatrix && ((pricingMatrix as Record<string, unknown>).default_rates as Record<string, unknown>[] || []).length > 0 && (
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4">
-              <h4 className="text-white font-medium mb-3 flex items-center gap-2"><DollarSign size={16} className="text-amber-400" /> Default Credit Rates (fallback)</h4>
-              <div className="grid grid-cols-4 gap-2">
-                {((pricingMatrix as Record<string, unknown>).default_rates as Record<string, unknown>[]).map((rate) => (
-                  <div key={String(rate.check_type)} className="bg-slate-700/30 rounded-lg p-2 border border-slate-600/50">
-                    <p className="text-slate-400 text-xs">{String(rate.label || rate.check_type)}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-blue-400 text-xs font-medium">{Number(rate.credit_value || 0).toFixed(1)} cr</span>
-                      <span className="text-slate-500 text-xs">{"\u00A3"}{Number(rate.third_party_cost || 0).toFixed(2)} cost</span>
+          {/* Selected industry pricing editor */}
+          {matrixSelectedIndustry ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-white font-medium">
+                  {String(templates.find((t) => String(t.id) === matrixSelectedIndustry)?.name || "")} — Per-Check Pricing
+                </h4>
+                <button onClick={() => setMatrixAddingCheck(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
+                  <PlusCircle size={12} /> Add Check
+                </button>
+              </div>
+
+              {/* Add check form */}
+              {matrixAddingCheck && (
+                <div className="bg-slate-800/80 rounded-xl border border-blue-500/30 p-4">
+                  <h4 className="text-white font-medium mb-3 text-sm">Add Check Pricing</h4>
+                  <div className="grid grid-cols-5 gap-3">
+                    <div>
+                      <label className="block text-slate-400 text-xs mb-1">Check Type</label>
+                      <select value={matrixNewCheck.check_type} onChange={(e) => setMatrixNewCheck((p) => ({ ...p, check_type: e.target.value }))}
+                        className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs">
+                        <option value="">Select check...</option>
+                        {checkTypeOptions.map((ct) => (
+                          <option key={ct} value={ct}>{ct.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 text-xs mb-1">Label</label>
+                      <input type="text" value={matrixNewCheck.label} onChange={(e) => setMatrixNewCheck((p) => ({ ...p, label: e.target.value }))}
+                        placeholder="Display name" className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 text-xs mb-1">Credit Value</label>
+                      <input type="number" step="0.1" value={matrixNewCheck.credit_value} onChange={(e) => setMatrixNewCheck((p) => ({ ...p, credit_value: e.target.value }))}
+                        className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 text-xs mb-1">3rd Party Cost ({"\u00A3"})</label>
+                      <input type="number" step="0.01" value={matrixNewCheck.third_party_cost} onChange={(e) => setMatrixNewCheck((p) => ({ ...p, third_party_cost: e.target.value }))}
+                        className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 text-xs mb-1">Sell Price ({"\u00A3"})</label>
+                      <input type="number" step="0.01" value={matrixNewCheck.sell_price} onChange={(e) => setMatrixNewCheck((p) => ({ ...p, sell_price: e.target.value }))}
+                        className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs" />
                     </div>
                   </div>
-                ))}
-              </div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={matrixAddCheck} className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded-lg text-xs flex items-center gap-1"><Save size={12} /> Save</button>
+                    <button onClick={() => setMatrixAddingCheck(false)} className="bg-slate-600 hover:bg-slate-700 text-white px-4 py-1.5 rounded-lg text-xs flex items-center gap-1"><X size={12} /> Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Industry pricing table */}
+              {matrixIndustryPricing.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <Tag size={32} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No per-check pricing configured for this industry yet.</p>
+                  <p className="text-xs mt-1">Click "Add Check" above to start adding pricing.</p>
+                </div>
+              ) : (
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-700/50">
+                      <tr>
+                        <th className="py-3 px-3 text-left text-slate-400 text-xs">Check Type</th>
+                        <th className="py-3 px-3 text-left text-slate-400 text-xs">Label</th>
+                        <th className="py-3 px-3 text-center text-slate-400 text-xs">Credits</th>
+                        <th className="py-3 px-3 text-center text-slate-400 text-xs">3rd Party ({"\u00A3"})</th>
+                        <th className="py-3 px-3 text-center text-slate-400 text-xs">Sell Price ({"\u00A3"})</th>
+                        <th className="py-3 px-3 text-center text-slate-400 text-xs">Margin ({"\u00A3"})</th>
+                        <th className="py-3 px-3 text-center text-slate-400 text-xs">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {matrixIndustryPricing.map((cp) => {
+                        const isEd = matrixEditingId === String(cp.id);
+                        const margin = Number(cp.sell_price || 0) - Number(cp.third_party_cost || 0);
+                        return (
+                          <tr key={String(cp.id)} className="hover:bg-slate-700/20">
+                            <td className="py-3 px-3 text-white font-medium text-xs">{String(cp.check_type || "").replace(/_/g, " ")}</td>
+                            <td className="py-3 px-3">
+                              {isEd ? (
+                                <input type="text" value={matrixEditData.label} onChange={(e) => setMatrixEditData((p) => ({ ...p, label: e.target.value }))}
+                                  className="w-full bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-white text-xs" />
+                              ) : <span className="text-slate-300 text-xs">{String(cp.label || "-")}</span>}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {isEd ? (
+                                <input type="number" step="0.1" value={matrixEditData.credit_value} onChange={(e) => setMatrixEditData((p) => ({ ...p, credit_value: e.target.value }))}
+                                  className="w-16 bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-white text-xs text-center" />
+                              ) : <span className="text-blue-400 font-medium text-xs">{Number(cp.credit_value || 0).toFixed(1)}</span>}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {isEd ? (
+                                <input type="number" step="0.01" value={matrixEditData.third_party_cost} onChange={(e) => setMatrixEditData((p) => ({ ...p, third_party_cost: e.target.value }))}
+                                  className="w-20 bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-white text-xs text-center" />
+                              ) : <span className="text-slate-300 text-xs">{"\u00A3"}{Number(cp.third_party_cost || 0).toFixed(2)}</span>}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {isEd ? (
+                                <input type="number" step="0.01" value={matrixEditData.sell_price} onChange={(e) => setMatrixEditData((p) => ({ ...p, sell_price: e.target.value }))}
+                                  className="w-20 bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-white text-xs text-center" />
+                              ) : <span className="text-emerald-400 font-medium text-xs">{"\u00A3"}{Number(cp.sell_price || 0).toFixed(2)}</span>}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span className={`text-xs font-medium ${margin >= 0 ? "text-green-400" : "text-red-400"}`}>{"\u00A3"}{margin.toFixed(2)}</span>
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                {isEd ? (<>
+                                  <button onClick={() => matrixSaveEdit(String(cp.id))} className="text-green-400 hover:text-green-300"><Save size={14} /></button>
+                                  <button onClick={() => setMatrixEditingId(null)} className="text-slate-400 hover:text-white"><X size={14} /></button>
+                                </>) : (<>
+                                  <button onClick={() => matrixStartEdit(cp)} className="text-slate-400 hover:text-blue-400"><Edit size={14} /></button>
+                                  <button onClick={() => matrixDeleteCheck(String(cp.id))} className="text-slate-400 hover:text-red-400"><Trash2 size={14} /></button>
+                                </>)}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
+          ) : (
+            /* No industry selected — show overview */
+            matrixLoading ? (
+              <div className="text-center py-8"><RefreshCw size={24} className="animate-spin mx-auto text-slate-400" /></div>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-center py-8 text-slate-500">
+                  <CreditCard size={40} className="mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">Select an industry above to view and edit its per-check pricing.</p>
+                </div>
+
+                {/* Overview matrix table (read-only) */}
+                {pricingMatrix && ((pricingMatrix as Record<string, unknown>).check_types as string[] || []).length > 0 && (
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-700/50">
+                        <tr>
+                          <th className="py-3 px-3 text-left text-slate-400 sticky left-0 bg-slate-700/50">Check Type</th>
+                          {((pricingMatrix as Record<string, unknown>).industries as Record<string, unknown>[] || []).map((ind) => (
+                            <th key={String(ind.id)} className="py-3 px-3 text-center text-slate-400 cursor-pointer hover:text-blue-400"
+                              onClick={() => setMatrixSelectedIndustry(String(ind.id))}>
+                              {String(ind.name || "").slice(0, 18)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-700/50">
+                        {((pricingMatrix as Record<string, unknown>).check_types as string[] || []).map((ct) => (
+                          <tr key={ct} className="hover:bg-slate-700/20">
+                            <td className="py-2 px-3 text-white font-medium sticky left-0 bg-slate-800/80">{ct.replace(/_/g, " ")}</td>
+                            {((pricingMatrix as Record<string, unknown>).industries as Record<string, unknown>[] || []).map((ind) => {
+                              const matrix = (pricingMatrix as Record<string, unknown>).matrix as Record<string, Record<string, Record<string, number>>>;
+                              const data = matrix?.[String(ind.name)]?.[ct];
+                              return (
+                                <td key={String(ind.id)} className="py-2 px-3 text-center cursor-pointer hover:bg-slate-600/30"
+                                  onClick={() => setMatrixSelectedIndustry(String(ind.id))}>
+                                  {data ? (
+                                    <div className="space-y-0.5">
+                                      <div className="text-emerald-400 font-medium">{"\u00A3"}{data.sell_price?.toFixed(2)}</div>
+                                      <div className="text-slate-500">{data.credit_value?.toFixed(1)} cr</div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-600">-</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Default rates reference */}
+                {pricingMatrix && ((pricingMatrix as Record<string, unknown>).default_rates as Record<string, unknown>[] || []).length > 0 && (
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4">
+                    <h4 className="text-white font-medium mb-3 flex items-center gap-2"><DollarSign size={16} className="text-amber-400" /> Default Credit Rates (fallback)</h4>
+                    <div className="grid grid-cols-4 gap-2">
+                      {((pricingMatrix as Record<string, unknown>).default_rates as Record<string, unknown>[]).map((rate) => (
+                        <div key={String(rate.check_type)} className="bg-slate-700/30 rounded-lg p-2 border border-slate-600/50">
+                          <p className="text-slate-400 text-xs">{String(rate.label || rate.check_type)}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-blue-400 text-xs font-medium">{Number(rate.credit_value || 0).toFixed(1)} cr</span>
+                            <span className="text-slate-500 text-xs">{"\u00A3"}{Number(rate.third_party_cost || 0).toFixed(2)} cost</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
           )}
         </div>
       )}
