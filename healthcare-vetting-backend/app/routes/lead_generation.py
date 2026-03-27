@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from app.database import get_db
 from app.utils.auth import get_current_user, generate_id
 
@@ -38,6 +38,10 @@ class RegistrationScrapeRequest(BaseModel):
     candidate_id: str
     body: str  # NMC, GMC, HCPC, GPhC
     registration_number: str
+
+
+class BulkDeleteRequest(BaseModel):
+    lead_ids: List[str]
 
 
 # ── Background scrape runner ─────────────────────────────────────────
@@ -336,6 +340,24 @@ async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_use
             raise HTTPException(status_code=404, detail="Lead not found")
         db.execute("DELETE FROM leads WHERE id=?", (lead_id,))
         return {"message": "Lead deleted"}
+
+
+@router.post("/leads/bulk-delete")
+async def bulk_delete_leads(data: BulkDeleteRequest, current_user: dict = Depends(get_current_user)):
+    """Delete multiple leads at once."""
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    if not data.lead_ids:
+        raise HTTPException(status_code=400, detail="No lead IDs provided")
+
+    deleted = 0
+    with get_db() as db:
+        for lead_id in data.lead_ids:
+            result = db.execute("DELETE FROM leads WHERE id=?", (lead_id,))
+            deleted += result.rowcount
+
+    return {"message": f"{deleted} leads deleted", "deleted_count": deleted}
 
 
 @router.post("/leads/export")

@@ -556,6 +556,8 @@ export const leadGenerationApi = {
     apiRequest<Record<string, unknown>>(`/api/lead-generation/leads/${leadId}`, { method: "PUT", body: data, token }),
   deleteLead: (token: string, leadId: string) =>
     apiRequest<Record<string, unknown>>(`/api/lead-generation/leads/${leadId}`, { method: "DELETE", token }),
+  bulkDeleteLeads: (token: string, leadIds: string[]) =>
+    apiRequest<Record<string, unknown>>("/api/lead-generation/leads/bulk-delete", { method: "POST", body: { lead_ids: leadIds }, token }),
   exportLeads: async (token: string, params?: Record<string, string>): Promise<void> => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers["X-Auth-Token"] = token;

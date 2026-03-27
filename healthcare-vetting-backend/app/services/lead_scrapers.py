@@ -166,12 +166,64 @@ def _enrich_lead_from_profile(driver, lead: dict) -> None:
                         handles = driver.window_handles
                         if len(handles) > 1:
                             driver.switch_to.window(handles[-1])
-                            new_url = driver.current_url
-                            if new_url and "agencycentral" not in new_url and new_url.startswith("http"):
-                                lead["website"] = new_url
-                                logger.info(f"Found website via tab: {new_url}")
-                            driver.close()
-                            driver.switch_to.window(handles[0])
+                            _random_delay(1.5, 2.5)
+                            current_url = driver.current_url
+
+                            # AgencyCentral shows an interstitial page asking
+                            # for your company name with a "Skip this step"
+                            # link. We need to click that to reach the real
+                            # agency website.
+                            if "agencycentral" in current_url:
+                                try:
+                                    # Try clicking "Skip this step" link
+                                    skip_clicked = driver.execute_script('''
+                                        var links = document.querySelectorAll('a');
+                                        for (var i = 0; i < links.length; i++) {
+                                            var txt = links[i].textContent.trim().toLowerCase();
+                                            if (txt.includes('skip this step') || txt.includes('skip')) {
+                                                links[i].click();
+                                                return true;
+                                            }
+                                        }
+                                        return false;
+                                    ''')
+                                    if skip_clicked:
+                                        _random_delay(2.0, 3.5)
+                                        # After skip, check if we're on a new
+                                        # non-agencycentral URL or a new tab
+                                        final_handles = driver.window_handles
+                                        if len(final_handles) > len(handles):
+                                            # Skip opened yet another tab
+                                            driver.switch_to.window(final_handles[-1])
+                                            _random_delay(1.0, 2.0)
+                                        final_url = driver.current_url
+                                        if final_url and "agencycentral" not in final_url and final_url.startswith("http"):
+                                            lead["website"] = final_url
+                                            logger.info(f"Found website via Skip this step: {final_url}")
+                                    else:
+                                        # Try finding a direct outbound link on the interstitial
+                                        isoup = BeautifulSoup(driver.page_source, "html.parser")
+                                        for a_tag in isoup.select("a[href]"):
+                                            href = a_tag.get("href", "")
+                                            if href.startswith("http") and "agencycentral" not in href:
+                                                lead["website"] = href
+                                                logger.info(f"Found website via interstitial link: {href}")
+                                                break
+                                except Exception as skip_err:
+                                    logger.debug(f"Error handling interstitial: {skip_err}")
+                            elif current_url and current_url.startswith("http"):
+                                # Went directly to agency website (no interstitial)
+                                lead["website"] = current_url
+                                logger.info(f"Found website via direct tab: {current_url}")
+
+                            # Close extra tabs and return to main window
+                            for h in driver.window_handles[1:]:
+                                try:
+                                    driver.switch_to.window(h)
+                                    driver.close()
+                                except Exception:
+                                    pass
+                            driver.switch_to.window(driver.window_handles[0])
 
                     # Check page source for revealed contact info
                     soup = BeautifulSoup(driver.page_source, "html.parser")

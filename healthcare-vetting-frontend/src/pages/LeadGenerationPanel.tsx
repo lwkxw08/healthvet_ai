@@ -28,6 +28,7 @@ export default function LeadGenerationPanel() {
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [leadFilter, setLeadFilter] = useState({ source: "", industry: "", status: "", search: "" });
   const [selectedLead, setSelectedLead] = useState<Record<string, unknown> | null>(null);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
 
   // Sources info
   const [sources, setSources] = useState<Record<string, unknown> | null>(null);
@@ -101,9 +102,38 @@ export default function LeadGenerationPanel() {
     try {
       await leadGenerationApi.deleteLead(token, leadId);
       showMessage("Lead deleted");
+      setSelectedLeadIds((prev) => { const next = new Set(prev); next.delete(leadId); return next; });
       loadLeads();
       loadLeadStats();
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  const bulkDeleteLeads = async () => {
+    if (!token || selectedLeadIds.size === 0) return;
+    if (!confirm(`Delete ${selectedLeadIds.size} selected lead(s)?`)) return;
+    try {
+      await leadGenerationApi.bulkDeleteLeads(token, Array.from(selectedLeadIds));
+      showMessage(`${selectedLeadIds.size} leads deleted`);
+      setSelectedLeadIds(new Set());
+      loadLeads();
+      loadLeadStats();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
+  const toggleSelectLead = (leadId: string) => {
+    setSelectedLeadIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(leadId)) next.delete(leadId); else next.add(leadId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedLeadIds.size === leads.length) {
+      setSelectedLeadIds(new Set());
+    } else {
+      setSelectedLeadIds(new Set(leads.map((l) => String(l.id))));
+    }
   };
 
   const exportLeads = async () => {
@@ -336,6 +366,11 @@ export default function LeadGenerationPanel() {
             <input type="text" value={leadFilter.search} onChange={(e) => setLeadFilter((p) => ({ ...p, search: e.target.value }))}
               placeholder="Search agencies..."
               className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-1.5 text-white text-xs flex-1 min-w-48" />
+            {selectedLeadIds.size > 0 && (
+              <button onClick={bulkDeleteLeads} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
+                <Trash2 size={12} /> Delete Selected ({selectedLeadIds.size})
+              </button>
+            )}
             <button onClick={exportLeads} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
               <Download size={12} /> Export
             </button>
@@ -354,6 +389,11 @@ export default function LeadGenerationPanel() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-700/50">
                   <tr>
+                    <th className="py-3 px-2 text-center w-8">
+                      <input type="checkbox" checked={leads.length > 0 && selectedLeadIds.size === leads.length}
+                        onChange={toggleSelectAll}
+                        className="rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer" />
+                    </th>
                     <th className="py-3 px-3 text-left text-slate-400 text-xs">Agency</th>
                     <th className="py-3 px-3 text-left text-slate-400 text-xs">Source</th>
                     <th className="py-3 px-3 text-left text-slate-400 text-xs">Industry</th>
@@ -365,7 +405,12 @@ export default function LeadGenerationPanel() {
                 </thead>
                 <tbody className="divide-y divide-slate-700/50">
                   {leads.map((lead) => (
-                    <tr key={String(lead.id)} className="hover:bg-slate-700/20">
+                    <tr key={String(lead.id)} className={`hover:bg-slate-700/20 ${selectedLeadIds.has(String(lead.id)) ? "bg-blue-900/20" : ""}`}>
+                      <td className="py-3 px-2 text-center">
+                        <input type="checkbox" checked={selectedLeadIds.has(String(lead.id))}
+                          onChange={() => toggleSelectLead(String(lead.id))}
+                          className="rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer" />
+                      </td>
                       <td className="py-3 px-3">
                         <div className="text-white font-medium text-sm">{String(lead.agency_name)}</div>
                         {lead.website ? <a href={String(lead.website)} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline">{String(lead.website).replace(/^https?:\/\//, "").slice(0, 30)}</a> : null}
