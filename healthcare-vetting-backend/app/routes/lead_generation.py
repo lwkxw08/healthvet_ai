@@ -398,7 +398,7 @@ async def export_leads(
 
     # Column definitions (header -> dict key)
     columns = [
-        ("Agency Name", "name"),
+        ("Agency Name", "agency_name"),
         ("Website", "website"),
         ("Email", "email"),
         ("Phone", "phone"),
