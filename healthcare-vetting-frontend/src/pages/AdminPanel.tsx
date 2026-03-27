@@ -1609,7 +1609,7 @@ export default function AdminPanel() {
                       <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
                         <input type="checkbox" checked={newTierData.allow_rollover} onChange={(e) => setNewTierData(prev => ({...prev, allow_rollover: e.target.checked}))}
                           className="rounded" />
-                        Allow unused credit rollover (capped at 50% of pack allowance)
+                        Allow unused credits to roll over on top-up/renewal (50% cap of new pack)
                       </label>
                     </div>
                     <div>
@@ -1672,7 +1672,7 @@ export default function AdminPanel() {
                             <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
                               <input type="checkbox" checked={tierEditData.allow_rollover} onChange={(e) => setTierEditData(prev => ({...prev, allow_rollover: e.target.checked}))}
                                 className="rounded" />
-                              Allow credit rollover (50% cap)
+                              Allow unused credits to roll over on top-up/renewal (50% cap of new pack)
                             </label>
                           </div>
                           <div>
