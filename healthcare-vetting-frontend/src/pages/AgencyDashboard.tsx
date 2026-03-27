@@ -622,8 +622,8 @@ export default function AgencyDashboard() {
       const params: { category?: string } = {};
       if (notifCategoryFilter !== "all") params.category = notifCategoryFilter;
       const result = await notificationsApi.getNotifications(token, params);
-      setNotifications(result.notifications);
-      setUnreadCount(result.unread_count);
+      setNotifications(result.notifications || []);
+      setUnreadCount(result.unread_count || 0);
     } catch { /* ignore */ }
   };
 
@@ -2145,14 +2145,14 @@ export default function AgencyDashboard() {
                 ))}
               </div>
 
-              {notifications.length === 0 ? (
+              {(notifications || []).length === 0 ? (
                 <div className="text-center py-12 text-slate-500">
                   <Activity size={40} className="mx-auto mb-3 opacity-50" />
                   <p className="text-sm">No notifications yet. Click &quot;Generate Notifications&quot; to create activity-based alerts.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {notifications.map((n) => {
+                  {(notifications || []).map((n) => {
                     const severityColors: Record<string, string> = {
                       success: "border-l-green-500 bg-green-500/5",
                       warning: "border-l-amber-500 bg-amber-500/5",
