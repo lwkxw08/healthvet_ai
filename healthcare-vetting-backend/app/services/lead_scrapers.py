@@ -12,6 +12,9 @@ import logging
 import traceback
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlparse
+
+import requests as http_requests
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
@@ -94,11 +97,140 @@ def _extract_phones(text: str) -> list:
 
 # ── AgencyCentral Scraper ──────────────────────────────────────────
 
+_AC_API_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": "https://www.agencycentral.co.uk/",
+    "Accept": "application/json",
+}
+
+
+def _extract_slug_from_profile_url(profile_url: str) -> str:
+    """Extract the agency slug from an AgencyCentral profile URL."""
+    # URL format: /recruitment-agency/{name-slug}/{tag}
+    parts = profile_url.rstrip("/").split("/")
+    if len(parts) >= 2:
+        return parts[-1]  # e.g. 'uk_opencareservicesltd'
+    return ""
+
+
+def _fetch_agency_api_data(slug: str) -> dict:
+    """Fetch agency data from AgencyCentral's internal API."""
+    if not slug:
+        return {}
+    try:
+        resp = http_requests.get(
+            f"https://www.agencycentral.co.uk/api/agency/{slug}",
+            headers=_AC_API_HEADERS,
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("data", {}).get("agency", {})
+    except Exception as e:
+        logger.debug(f"API fetch failed for {slug}: {e}")
+    return {}
+
+
+def _enrich_lead_from_profile(driver, lead: dict) -> None:
+    """
+    Stage 1.5: Visit the AgencyCentral profile page and click contact
+    buttons to reveal website URL, email, and phone number.
+    """
+    profile_url = lead.get("source_url", "")
+    if not profile_url:
+        return
+
+    try:
+        driver.get(profile_url)
+        _random_delay(1.5, 3.0)
+
+        # Click each contact button and check what gets revealed.
+        # AgencyCentral uses React; buttons reveal content via state.
+        for btn_label, field in [("Visit Website", "website"), ("Email Agency", "email"), ("Phone Number", "phone")]:
+            try:
+                # Click the button via JS
+                clicked = driver.execute_script(f'''
+                    var btns = document.querySelectorAll('button');
+                    for (var i = 0; i < btns.length; i++) {{
+                        if (btns[i].textContent.trim().includes('{btn_label}')) {{
+                            btns[i].click();
+                            return true;
+                        }}
+                    }}
+                    return false;
+                ''')
+                if clicked:
+                    _random_delay(1.0, 2.0)
+
+                    # Check for new window/tab (Visit Website may open one)
+                    if field == "website":
+                        handles = driver.window_handles
+                        if len(handles) > 1:
+                            driver.switch_to.window(handles[-1])
+                            new_url = driver.current_url
+                            if new_url and "agencycentral" not in new_url and new_url.startswith("http"):
+                                lead["website"] = new_url
+                                logger.info(f"Found website via tab: {new_url}")
+                            driver.close()
+                            driver.switch_to.window(handles[0])
+
+                    # Check page source for revealed contact info
+                    soup = BeautifulSoup(driver.page_source, "html.parser")
+                    page_text = soup.get_text()
+
+                    if field == "email" and not lead.get("email"):
+                        # Look for mailto links revealed after click
+                        for a in soup.select('a[href^="mailto:"]'):
+                            email_val = a["href"].replace("mailto:", "").split("?")[0].strip()
+                            if email_val and "@" in email_val:
+                                lead["email"] = email_val
+                                break
+                        if not lead.get("email"):
+                            emails = _extract_emails(page_text)
+                            if emails:
+                                lead["email"] = emails[0]
+
+                    if field == "phone" and not lead.get("phone"):
+                        for a in soup.select('a[href^="tel:"]'):
+                            phone_val = a["href"].replace("tel:", "").strip()
+                            if phone_val:
+                                lead["phone"] = re.sub(r'[\s\-()]', '', phone_val)
+                                break
+                        if not lead.get("phone"):
+                            phones = _extract_phones(page_text)
+                            if phones:
+                                lead["phone"] = phones[0]
+
+            except Exception as e:
+                logger.debug(f"Error clicking {btn_label}: {e}")
+                continue
+
+        # Also extract social links from profile page
+        try:
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            social = {}
+            for a in soup.select("a[href]"):
+                href = a.get("href", "")
+                if "linkedin.com" in href:
+                    social["linkedin"] = href
+                elif "twitter.com" in href or "x.com" in href:
+                    social["twitter"] = href
+                elif "facebook.com" in href and "agencycentral" not in href:
+                    social["facebook"] = href
+            if social:
+                lead["social_links"] = social
+        except Exception:
+            pass
+
+    except Exception as e:
+        logger.warning(f"Error enriching from profile {profile_url}: {e}")
+
+
 def scrape_agency_central(industry_slug: str, max_pages: int = 3, follow_websites: bool = True) -> list:
     """
     Scrape AgencyCentral directory for a given industry.
     Stage 1: Extract listings from directory pages.
-    Stage 2: Follow through to agency websites for contact info.
+    Stage 1.5: Enrich each lead via AgencyCentral API + profile page button clicks.
+    Stage 2: Follow through to agency's own website for full contact info.
     """
     leads = []
     base_url = f"https://www.agencycentral.co.uk/agencysearch/{industry_slug}/agencysearch.htm"
@@ -108,9 +240,10 @@ def scrape_agency_central(industry_slug: str, max_pages: int = 3, follow_website
     try:
         driver = _get_headless_driver()
 
+        # ── Stage 1: Scrape directory listings ──
         for page in range(1, max_pages + 1):
             url = base_url if page == 1 else f"{base_url}?page={page}"
-            logger.info(f"Scraping AgencyCentral page {page}: {url}")
+            logger.info(f"[Stage 1] Scraping AgencyCentral page {page}: {url}")
 
             try:
                 driver.get(url)
@@ -120,14 +253,23 @@ def scrape_agency_central(industry_slug: str, max_pages: int = 3, follow_website
                 break
 
             soup = BeautifulSoup(driver.page_source, "html.parser")
-            listings = soup.select("ol > li")
 
-            if not listings:
+            # Find agency listings: <li> elements that contain an <h3> with
+            # a link to /recruitment-agency/...
+            agency_links = soup.select('h3 a[href*="/recruitment-agency/"]')
+            if not agency_links:
                 logger.info(f"No more listings on page {page}")
                 break
 
-            for li in listings:
+            for link in agency_links:
                 try:
+                    # Walk up to the containing <li>
+                    li = link
+                    while li and li.name != "li":
+                        li = li.parent
+                    if not li:
+                        li = link.parent  # fallback
+
                     lead = _parse_agency_central_listing(li, industry_name, industry_slug)
                     if lead:
                         leads.append(lead)
@@ -140,11 +282,33 @@ def scrape_agency_central(industry_slug: str, max_pages: int = 3, follow_website
             if not next_link:
                 break
 
-        # Stage 2: Follow through to agency websites for contact info
+        logger.info(f"[Stage 1] Found {len(leads)} agencies from listings")
+
+        # ── Stage 1.5: Enrich via API + profile page ──
+        for i, lead in enumerate(leads):
+            slug = _extract_slug_from_profile_url(lead.get("source_url", ""))
+            if slug:
+                # Fetch enriched data from AgencyCentral API
+                api_data = _fetch_agency_api_data(slug)
+                if api_data:
+                    if not lead.get("description") and api_data.get("BriefDescription"):
+                        lead["description"] = api_data["BriefDescription"][:500]
+                    if not lead.get("description") and api_data.get("Description"):
+                        lead["description"] = api_data["Description"][:500]
+                _random_delay(0.3, 0.8)
+
+            # Visit profile page to click buttons and get contact details
+            logger.info(f"[Stage 1.5] Enriching {i+1}/{len(leads)}: {lead.get('name')}")
+            _enrich_lead_from_profile(driver, lead)
+            _random_delay(1.0, 2.0)
+
+        # ── Stage 2: Follow through to agency's own website ──
         if follow_websites:
+            enriched_count = 0
             for lead in leads:
                 if lead.get("website") and (not lead.get("email") or not lead.get("phone")):
                     try:
+                        logger.info(f"[Stage 2] Scraping website: {lead['website']}")
                         contacts = _scrape_agency_website(driver, lead["website"])
                         if contacts.get("emails") and not lead.get("email"):
                             lead["email"] = contacts["emails"][0]
@@ -153,10 +317,12 @@ def scrape_agency_central(industry_slug: str, max_pages: int = 3, follow_website
                             lead["phone"] = contacts["phones"][0]
                             lead["all_phones"] = contacts["phones"]
                         if contacts.get("social_links"):
-                            lead["social_links"] = contacts["social_links"]
+                            lead.setdefault("social_links", {}).update(contacts["social_links"])
+                        enriched_count += 1
                     except Exception as e:
                         logger.warning(f"Failed to scrape website {lead['website']}: {e}")
                     _random_delay(2.0, 4.0)
+            logger.info(f"[Stage 2] Enriched {enriched_count} agencies from their websites")
 
     except Exception as e:
         logger.error(f"AgencyCentral scraper error: {e}\n{traceback.format_exc()}")
@@ -188,31 +354,40 @@ def _parse_agency_central_listing(li, industry_name: str, industry_slug: str) ->
             href = "https://www.agencycentral.co.uk" + href
         profile_url = href
 
-    # Description
+    # Description — get the <p> or <span> text block
     desc = ""
-    texts = li.find_all(string=True, recursive=True)
-    text_content = " ".join(t.strip() for t in texts if t.strip())
-    # Get text after the name and before the buttons
-    desc_parts = []
-    for child in li.children:
-        if hasattr(child, 'name'):
-            if child.name in ('h3', 'svg', 'button', 'ul'):
-                continue
-            t = child.get_text(strip=True)
-            if t and len(t) > 20:
-                desc_parts.append(t)
-        elif isinstance(child, str) and child.strip() and len(child.strip()) > 20:
-            desc_parts.append(child.strip())
-    desc = " ".join(desc_parts)[:500] if desc_parts else ""
+    desc_el = li.select_one("p.text-base span, p.text-base")
+    if desc_el:
+        desc = desc_el.get_text(strip=True)[:500]
+    if not desc:
+        texts = li.find_all(string=True, recursive=True)
+        text_content = " ".join(t.strip() for t in texts if t.strip())
+        desc_parts = []
+        for child in li.children:
+            if hasattr(child, 'name'):
+                if child.name in ('h3', 'svg', 'button', 'ul'):
+                    continue
+                t = child.get_text(strip=True)
+                if t and len(t) > 20:
+                    desc_parts.append(t)
+            elif isinstance(child, str) and child.strip() and len(child.strip()) > 20:
+                desc_parts.append(child.strip())
+        desc = " ".join(desc_parts)[:500] if desc_parts else ""
+
+    text_content = " ".join(t.strip() for t in li.find_all(string=True, recursive=True) if t.strip())
 
     # Verified
-    verified = bool(li.select_one('svg') and "Verified" in text_content)
+    verified = bool("Verified" in text_content)
+
+    # Has Visit Website button
+    has_website_btn = bool(li.find("button", string=re.compile(r"Visit Website", re.I)))
 
     # Employment types
     emp_types = ""
-    for text in texts:
-        if "Permanent" in text or "Temporary" in text or "Contract" in text:
-            emp_types = text.strip()
+    for text in li.find_all(string=True, recursive=True):
+        t = text.strip()
+        if "Permanent" in t or "Temporary" in t or "Contract" in t:
+            emp_types = t[:100]
             break
 
     # Office location
@@ -220,11 +395,9 @@ def _parse_agency_central_listing(li, industry_name: str, industry_slug: str) ->
     loc_matches = re.findall(r'(?:Office Locations?|Office)\s*(.+?)(?:Geographical|Employment|Salaries|Listed|$)', text_content, re.DOTALL)
     if loc_matches:
         location = loc_matches[0].strip()[:200]
-    # Fallback: look for text with postcode pattern
     if not location:
         postcode = re.search(r'[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}', text_content)
         if postcode:
-            # Get surrounding text
             idx = text_content.index(postcode.group())
             start = max(0, idx - 100)
             location = text_content[start:idx + len(postcode.group())].strip()[-200:]
@@ -247,21 +420,12 @@ def _parse_agency_central_listing(li, industry_name: str, industry_slug: str) ->
     if ls_matches:
         listed_since = ls_matches[0].strip()
 
-    # Website - look for "Visit Website" button/link
-    website = ""
-    website_btn = li.find("button", string=re.compile(r"Visit Website", re.I))
-    if website_btn:
-        # The website might be in a nearby link
-        pass  # Will be extracted from profile page or website follow-through
-
     # Try to extract email from mailto links
     email = ""
     phone = ""
     mailto = li.select_one('a[href^="mailto:"]')
     if mailto:
         email = mailto["href"].replace("mailto:", "").strip()
-
-    # Try to extract from visible text
     emails_in_text = _extract_emails(text_content)
     if emails_in_text and not email:
         email = emails_in_text[0]
@@ -276,7 +440,7 @@ def _parse_agency_central_listing(li, industry_name: str, industry_slug: str) ->
         "industry_slug": industry_slug,
         "source": "agencycentral",
         "source_url": profile_url,
-        "website": website,
+        "website": "",  # populated in stage 1.5 via profile page
         "email": email,
         "phone": phone,
         "location": location,
@@ -285,6 +449,7 @@ def _parse_agency_central_listing(li, industry_name: str, industry_slug: str) ->
         "salary_range": salary_range,
         "listed_since": listed_since,
         "verified": verified,
+        "has_website": has_website_btn,
     }
 
 

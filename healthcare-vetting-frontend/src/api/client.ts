@@ -556,8 +556,26 @@ export const leadGenerationApi = {
     apiRequest<Record<string, unknown>>(`/api/lead-generation/leads/${leadId}`, { method: "PUT", body: data, token }),
   deleteLead: (token: string, leadId: string) =>
     apiRequest<Record<string, unknown>>(`/api/lead-generation/leads/${leadId}`, { method: "DELETE", token }),
-  exportLeads: (token: string, params?: Record<string, string>) =>
-    apiRequest<Record<string, unknown>>("/api/lead-generation/leads/export", { method: "POST", body: params, token }),
+  exportLeads: async (token: string, params?: Record<string, string>): Promise<void> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["X-Auth-Token"] = token;
+    const response = await fetch(`${API_URL}/api/lead-generation/leads/export`, {
+      method: "POST",
+      headers,
+      body: params ? JSON.stringify(params) : undefined,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Export failed" }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : "leads_export.xlsx";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  },
   scrapeRegistration: (token: string, data: { candidate_id: string; body: string; registration_number: string }) =>
     apiRequest<Record<string, unknown>>("/api/lead-generation/registration-scrape", { method: "POST", body: data, token }),
   getRegistrationScrapes: (token: string, candidateId: string) =>

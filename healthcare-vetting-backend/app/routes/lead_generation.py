@@ -3,11 +3,13 @@ Lead Generation API Routes
 Manage scrape jobs, view leads, trigger scraping from multiple sources.
 Also includes professional registration scraping endpoints.
 """
+import io
 import json
 import threading
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_db
@@ -343,7 +345,7 @@ async def export_leads(
     status: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
-    """Export leads as JSON (for CSV conversion on frontend)."""
+    """Export leads as an Excel (.xlsx) file."""
     if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
@@ -362,7 +364,89 @@ async def export_leads(
 
     with get_db() as db:
         rows = db.execute(query, params).fetchall()
-        return {"leads": [dict(r) for r in rows]}
+        leads = [dict(r) for r in rows]
+
+    # Build Excel workbook
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Leads"
+
+    # Column definitions (header -> dict key)
+    columns = [
+        ("Agency Name", "name"),
+        ("Website", "website"),
+        ("Email", "email"),
+        ("Phone", "phone"),
+        ("Industry", "industry"),
+        ("Source", "source"),
+        ("Location", "location"),
+        ("Coverage", "coverage"),
+        ("Employment Types", "employment_types"),
+        ("Salary Range", "salary_range"),
+        ("Description", "description"),
+        ("Source URL", "source_url"),
+        ("Status", "status"),
+        ("Verified", "verified"),
+        ("Listed Since", "listed_since"),
+        ("Scraped At", "created_at"),
+    ]
+
+    # Header row styling
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+
+    for col_idx, (header, _) in enumerate(columns, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = thin_border
+
+    # Data rows
+    for row_idx, lead in enumerate(leads, start=2):
+        for col_idx, (_, key) in enumerate(columns, start=1):
+            value = lead.get(key, "")
+            if isinstance(value, (dict, list)):
+                value = json.dumps(value)
+            if value is None:
+                value = ""
+            # Convert boolean "verified" to readable text
+            if key == "verified":
+                value = "Yes" if value in (True, 1, "1", "true") else "No"
+            cell = ws.cell(row=row_idx, column=col_idx, value=str(value))
+            cell.border = thin_border
+
+    # Auto-size columns (approximate)
+    for col_idx, (header, _) in enumerate(columns, start=1):
+        max_len = len(header)
+        for row_idx in range(2, min(len(leads) + 2, 52)):  # sample first 50 rows
+            cell_val = str(ws.cell(row=row_idx, column=col_idx).value or "")
+            max_len = max(max_len, min(len(cell_val), 50))
+        ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = max_len + 3
+
+    # Freeze header row
+    ws.freeze_panes = "A2"
+
+    # Write to buffer
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"leads_export_{timestamp}.xlsx"
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ── Professional Registration Scraping ────────────────────────────────

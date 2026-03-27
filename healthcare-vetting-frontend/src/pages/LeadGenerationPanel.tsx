@@ -112,12 +112,8 @@ export default function LeadGenerationPanel() {
       const params: Record<string, string> = {};
       if (leadFilter.source) params.source = leadFilter.source;
       if (leadFilter.industry) params.industry = leadFilter.industry;
-      const result = await leadGenerationApi.exportLeads(token, params);
-      const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = "leads_export.json"; a.click();
-      URL.revokeObjectURL(url);
-      showMessage("Leads exported");
+      await leadGenerationApi.exportLeads(token, params);
+      showMessage("Leads exported as Excel");
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
   };
 
