@@ -225,13 +225,14 @@ export default function SubscriptionPlansPanel() {
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
   };
 
-  const checkTypeOptions = [
-    "identity_verification", "right_to_work", "dbs_check", "enhanced_dbs",
-    "professional_registration", "employment_history", "reference_check",
-    "qualification_check", "training_compliance", "occupational_health",
-    "criminal_record", "credit_check", "address_verification", "driving_license",
-    "cscs_card", "construction_skills", "food_hygiene", "safeguarding",
-  ];
+  // Derive check type options from the selected industry template's checks
+  const getTemplateChecks = (templateId: string) => {
+    const tmpl = templates.find((t) => String(t.id) === templateId);
+    const checks = (tmpl?.checks || []) as { check_key: string; check_label: string }[];
+    return checks.map((c) => ({ key: c.check_key, label: c.check_label }));
+  };
+  const pricingTemplateChecks = getTemplateChecks(selectedIndustry);
+  const matrixTemplateChecks = getTemplateChecks(matrixSelectedIndustry);
 
   return (
     <div className="space-y-6">
@@ -410,9 +411,9 @@ export default function SubscriptionPlansPanel() {
                   <select value={newPricing.check_type} onChange={(e) => setNewPricing((p) => ({ ...p, check_type: e.target.value }))}
                     className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs">
                     <option value="">Select check...</option>
-                    {checkTypeOptions.map((ct) => (
-                      <option key={ct} value={ct}>{ct.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
-                    ))}
+                    {pricingTemplateChecks.length > 0 ? pricingTemplateChecks.map((ct) => (
+                      <option key={ct.key} value={ct.key}>{ct.label}</option>
+                    )) : <option disabled>No checks defined in template</option>}
                   </select>
                 </div>
                 <div>
@@ -575,9 +576,9 @@ export default function SubscriptionPlansPanel() {
                       <select value={matrixNewCheck.check_type} onChange={(e) => setMatrixNewCheck((p) => ({ ...p, check_type: e.target.value }))}
                         className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs">
                         <option value="">Select check...</option>
-                        {checkTypeOptions.map((ct) => (
-                          <option key={ct} value={ct}>{ct.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
-                        ))}
+                        {matrixTemplateChecks.length > 0 ? matrixTemplateChecks.map((ct) => (
+                          <option key={ct.key} value={ct.key}>{ct.label}</option>
+                        )) : <option disabled>No checks defined in template</option>}
                       </select>
                     </div>
                     <div>
