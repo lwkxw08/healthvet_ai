@@ -1413,10 +1413,10 @@ export default function AgencyDashboard() {
                         value={String(remainingChecks.auto_topup_tier || remainingChecks.tier || "starter")}
                         onChange={(e) => toggleAutoTopup(true, e.target.value)}
                         className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="starter">Starter (25 credits)</option>
-                        <option value="standard">Standard (50 credits)</option>
-                        <option value="professional">Professional (100 credits)</option>
-                        <option value="enterprise">Enterprise (250 credits)</option>
+                        <option value="starter">Starter (5 credits)</option>
+                        <option value="growth">Growth (10 credits)</option>
+                        <option value="enterprise">Professional (20 credits)</option>
+                        <option value="per_worker">Enterprise (50 credits)</option>
                       </select>
                     )}
                     <button
@@ -1450,10 +1450,10 @@ export default function AgencyDashboard() {
                 <p className="text-slate-400 text-sm mb-4">Credits are valid for 12 months from purchase. Unused credits from your current pack carry over.</p>
                 <div className="grid grid-cols-4 gap-4 mb-6">
                   {[
-                    { key: "starter", name: "Starter Pack", credits: 25, price: 125, perCredit: "5.00", saving: "", color: "border-blue-500/30" },
-                    { key: "standard", name: "Standard Pack", credits: 50, price: 225, perCredit: "4.50", saving: "10% saving", color: "border-green-500/30" },
-                    { key: "professional", name: "Professional Pack", credits: 100, price: 400, perCredit: "4.00", saving: "20% saving", color: "border-purple-500/30" },
-                    { key: "enterprise", name: "Enterprise Pack", credits: 250, price: 875, perCredit: "3.50", saving: "30% saving", color: "border-amber-500/30" },
+                    { key: "starter", name: "Starter Pack", credits: 5, price: 995, perCredit: "199.00", saving: "", color: "border-blue-500/30" },
+                    { key: "growth", name: "Growth Pack", credits: 10, price: 1750, perCredit: "175.00", saving: "12% saving", color: "border-green-500/30" },
+                    { key: "enterprise", name: "Professional Pack", credits: 20, price: 3400, perCredit: "170.00", saving: "15% saving", color: "border-purple-500/30" },
+                    { key: "per_worker", name: "Enterprise Pack", credits: 50, price: 8250, perCredit: "165.00", saving: "17% saving", color: "border-amber-500/30" },
                   ].map((pack) => (
                     <div key={pack.key} onClick={() => setSelectedTier(pack.key)}
                       className={`p-5 bg-slate-700/50 rounded-xl border cursor-pointer transition-all ${selectedTier === pack.key ? "border-blue-400 ring-2 ring-blue-400/30" : pack.color + " hover:border-slate-500"}`}>
