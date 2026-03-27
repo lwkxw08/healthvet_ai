@@ -1559,22 +1559,22 @@ export default function AdminPanel() {
         {/* Subscriptions Tab */}
         {tab === "subscriptions" && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Agency Subscriptions & Pricing</h2>
-            <p className="text-slate-400 text-sm">Manage subscription tiers, monthly fees, credit allowances, partial credit rates, and rollover settings.</p>
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Credit Packs & Pricing</h2>
+                        <p className="text-slate-400 text-sm">Manage credit pack tiers, pack pricing, credit allowances, per-check credit rates, and rollover settings.</p>
 
             {/* Editable Subscription Tiers */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-md font-semibold text-white">Credit Packs</h3>
                 <button onClick={() => setCreatingTier(true)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-xs font-medium border-none cursor-pointer flex items-center gap-1">
-                  + New Plan
+                  + New Pack
                 </button>
               </div>
 
               {/* Create New Tier Form */}
               {creatingTier && (
                 <div className="mb-4 p-5 bg-slate-700/80 rounded-xl border border-green-500/30">
-                  <h4 className="text-white font-medium mb-3">Create New Plan</h4>
+                  <h4 className="text-white font-medium mb-3">Create New Credit Pack</h4>
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-2">
                       <div>
@@ -1590,12 +1590,12 @@ export default function AdminPanel() {
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Monthly Fee (£)</label>
+                        <label className="block text-xs text-slate-400 mb-1">Pack Price (£)</label>
                         <input type="number" step="0.01" value={newTierData.monthly_price} onChange={(e) => setNewTierData(prev => ({...prev, monthly_price: e.target.value}))}
                           className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Monthly Credits</label>
+                        <label className="block text-xs text-slate-400 mb-1">Pack Credits</label>
                         <input type="number" value={newTierData.monthly_checks} onChange={(e) => setNewTierData(prev => ({...prev, monthly_checks: e.target.value}))}
                           className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                       </div>
@@ -1609,7 +1609,7 @@ export default function AdminPanel() {
                       <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
                         <input type="checkbox" checked={newTierData.allow_rollover} onChange={(e) => setNewTierData(prev => ({...prev, allow_rollover: e.target.checked}))}
                           className="rounded" />
-                        Allow unused credit rollover (capped at 50% of monthly allowance)
+                        Allow unused credit rollover (capped at 50% of pack allowance)
                       </label>
                     </div>
                     <div>
@@ -1646,12 +1646,12 @@ export default function AdminPanel() {
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-xs text-slate-400 mb-1">Monthly Fee (£)</label>
+                              <label className="block text-xs text-slate-400 mb-1">Pack Price (£)</label>
                               <input type="number" step="0.01" value={tierEditData.monthly_price} onChange={(e) => setTierEditData(prev => ({...prev, monthly_price: e.target.value}))}
                                 className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                             </div>
                             <div>
-                              <label className="block text-xs text-slate-400 mb-1">Monthly Credits</label>
+                              <label className="block text-xs text-slate-400 mb-1">Pack Credits</label>
                               <input type="number" value={tierEditData.monthly_checks} onChange={(e) => setTierEditData(prev => ({...prev, monthly_checks: e.target.value}))}
                                 className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                             </div>
@@ -1707,16 +1707,16 @@ export default function AdminPanel() {
                             </div>
                           </div>
                           <p className="text-blue-400 text-xl font-bold mb-1">
-                            £{tier.monthly_price.toLocaleString()}/mo
+                            £{tier.monthly_price.toLocaleString()} per pack
                           </p>
                           <p className="text-green-400 text-sm font-medium mb-1">
-                            {(tier.monthly_checks || 0) >= 999999 ? "Unlimited credits/month" : `${tier.monthly_checks || 0} credits/month`}
+                            {(tier.monthly_checks || 0) >= 999999 ? "Unlimited credits" : `${tier.monthly_checks || 0} credits per pack`}
                           </p>
                           {(tier.overage_rate || 0) > 0 && (
                             <p className="text-amber-400 text-xs mb-1">Overage: £{tier.overage_rate}/credit</p>
                           )}
                           <p className="text-slate-400 text-xs mb-3">
-                            {tier.allow_rollover ? "Unused credits roll over (50% cap)" : "Credits expire monthly"}
+                            {tier.allow_rollover ? "Unused credits roll over on top-up (50% cap)" : "Credits valid for 12 months from purchase"}
                           </p>
                           <div className="space-y-1">
                             {tier.features.map((f: string, i: number) => (
@@ -1731,7 +1731,7 @@ export default function AdminPanel() {
                   );
                 }) : (
                   <div className="col-span-2 text-center py-8 text-slate-400">
-                    <p>Loading subscription tiers...</p>
+                    <p>Loading credit packs...</p>
                   </div>
                 )}
               </div>
