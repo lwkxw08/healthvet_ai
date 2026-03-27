@@ -369,6 +369,10 @@ export const billingApi = {
     apiRequest<Record<string, unknown>>("/api/billing/subscribe", { method: "POST", body: data, token }),
   cancel: (token: string, agencyId: string) =>
     apiRequest<Record<string, unknown>>(`/api/billing/cancel/${agencyId}`, { method: "POST", token }),
+  topup: (token: string, data: { agency_id: string; tier: string; billing_method?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/billing/topup", { method: "POST", body: data, token }),
+  updateAutoTopup: (token: string, data: { agency_id: string; enabled: boolean; tier?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/billing/auto-topup", { method: "PUT", body: data, token }),
   getHistory: (token: string, agencyId: string) =>
     apiRequest<Record<string, unknown>[]>(`/api/billing/history/${agencyId}`, { token }),
   payInvoice: (token: string, invoiceId: string) =>

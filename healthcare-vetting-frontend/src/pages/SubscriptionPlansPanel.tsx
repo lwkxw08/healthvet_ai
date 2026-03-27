@@ -243,8 +243,8 @@ export default function SubscriptionPlansPanel() {
       {/* Sub-tabs */}
       <div className="flex gap-2 border-b border-slate-700 pb-2">
         {[
-          { key: "plans" as const, label: "Industry Plans (A)", icon: <Layers size={14} /> },
-          { key: "pricing" as const, label: "Per-Check Pricing (C)", icon: <Tag size={14} /> },
+          { key: "plans" as const, label: "Credit Packs", icon: <Layers size={14} /> },
+          { key: "pricing" as const, label: "Per-Check Pricing", icon: <Tag size={14} /> },
           { key: "matrix" as const, label: "Pricing Matrix", icon: <CreditCard size={14} /> },
         ].map((t) => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}

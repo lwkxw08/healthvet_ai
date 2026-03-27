@@ -1,7 +1,7 @@
 """
-Subscription & Billing Service
-Manages subscription tiers (DB-driven), fractional credit system, rollover logic,
-and recurring invoices. Supports Stripe (card) and manual recurring invoice billing.
+Credit Pack Billing Service
+12-month credit pack model: agencies buy credit packs upfront, credits valid for 12 months.
+No monthly recurring charge. Agencies top up manually or via auto top-up when credits run low/expire.
 """
 import json
 from datetime import datetime, timezone, timedelta
@@ -16,7 +16,7 @@ class BillingService:
 
     @staticmethod
     def get_tiers() -> dict:
-        """Get all subscription tiers from the database."""
+        """Get all credit pack tiers from the database."""
         with get_db() as db:
             rows = db.execute(
                 "SELECT * FROM subscription_tier_config WHERE is_active=1 ORDER BY monthly_price ASC"
@@ -24,13 +24,21 @@ class BillingService:
             tiers = {}
             for row in rows:
                 r = dict(row)
+                credits = int(r.get("monthly_checks") or 0)
+                price = float(r.get("monthly_price") or 0)
+                per_credit = round(price / credits, 2) if credits > 0 else 0
                 tiers[r["tier_key"]] = {
                     "id": r["id"],
                     "name": r["name"],
-                    "monthly_price": r["monthly_price"],
+                    "pack_price": price,
+                    "credits": credits,
+                    "per_credit_cost": per_credit,
+                    "validity_months": 12,
+                    # Legacy fields kept for backward compat
+                    "monthly_price": price,
                     "per_worker_price": r["per_worker_price"],
                     "max_workers": r["max_workers"],
-                    "monthly_checks": r["monthly_checks"],
+                    "monthly_checks": credits,
                     "overage_rate": r.get("overage_rate", 0),
                     "allow_rollover": bool(r.get("allow_rollover", 0)),
                     "monitoring_included": bool(r.get("monitoring_included", 0)),
@@ -231,8 +239,10 @@ class BillingService:
     @staticmethod
     def create_subscription(agency_id: str, tier: str, billing_method: str = "stripe",
                              stripe_payment_method_id: str = None) -> dict:
-        """Create a new subscription for an agency using DB-driven tier config."""
-        now = datetime.now(timezone.utc).isoformat()
+        """Purchase a credit pack for an agency. Credits valid for 12 months from purchase."""
+        now = datetime.now(timezone.utc)
+        now_str = now.isoformat()
+        expires_at = (now + timedelta(days=365)).isoformat()
         sub_id = generate_id()
 
         with get_db() as db:
@@ -241,16 +251,29 @@ class BillingService:
                 "SELECT * FROM subscription_tier_config WHERE tier_key=? AND is_active=1", (tier,)
             ).fetchone()
             if not tier_row:
-                raise ValueError(f"Invalid or inactive tier: {tier}")
+                raise ValueError(f"Invalid or inactive credit pack: {tier}")
             tier_info = dict(tier_row)
 
-            # Deactivate any existing subscription
-            db.execute(
-                "UPDATE agency_subscriptions SET status='cancelled', cancelled_at=? WHERE agency_id=? AND status='active'",
-                (now, agency_id),
-            )
+            pack_price = float(tier_info["monthly_price"])
+            pack_credits = float(tier_info["monthly_checks"])
+            pack_name = tier_info["name"]
 
-            next_billing = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+            # Check if agency has an active credit pack with remaining credits
+            existing = db.execute(
+                "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
+                (agency_id,),
+            ).fetchone()
+
+            if existing:
+                ex = dict(existing)
+                old_remaining = max(0, float(ex.get("credits_total") or 0) - float(ex.get("credits_used") or 0))
+                # Deactivate old pack - carry over remaining credits
+                db.execute(
+                    "UPDATE agency_subscriptions SET status='replaced', cancelled_at=? WHERE id=?",
+                    (now_str, ex["id"]),
+                )
+                # Add remaining credits to new pack
+                pack_credits += old_remaining
 
             db.execute(
                 """INSERT INTO agency_subscriptions
@@ -258,36 +281,35 @@ class BillingService:
                     max_workers, monthly_checks, checks_used, credits_total, credits_used,
                     rollover_credits, allow_rollover, overage_rate,
                     stripe_payment_method_id, stripe_subscription_id,
-                    status, current_period_start, current_period_end, next_billing_date, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, 0, ?, ?, ?, ?, 'active', ?, ?, ?, ?)""",
+                    status, current_period_start, current_period_end, next_billing_date,
+                    expires_at, pack_name, created_at)
+                   VALUES (?, ?, ?, ?, ?, 0, 99999, ?, 0, ?, 0, 0, 0, 0,
+                    ?, NULL, 'active', ?, ?, ?, ?, ?, ?)""",
                 (sub_id, agency_id, tier, billing_method,
-                 tier_info["monthly_price"], tier_info["per_worker_price"],
-                 tier_info["max_workers"], tier_info["monthly_checks"],
-                 float(tier_info["monthly_checks"]),
-                 1 if tier_info.get("allow_rollover") else 0,
-                 float(tier_info.get("overage_rate", 0)),
-                 stripe_payment_method_id, None,
-                 now, next_billing, next_billing, now),
+                 pack_price, int(pack_credits), pack_credits,
+                 stripe_payment_method_id,
+                 now_str, expires_at, expires_at,
+                 expires_at, pack_name, now_str),
             )
 
-            # If invoice billing, create the first invoice
-            if billing_method == "invoice":
-                amount = tier_info["monthly_price"]
-                inv_id = generate_id()
-                db.execute(
-                    """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                       VALUES (?, ?, 'subscription', ?, 0, ?, 'pending', ?)""",
-                    (inv_id, agency_id,
-                     f"{tier_info['name']} Plan - Monthly Subscription",
-                     amount, now),
-                )
+            # Create invoice for the credit pack purchase
+            inv_id = generate_id()
+            db.execute(
+                """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, created_at)
+                   VALUES (?, ?, 'credit_pack', ?, 0, ?, ?, ?)""",
+                (inv_id, agency_id,
+                 f"{pack_name} - {int(tier_info['monthly_checks'])} Credits (12 months)",
+                 pack_price,
+                 'paid' if billing_method == 'stripe' else 'pending',
+                 now_str),
+            )
 
             from app.services.email_service import EmailService
             agency = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
             if agency:
                 a = dict(agency)
                 EmailService.send_subscription_confirmation(
-                    a["email"], a["name"], tier_info["name"], tier_info["monthly_price"],
+                    a["email"], a["name"], pack_name, pack_price,
                 )
 
             row = db.execute("SELECT * FROM agency_subscriptions WHERE id=?", (sub_id,)).fetchone()
@@ -306,87 +328,76 @@ class BillingService:
 
     @staticmethod
     def generate_recurring_invoices():
-        """Generate recurring invoices for all active subscriptions due for billing.
-        Handles credit rollover or expiry based on tier settings."""
+        """Process expired credit packs and handle auto top-ups.
+        Called periodically to check for expired packs and trigger auto top-ups."""
         now = datetime.now(timezone.utc)
         now_str = now.isoformat()
 
         with get_db() as db:
-            due_subs = db.execute(
+            # Find expired or nearly-expired credit packs
+            expired_subs = db.execute(
                 """SELECT s.*, a.name as agency_name, a.email as agency_email
                    FROM agency_subscriptions s
                    JOIN agencies a ON s.agency_id = a.id
-                   WHERE s.status='active' AND s.next_billing_date <= ?""",
+                   WHERE s.status='active' AND s.expires_at IS NOT NULL AND s.expires_at <= ?""",
                 (now_str,),
             ).fetchall()
 
             generated = []
-            for sub in due_subs:
+            for sub in expired_subs:
                 s = dict(sub)
-                amount = s["monthly_amount"]
+                auto_topup = bool(s.get("auto_topup", 0))
+                auto_topup_tier = s.get("auto_topup_tier") or s.get("tier")
 
-                inv_id = generate_id()
-                tier_row = db.execute(
-                    "SELECT * FROM subscription_tier_config WHERE tier_key=?", (s["tier"],)
-                ).fetchone()
-                tier_name = dict(tier_row)["name"] if tier_row else s["tier"]
-
-                db.execute(
-                    """INSERT INTO invoices
-                       (id, agency_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                       VALUES (?, ?, 'subscription', ?, 0, ?, 'pending', ?)""",
-                    (inv_id, s["agency_id"],
-                     f"{tier_name} Plan - Monthly Subscription",
-                     amount, now_str),
-                )
-
-                # Handle credit rollover
-                credits_total = float(s.get("credits_total") or s.get("monthly_checks") or 0)
-                credits_used = float(s.get("credits_used") or 0)
-                unused_credits = max(0, credits_total - credits_used)
-                allow_rollover = bool(s.get("allow_rollover", 0))
-
-                new_rollover = 0.0
-                if allow_rollover and unused_credits > 0:
-                    # Cap rollover at 50% of monthly allowance
-                    max_rollover = credits_total * 0.5
-                    new_rollover = min(unused_credits, max_rollover)
-
-                    txn_id = generate_id()
+                if auto_topup:
+                    # Auto top-up: purchase same or configured tier
+                    try:
+                        result = BillingService.create_subscription(
+                            s["agency_id"], auto_topup_tier, s.get("billing_method", "stripe"),
+                        )
+                        generated.append({
+                            "agency_id": s["agency_id"],
+                            "action": "auto_topup",
+                            "new_pack": auto_topup_tier,
+                            "credits": result.get("credits_total", 0),
+                        })
+                    except Exception as e:
+                        generated.append({
+                            "agency_id": s["agency_id"],
+                            "action": "auto_topup_failed",
+                            "error": str(e),
+                        })
+                else:
+                    # Expire the pack
+                    credits_remaining = max(0, float(s.get("credits_total") or 0) - float(s.get("credits_used") or 0))
                     db.execute(
-                        """INSERT INTO credit_transactions
-                           (id, agency_id, check_type, credits_consumed, credit_balance_after,
-                            is_rollover, description, created_at)
-                           VALUES (?, ?, 'rollover', 0, ?, 1, ?, ?)""",
-                        (txn_id, s["agency_id"], new_rollover,
-                         f"Rolled over {round(new_rollover, 2)} unused credits to next cycle", now_str),
+                        "UPDATE agency_subscriptions SET status='expired', cancelled_at=? WHERE id=?",
+                        (now_str, s["id"]),
                     )
 
-                # Reset credits for new period
-                new_credits_total = float(s.get("monthly_checks") or 0)
-                next_billing = (now + timedelta(days=30)).isoformat()
-                db.execute(
-                    """UPDATE agency_subscriptions
-                       SET next_billing_date=?, current_period_start=?, current_period_end=?,
-                           credits_total=?, credits_used=0, rollover_credits=?
-                       WHERE id=?""",
-                    (next_billing, now_str, next_billing,
-                     new_credits_total, new_rollover, s["id"]),
-                )
+                    # Record expiry transaction
+                    if credits_remaining > 0:
+                        txn_id = generate_id()
+                        db.execute(
+                            """INSERT INTO credit_transactions
+                               (id, agency_id, check_type, credits_consumed, credit_balance_after,
+                                is_rollover, description, created_at)
+                               VALUES (?, ?, 'expiry', ?, 0, 0, ?, ?)""",
+                            (txn_id, s["agency_id"], credits_remaining,
+                             f"{round(credits_remaining, 1)} credits expired (12-month validity ended)", now_str),
+                        )
 
-                from app.services.email_service import EmailService
-                EmailService.send_invoice_notification(
-                    s["agency_email"], s["agency_name"], inv_id, amount,
-                    f"{tier_name} Plan - Monthly Subscription",
-                )
+                    from app.services.email_service import EmailService
+                    EmailService.send_invoice_notification(
+                        s["agency_email"], s["agency_name"], None, 0,
+                        f"Your credit pack has expired. {round(credits_remaining, 1)} unused credits were forfeited. Purchase a new pack to continue.",
+                    )
 
-                generated.append({
-                    "agency_id": s["agency_id"],
-                    "invoice_id": inv_id,
-                    "amount": amount,
-                    "rolled_over_credits": round(new_rollover, 2),
-                    "expired_credits": round(unused_credits - new_rollover, 2) if not allow_rollover or unused_credits > new_rollover else 0,
-                })
+                    generated.append({
+                        "agency_id": s["agency_id"],
+                        "action": "expired",
+                        "expired_credits": round(credits_remaining, 2),
+                    })
 
             return generated
 
@@ -415,7 +426,7 @@ class BillingService:
 
     @staticmethod
     def get_remaining_checks(agency_id: str) -> dict:
-        """Get remaining check credits for a subscription agency (supports fractional credits)."""
+        """Get remaining check credits for an agency's active credit pack."""
         with get_db() as db:
             sub = db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
@@ -424,41 +435,60 @@ class BillingService:
             if not sub:
                 return {
                     "has_subscription": False,
+                    "has_credit_pack": False,
                     "credits_total": 0, "credits_used": 0, "credits_remaining": 0,
                     "rollover_credits": 0, "allow_rollover": False,
                     "monthly_checks": 0, "checks_used": 0, "checks_remaining": 0,
                     "tier": None, "overage_rate": 0,
+                    "expires_at": None, "days_remaining": 0,
+                    "auto_topup": False, "auto_topup_tier": None,
                 }
 
             s = dict(sub)
             credits_total = float(s.get("credits_total") or s.get("monthly_checks") or 0)
             credits_used = float(s.get("credits_used") or 0)
-            rollover = float(s.get("rollover_credits") or 0)
-            total_available = credits_total + rollover
-            credits_remaining = max(0, total_available - credits_used)
+            credits_remaining = max(0, credits_total - credits_used)
 
             tier_row = db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=?", (s["tier"],)
             ).fetchone()
-            tier_name = dict(tier_row)["name"] if tier_row else s["tier"]
-            overage_rate = float(s.get("overage_rate") or (dict(tier_row).get("overage_rate", 0) if tier_row else 0))
+            tier_name = dict(tier_row)["name"] if tier_row else s.get("pack_name") or s["tier"]
+
+            # Calculate days remaining
+            expires_at = s.get("expires_at")
+            days_remaining = 0
+            is_expired = False
+            if expires_at:
+                try:
+                    exp_dt = datetime.fromisoformat(expires_at)
+                    delta = exp_dt - datetime.now(timezone.utc)
+                    days_remaining = max(0, delta.days)
+                    is_expired = delta.total_seconds() <= 0
+                except (ValueError, TypeError):
+                    pass
 
             return {
                 "has_subscription": True,
+                "has_credit_pack": True,
                 "subscription_id": s["id"],
                 "tier": s["tier"],
                 "tier_name": tier_name,
+                "pack_name": s.get("pack_name") or tier_name,
                 "credits_total": round(credits_total, 2),
                 "credits_used": round(credits_used, 2),
                 "credits_remaining": round(credits_remaining, 2),
-                "rollover_credits": round(rollover, 2),
-                "allow_rollover": bool(s.get("allow_rollover", 0)),
-                "overage_rate": round(overage_rate, 2),
-                "monthly_checks": int(s.get("monthly_checks") or 0),
+                "rollover_credits": 0,
+                "allow_rollover": False,
+                "overage_rate": 0,
+                "monthly_checks": int(credits_total),
                 "checks_used": round(credits_used, 2),
                 "checks_remaining": round(credits_remaining, 2),
-                "current_period_start": s.get("current_period_start"),
-                "current_period_end": s.get("current_period_end"),
+                "expires_at": expires_at,
+                "days_remaining": days_remaining,
+                "is_expired": is_expired,
+                "purchased_at": s.get("current_period_start") or s.get("created_at"),
+                "auto_topup": bool(s.get("auto_topup", 0)),
+                "auto_topup_tier": s.get("auto_topup_tier"),
                 "billing_method": s.get("billing_method"),
             }
 
@@ -466,8 +496,8 @@ class BillingService:
     def use_subscription_check(agency_id: str, candidate_id: str, check_description: str,
                                 sell_amount: float, cost_amount: float = 0,
                                 check_type: str = "full_vetting") -> dict:
-        """Use subscription credits for a check. Supports fractional credits based on check_type.
-        Auto-marks as paid if within credit, creates overage invoice if exceeded."""
+        """Use credit pack credits for a check. Checks expiry, then deducts credits.
+        If no credits or pack expired, creates a PAYG invoice instead."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             sub = db.execute(
@@ -489,19 +519,38 @@ class BillingService:
                     (inv_id, agency_id, candidate_id, check_description, cost_amount, sell_amount, now),
                 )
                 return {"invoice_id": inv_id, "status": "pending", "within_credit": False,
-                        "credits_consumed": 0, "message": "No active subscription. Invoice created as pending."}
+                        "credits_consumed": 0, "message": "No active credit pack. Invoice created as pending. Purchase a credit pack to get started."}
 
             s = dict(sub)
-            credits_total = float(s.get("credits_total") or s.get("monthly_checks") or 0)
+
+            # Check if pack has expired
+            expires_at = s.get("expires_at")
+            if expires_at:
+                try:
+                    exp_dt = datetime.fromisoformat(expires_at)
+                    if exp_dt <= datetime.now(timezone.utc):
+                        # Pack expired — create PAYG invoice
+                        inv_id = generate_id()
+                        db.execute(
+                            """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
+                               VALUES (?, ?, ?, 'vetting', ?, ?, ?, 'pending', ?)""",
+                            (inv_id, agency_id, candidate_id,
+                             f"{check_description} (credit pack expired)",
+                             cost_amount, sell_amount, now),
+                        )
+                        return {"invoice_id": inv_id, "status": "credits_expired", "within_credit": False,
+                                "credits_consumed": 0, "message": "Credit pack has expired. Please purchase a new pack."}
+                except (ValueError, TypeError):
+                    pass
+
+            credits_total = float(s.get("credits_total") or 0)
             credits_used = float(s.get("credits_used") or 0)
-            rollover = float(s.get("rollover_credits") or 0)
-            total_available = credits_total + rollover
-            overage_rate = float(s.get("overage_rate") or 0)
+            credits_remaining = credits_total - credits_used
 
             new_credits_used = credits_used + credit_value
-            credit_balance_after = max(0, total_available - new_credits_used)
+            credit_balance_after = max(0, credits_total - new_credits_used)
 
-            if new_credits_used <= total_available:
+            if new_credits_used <= credits_total:
                 # Within credit — auto-mark as paid
                 inv_id = generate_id()
                 db.execute(
@@ -529,41 +578,25 @@ class BillingService:
                     "within_credit": True,
                     "credits_consumed": credit_value,
                     "credits_remaining": round(credit_balance_after, 2),
-                    "message": f"Check covered by subscription credit ({credit_value} credits used). {round(credit_balance_after, 2)} credits remaining.",
+                    "message": f"Paid by credit pack ({credit_value} credits used). {round(credit_balance_after, 2)} credits remaining.",
                 }
             else:
-                # Exceeded credit — create overage invoice
-                overage_charge = round(credit_value * overage_rate, 2) if overage_rate > 0 else sell_amount
+                # No credits left — create PAYG invoice
                 inv_id = generate_id()
                 db.execute(
                     """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
                        VALUES (?, ?, ?, 'vetting', ?, ?, ?, 'pending', ?)""",
                     (inv_id, agency_id, candidate_id,
-                     f"{check_description} (overage - {credit_value} credits)",
-                     cost_amount, overage_charge, now),
-                )
-                db.execute(
-                    "UPDATE agency_subscriptions SET credits_used = credits_used + ? WHERE id=?",
-                    (credit_value, s["id"]),
-                )
-                txn_id = generate_id()
-                db.execute(
-                    """INSERT INTO credit_transactions
-                       (id, agency_id, candidate_id, check_type, credits_consumed, credit_balance_after,
-                        unit_cost, charge_amount, is_overage, description, created_at)
-                       VALUES (?, ?, ?, ?, ?, 0, ?, ?, 1, ?, ?)""",
-                    (txn_id, agency_id, candidate_id, check_type, credit_value,
-                     cost_amount, overage_charge,
-                     f"{check_description} (overage)", now),
+                     f"{check_description} (credits exhausted)",
+                     cost_amount, sell_amount, now),
                 )
                 return {
                     "invoice_id": inv_id,
-                    "status": "pending",
+                    "status": "credits_exceeded",
                     "within_credit": False,
-                    "credits_consumed": credit_value,
+                    "credits_consumed": 0,
                     "credits_remaining": 0,
-                    "overage_charge": overage_charge,
-                    "message": f"Monthly credit exceeded. Overage invoice created for \u00a3{overage_charge:.2f}.",
+                    "message": "Credit pack exhausted. Please purchase a new pack to continue using credits.",
                 }
 
     @staticmethod
@@ -579,6 +612,49 @@ class BillingService:
                 (agency_id, limit),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    # -- Credit Pack Top-Up & Auto Top-Up --
+
+    @staticmethod
+    def topup_credits(agency_id: str, tier: str, billing_method: str = "stripe") -> dict:
+        """Manual top-up: purchase a new credit pack. Carries over any remaining credits."""
+        return BillingService.create_subscription(agency_id, tier, billing_method)
+
+    @staticmethod
+    def update_auto_topup(agency_id: str, enabled: bool, tier: str = None) -> dict:
+        """Enable or disable auto top-up for an agency's credit pack."""
+        now = datetime.now(timezone.utc).isoformat()
+        with get_db() as db:
+            sub = db.execute(
+                "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
+                (agency_id,),
+            ).fetchone()
+            if not sub:
+                raise ValueError("No active credit pack found. Purchase a credit pack first.")
+
+            s = dict(sub)
+            auto_topup_tier = tier or s.get("tier")
+
+            # Validate the auto-topup tier exists
+            if enabled and auto_topup_tier:
+                tier_row = db.execute(
+                    "SELECT * FROM subscription_tier_config WHERE tier_key=? AND is_active=1",
+                    (auto_topup_tier,),
+                ).fetchone()
+                if not tier_row:
+                    raise ValueError(f"Invalid credit pack tier: {auto_topup_tier}")
+
+            db.execute(
+                "UPDATE agency_subscriptions SET auto_topup=?, auto_topup_tier=? WHERE id=?",
+                (1 if enabled else 0, auto_topup_tier if enabled else None, s["id"]),
+            )
+
+            return {
+                "agency_id": agency_id,
+                "auto_topup": enabled,
+                "auto_topup_tier": auto_topup_tier if enabled else None,
+                "message": f"Auto top-up {'enabled' if enabled else 'disabled'}" + (f" with {auto_topup_tier} pack" if enabled else ""),
+            }
 
     # -- Agency Billing Mode --
 

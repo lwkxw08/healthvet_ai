@@ -311,17 +311,16 @@ def migrate_db():
     if stc_count == 0:
         from app.utils.auth import generate_id as _gid2
         import json as _json
+        # Credit pack model: no monthly recurring charge, credits valid for 12 months
         stc_defaults = [
-            ("starter", "Starter", 995.0, 0, 50, 5, 210.0, 0, 0, 0, 5.0,
-             _json.dumps(["5 full vettings/month", "Basic compliance dashboard", "Email alerts", "Standard support"])),
-            ("growth", "Growth", 2625.0, 0, 200, 15, 195.0, 0, 1, 100, 0,
-             _json.dumps(["15 full vettings/month", "Advanced analytics", "Priority alerts", "CQC audit pack", "Monitoring up to 100 workers", "Priority support"])),
-            ("professional", "Professional", 6600.0, 0, 500, 40, 185.0, 0, 1, 300, 0,
-             _json.dumps(["40 full vettings/month", "Full analytics suite", "Dedicated account manager", "Monitoring up to 300 workers", "SLA guarantee"])),
-            ("enterprise", "Enterprise", 10000.0, 0, 99999, 60, 175.0, 0, 1, 99999, 0,
-             _json.dumps(["60+ full vettings/month", "Unlimited monitoring", "Custom integrations", "White-label options", "Dedicated account manager"])),
-            ("payg", "Pay As You Go", 0, 0, 99999, 0, 195.0, 0, 0, 0, 5.0,
-             _json.dumps(["No monthly commitment", "£195 per full vetting", "Pay per check", "Full feature access"])),
+            ("starter", "Starter Pack", 125.0, 0, 99999, 25, 0, 0, 0, 0, 0,
+             _json.dumps(["25 credits", "12-month validity", "Full compliance dashboard", "Email alerts", "Standard support"])),
+            ("standard", "Standard Pack", 225.0, 0, 99999, 50, 0, 0, 0, 0, 0,
+             _json.dumps(["50 credits", "12-month validity", "10% saving per check", "Advanced analytics", "Priority alerts", "CQC audit pack"])),
+            ("professional", "Professional Pack", 400.0, 0, 99999, 100, 0, 0, 0, 0, 0,
+             _json.dumps(["100 credits", "12-month validity", "20% saving per check", "Full analytics suite", "Dedicated account manager", "SLA guarantee"])),
+            ("enterprise", "Enterprise Pack", 875.0, 0, 99999, 250, 0, 0, 0, 0, 0,
+             _json.dumps(["250 credits", "12-month validity", "30% saving per check", "Unlimited monitoring", "Custom integrations", "White-label options", "Dedicated account manager"])),
         ]
         for tier_key, name, mp, pwp, mw, mc, ovr, ar, mi, mcap, mar, feats in stc_defaults:
             cursor.execute(
@@ -642,6 +641,15 @@ def migrate_db():
             cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN allow_rollover INTEGER DEFAULT 0")
         if "overage_rate" not in existing_as_cols:
             cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN overage_rate REAL DEFAULT 0")
+        # 12-month credit pack model columns
+        if "expires_at" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN expires_at TEXT")
+        if "auto_topup" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN auto_topup INTEGER DEFAULT 0")
+        if "auto_topup_tier" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN auto_topup_tier TEXT")
+        if "pack_name" not in existing_as_cols:
+            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN pack_name TEXT")
     except Exception:
         pass
 

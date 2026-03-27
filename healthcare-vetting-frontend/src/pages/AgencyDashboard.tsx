@@ -35,7 +35,7 @@ export default function AgencyDashboard() {
   const [ragFilter, setRagFilter] = useState<string>("all");
 
   // Billing state
-  const [subscription, setSubscription] = useState<Record<string, unknown> | null>(null);
+  const [, setSubscription] = useState<Record<string, unknown> | null>(null);
   const [billingHistory, setBillingHistory] = useState<Record<string, unknown>[]>([]);
   const [selectedTier, setSelectedTier] = useState("starter");
   const [selectedBillingMethod, setSelectedBillingMethod] = useState("stripe");
@@ -356,8 +356,26 @@ export default function AgencyDashboard() {
       const result = await billingApi.subscribe(token, { agency_id: "me", tier: selectedTier, billing_method: selectedBillingMethod });
       setSubscription(result);
       loadData();
-    } catch (err) { console.error("Failed to subscribe", err); }
+    } catch (err) { console.error("Failed to purchase credit pack", err); }
     finally { setSubscribing(false); }
+  };
+
+  const topupCredits = async (tier: string) => {
+    if (!token) return;
+    setSubscribing(true);
+    try {
+      await billingApi.topup(token, { agency_id: "me", tier });
+      loadData();
+    } catch (err) { console.error("Failed to top up credits", err); }
+    finally { setSubscribing(false); }
+  };
+
+  const toggleAutoTopup = async (enabled: boolean, tier?: string) => {
+    if (!token) return;
+    try {
+      await billingApi.updateAutoTopup(token, { agency_id: "me", enabled, tier });
+      loadData();
+    } catch (err) { console.error("Failed to update auto top-up", err); }
   };
 
   const cancelSubscription = async () => {
@@ -1328,74 +1346,135 @@ export default function AgencyDashboard() {
         {tab === "billing" && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Subscription & Billing</h2>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Billing Mode:</span>
-                <span className={`text-xs px-3 py-1 rounded-full font-medium border ${
-                  billingMode === "online_payment" ? "bg-green-500/20 text-green-400 border-green-500/30" :
-                  billingMode === "subscription" ? "bg-blue-500/20 text-blue-400 border-blue-500/30" :
-                  "bg-slate-500/20 text-slate-400 border-slate-500/30"
-                }`}>
-                  {billingMode === "online_payment" ? "Online Payment (PAYG)" :
-                   billingMode === "subscription" ? "Subscription" : "Manual Invoicing"}
-                </span>
-              </div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Credit Packs & Billing</h2>
+              <span className="text-xs px-3 py-1 rounded-full font-medium border bg-blue-500/20 text-blue-400 border-blue-500/30">12-Month Credit Pack Model</span>
             </div>
 
-            {/* Current Subscription */}
-            {subscription && subscription.status !== "none" ? (
+            {/* Active Credit Pack */}
+            {remainingChecks && (remainingChecks.has_credit_pack as boolean) ? (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-4">Current Subscription</h3>
-                <div className="grid grid-cols-4 gap-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-md font-semibold text-white">Active Credit Pack</h3>
+                  <span className="text-xs px-3 py-1 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">{remainingChecks.pack_name as string || remainingChecks.tier_name as string}</span>
+                </div>
+                <div className="grid grid-cols-5 gap-4 mb-4">
                   <div className="p-4 bg-slate-700/50 rounded-lg text-center">
-                    <p className="text-slate-400 text-xs mb-1">Plan</p>
-                    <p className="text-xl font-bold text-white capitalize">{String(subscription.tier)}</p>
+                    <p className="text-slate-400 text-xs mb-1">Credits Remaining</p>
+                    <p className="text-2xl font-bold text-green-400">{typeof remainingChecks.credits_remaining === "number" ? (remainingChecks.credits_remaining as number).toFixed(1) : "0"}</p>
                   </div>
                   <div className="p-4 bg-slate-700/50 rounded-lg text-center">
-                    <p className="text-slate-400 text-xs mb-1">Monthly Amount</p>
-                    <p className="text-xl font-bold text-green-400">£{Number(subscription.monthly_amount).toFixed(2)}</p>
+                    <p className="text-slate-400 text-xs mb-1">Credits Used</p>
+                    <p className="text-2xl font-bold text-amber-400">{typeof remainingChecks.credits_used === "number" ? (remainingChecks.credits_used as number).toFixed(1) : "0"}</p>
                   </div>
                   <div className="p-4 bg-slate-700/50 rounded-lg text-center">
-                    <p className="text-slate-400 text-xs mb-1">Billing Method</p>
-                    <p className="text-xl font-bold text-blue-400 capitalize">{String(subscription.billing_method)}</p>
+                    <p className="text-slate-400 text-xs mb-1">Total Credits</p>
+                    <p className="text-2xl font-bold text-blue-400">{typeof remainingChecks.credits_total === "number" ? (remainingChecks.credits_total as number).toFixed(1) : "0"}</p>
                   </div>
                   <div className="p-4 bg-slate-700/50 rounded-lg text-center">
-                    <p className="text-slate-400 text-xs mb-1">Max Workers</p>
-                    <p className="text-xl font-bold text-amber-400">{subscription.max_workers === -1 ? "Unlimited" : String(subscription.max_workers)}</p>
+                    <p className="text-slate-400 text-xs mb-1">Expires</p>
+                    <p className="text-lg font-bold text-white">{remainingChecks.expires_at ? String(remainingChecks.expires_at).split("T")[0] : "N/A"}</p>
+                  </div>
+                  <div className="p-4 bg-slate-700/50 rounded-lg text-center">
+                    <p className="text-slate-400 text-xs mb-1">Days Left</p>
+                    <p className={`text-2xl font-bold ${(remainingChecks.days_remaining as number) <= 30 ? "text-red-400" : (remainingChecks.days_remaining as number) <= 90 ? "text-amber-400" : "text-green-400"}`}>{remainingChecks.days_remaining as number}</p>
                   </div>
                 </div>
-                <div className="mt-4 flex items-center justify-between">
-                  <p className="text-slate-400 text-sm">Next billing: {String(subscription.next_billing_date || "N/A")}</p>
-                  <button onClick={cancelSubscription} className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-4 py-2 rounded-full hover:bg-red-600/30">Cancel Subscription</button>
+
+                {/* Credit usage progress bar */}
+                {typeof remainingChecks.credits_total === "number" && (remainingChecks.credits_total as number) > 0 && (
+                  <div className="mb-4">
+                    <div className="flex justify-between text-xs text-slate-400 mb-1">
+                      <span>{typeof remainingChecks.credits_used === "number" ? (remainingChecks.credits_used as number).toFixed(1) : 0} used of {(remainingChecks.credits_total as number).toFixed(1)} total</span>
+                      <span>{typeof remainingChecks.credits_remaining === "number" ? (remainingChecks.credits_remaining as number).toFixed(1) : 0} remaining</span>
+                    </div>
+                    <div className="w-full bg-slate-700 rounded-full h-2.5">
+                      <div className="bg-blue-500 h-2.5 rounded-full transition-all"
+                        style={{ width: `${Math.min(100, ((typeof remainingChecks.credits_used === "number" ? remainingChecks.credits_used as number : 0) / (remainingChecks.credits_total as number)) * 100)}%` }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Low credits warning */}
+                {typeof remainingChecks.credits_remaining === "number" && (remainingChecks.credits_remaining as number) <= 5 && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg mb-4">
+                    <p className="text-amber-400 text-sm font-medium">Credits running low! Top up to avoid service interruption.</p>
+                  </div>
+                )}
+
+                {/* Auto Top-Up Toggle */}
+                <div className="flex items-center justify-between p-4 bg-slate-700/30 rounded-lg">
+                  <div>
+                    <p className="text-white text-sm font-medium">Auto Top-Up</p>
+                    <p className="text-slate-400 text-xs">Automatically purchase a new credit pack when your credits expire</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {(remainingChecks.auto_topup as boolean) && (
+                      <select
+                        value={String(remainingChecks.auto_topup_tier || remainingChecks.tier || "starter")}
+                        onChange={(e) => toggleAutoTopup(true, e.target.value)}
+                        className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="starter">Starter (25 credits)</option>
+                        <option value="standard">Standard (50 credits)</option>
+                        <option value="professional">Professional (100 credits)</option>
+                        <option value="enterprise">Enterprise (250 credits)</option>
+                      </select>
+                    )}
+                    <button
+                      onClick={() => toggleAutoTopup(!remainingChecks.auto_topup)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        remainingChecks.auto_topup ? "bg-blue-600" : "bg-slate-600"
+                      }`}>
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        remainingChecks.auto_topup ? "translate-x-6" : "translate-x-1"
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Top-Up & Cancel buttons */}
+                <div className="mt-4 flex items-center gap-3">
+                  <button onClick={() => setSelectedTier(String(remainingChecks.tier || "starter"))}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium"
+                    data-action="show-topup"
+                  >Top Up Credits</button>
+                  <button onClick={cancelSubscription}
+                    className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-4 py-2 rounded-full hover:bg-red-600/30">Cancel Pack</button>
                 </div>
               </div>
-            ) : (
+            ) : null}
+
+            {/* Purchase / Top-Up Credit Pack */}
+            {(!remainingChecks || !(remainingChecks.has_credit_pack as boolean) || tab === "billing") && (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-4">Choose a Plan</h3>
+                <h3 className="text-md font-semibold text-white mb-2">{remainingChecks && (remainingChecks.has_credit_pack as boolean) ? "Top Up Credits" : "Purchase a Credit Pack"}</h3>
+                <p className="text-slate-400 text-sm mb-4">Credits are valid for 12 months from purchase. Unused credits from your current pack carry over.</p>
                 <div className="grid grid-cols-4 gap-4 mb-6">
                   {[
-                    { key: "starter", name: "Starter", price: "£299/mo", workers: "Up to 50 workers", color: "border-blue-500/30" },
-                    { key: "growth", name: "Growth", price: "£799/mo", workers: "Up to 200 workers", color: "border-green-500/30" },
-                    { key: "enterprise", name: "Enterprise", price: "£1,999/mo", workers: "Unlimited workers", color: "border-purple-500/30" },
-                    { key: "per_worker", name: "Per Worker", price: "£5/worker/mo", workers: "Unlimited workers", color: "border-amber-500/30" },
-                  ].map((tier) => (
-                    <div key={tier.key} onClick={() => setSelectedTier(tier.key)}
-                      className={`p-5 bg-slate-700/50 rounded-xl border cursor-pointer transition-all ${selectedTier === tier.key ? "border-blue-400 ring-2 ring-blue-400/30" : tier.color + " hover:border-slate-500"}`}>
-                      <p className="text-white font-bold text-lg mb-1">{tier.name}</p>
-                      <p className="text-blue-400 text-xl font-bold mb-2">{tier.price}</p>
-                      <p className="text-slate-400 text-sm">{tier.workers}</p>
+                    { key: "starter", name: "Starter Pack", credits: 25, price: 125, perCredit: "5.00", saving: "", color: "border-blue-500/30" },
+                    { key: "standard", name: "Standard Pack", credits: 50, price: 225, perCredit: "4.50", saving: "10% saving", color: "border-green-500/30" },
+                    { key: "professional", name: "Professional Pack", credits: 100, price: 400, perCredit: "4.00", saving: "20% saving", color: "border-purple-500/30" },
+                    { key: "enterprise", name: "Enterprise Pack", credits: 250, price: 875, perCredit: "3.50", saving: "30% saving", color: "border-amber-500/30" },
+                  ].map((pack) => (
+                    <div key={pack.key} onClick={() => setSelectedTier(pack.key)}
+                      className={`p-5 bg-slate-700/50 rounded-xl border cursor-pointer transition-all ${selectedTier === pack.key ? "border-blue-400 ring-2 ring-blue-400/30" : pack.color + " hover:border-slate-500"}`}>
+                      <p className="text-white font-bold text-lg mb-1">{pack.name}</p>
+                      <p className="text-blue-400 text-2xl font-bold mb-1">\u00A3{pack.price}</p>
+                      <p className="text-slate-300 text-sm mb-1">{pack.credits} credits</p>
+                      <p className="text-slate-400 text-xs">\u00A3{pack.perCredit} per credit</p>
+                      {pack.saving && <p className="text-green-400 text-xs mt-1 font-medium">{pack.saving}</p>}
+                      <p className="text-slate-500 text-xs mt-1">Valid for 12 months</p>
                     </div>
                   ))}
                 </div>
                 <div className="flex items-center gap-4">
                   <select value={selectedBillingMethod} onChange={(e) => setSelectedBillingMethod(e.target.value)}
                     className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="stripe">Stripe (Card Payment)</option>
-                    <option value="invoice">Recurring Invoice</option>
+                    <option value="stripe">Card Payment</option>
+                    <option value="invoice">Invoice</option>
                   </select>
-                  <button onClick={subscribeToPlan} disabled={subscribing}
+                  <button onClick={remainingChecks && (remainingChecks.has_credit_pack as boolean) ? () => topupCredits(selectedTier) : subscribeToPlan} disabled={subscribing}
                     className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-6 py-2.5 rounded-lg text-sm font-medium">
-                    {subscribing ? "Subscribing..." : "Subscribe Now"}
+                    {subscribing ? "Processing..." : remainingChecks && (remainingChecks.has_credit_pack as boolean) ? "Top Up Now" : "Purchase Credit Pack"}
                   </button>
                 </div>
               </div>
@@ -1415,7 +1494,7 @@ export default function AgencyDashboard() {
                     {billingHistory.map((item, i) => (
                       <tr key={i} className="border-b border-slate-700/50">
                         <td className="px-4 py-3 text-sm text-white">{String(item.description || item.tier || "Invoice")}</td>
-                        <td className="px-4 py-3 text-sm text-green-400">£{Number(item.amount || item.sell_amount || item.monthly_amount || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-green-400">\u00A3{Number(item.amount || item.sell_amount || item.monthly_amount || 0).toFixed(2)}</td>
                         <td className="px-4 py-3"><StatusBadge status={String(item.status || "pending")} /></td>
                         <td className="px-4 py-3 text-sm text-slate-400">{String(item.created_at || item.date || "").split("T")[0]}</td>
                         <td className="px-4 py-3">

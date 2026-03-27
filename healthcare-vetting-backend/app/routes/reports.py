@@ -321,6 +321,40 @@ async def cancel_subscription(agency_id: str, user=Depends(get_current_user)):
     return BillingService.cancel_subscription(real_id)
 
 
+@router.post("/billing/topup")
+async def topup_credits(data: dict, user=Depends(get_current_user)):
+    """Manual top-up: purchase a new credit pack. Remaining credits carry over."""
+    from app.services.billing import BillingService
+    agency_id = data.get("agency_id")
+    if agency_id == "me":
+        agency_id = user["sub"]
+    tier = data.get("tier")
+    billing_method = data.get("billing_method", "stripe")
+    if not agency_id or not tier:
+        raise HTTPException(status_code=400, detail="agency_id and tier are required")
+    try:
+        return BillingService.topup_credits(agency_id, tier, billing_method)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/billing/auto-topup")
+async def update_auto_topup(data: dict, user=Depends(get_current_user)):
+    """Enable or disable auto top-up for an agency's credit pack."""
+    from app.services.billing import BillingService
+    agency_id = data.get("agency_id")
+    if agency_id == "me":
+        agency_id = user["sub"]
+    enabled = data.get("enabled", False)
+    tier = data.get("tier")
+    if not agency_id:
+        raise HTTPException(status_code=400, detail="agency_id is required")
+    try:
+        return BillingService.update_auto_topup(agency_id, enabled, tier)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/billing/history/{agency_id}")
 async def get_billing_history(agency_id: str, user=Depends(get_current_user)):
     """Get billing history for an agency."""
