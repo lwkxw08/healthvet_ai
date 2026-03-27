@@ -114,9 +114,12 @@ export default function LeadGenerationPanel() {
     try {
       await leadGenerationApi.bulkDeleteLeads(token, Array.from(selectedLeadIds));
       showMessage(`${selectedLeadIds.size} leads deleted`);
+      // Optimistically remove deleted items from the list immediately
+      setLeads((prev) => prev.filter((l) => !selectedLeadIds.has(String(l.id))));
       setSelectedLeadIds(new Set());
-      loadLeads();
-      loadLeadStats();
+      // Then refresh from server to ensure consistency
+      await loadLeads();
+      await loadLeadStats();
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
   };
 
