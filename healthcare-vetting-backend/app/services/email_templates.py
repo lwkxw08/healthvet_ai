@@ -671,6 +671,65 @@ class EmailTemplateService:
             ).fetchone()
             return dict(row)
 
+    @staticmethod
+    def create_template(
+        template_key: str,
+        name: str,
+        description: str = "",
+        subject: str = "",
+        body_html: str = "",
+        body_text: str = "",
+        category: str = "general",
+        variables: list = None,
+    ) -> dict:
+        """Create a new custom email template."""
+        # Check for duplicate key
+        existing = EmailTemplateService.get_template_by_key(template_key)
+        if existing:
+            return None  # duplicate key
+
+        template_id = generate_id()
+        now = datetime.now(timezone.utc).isoformat()
+        vars_json = json.dumps(variables or [])
+
+        with get_db() as db:
+            db.execute(
+                """INSERT INTO email_templates
+                   (id, template_key, name, description, subject, body_html, body_text,
+                    category, variables, is_active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                (
+                    template_id, template_key, name, description,
+                    subject, body_html, body_text, category,
+                    vars_json, now, now,
+                ),
+            )
+            row = db.execute(
+                "SELECT * FROM email_templates WHERE id=?", (template_id,)
+            ).fetchone()
+            return dict(row)
+
+    @staticmethod
+    def delete_template(template_id: str) -> bool:
+        """Delete a custom email template. Returns False if template is a default (protected)."""
+        with get_db() as db:
+            row = db.execute(
+                "SELECT * FROM email_templates WHERE id=?", (template_id,)
+            ).fetchone()
+            if not row:
+                return None  # not found
+
+            tpl = dict(row)
+            # Protect default templates from deletion
+            is_default = any(
+                d["template_key"] == tpl["template_key"] for d in DEFAULT_TEMPLATES
+            )
+            if is_default:
+                return False  # protected
+
+            db.execute("DELETE FROM email_templates WHERE id=?", (template_id,))
+            return True
+
     # ── Rendering ─────────────────────────────────────────────────────
 
     @staticmethod

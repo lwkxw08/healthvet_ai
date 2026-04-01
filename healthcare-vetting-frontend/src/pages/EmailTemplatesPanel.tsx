@@ -4,6 +4,7 @@ import { emailTemplatesApi } from "../api/client";
 import {
   Mail, Eye, Edit, RotateCcw, Send, CheckCircle, XCircle,
   Clock, AlertTriangle, FileText, Settings, ChevronDown, ChevronUp,
+  Plus, Trash2,
 } from "lucide-react";
 
 interface EmailTemplate {
@@ -54,6 +55,13 @@ export default function EmailTemplatesPanel() {
   const [showTestSend, setShowTestSend] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newTemplateKey, setNewTemplateKey] = useState("");
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateCategory, setNewTemplateCategory] = useState("general");
+  const [newTemplateDesc, setNewTemplateDesc] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const showMessage = (msg: string) => {
     setMessage(msg);
@@ -183,6 +191,76 @@ export default function EmailTemplatesPanel() {
     }
   };
 
+  const handleCreate = async () => {
+    if (!token || !newTemplateKey || !newTemplateName) return;
+    setCreating(true);
+    try {
+      const result = await emailTemplatesApi.create(token, {
+        template_key: newTemplateKey.toLowerCase().replace(/[^a-z0-9_]/g, "_"),
+        name: newTemplateName,
+        description: newTemplateDesc,
+        subject: `{{subject_placeholder}}`,
+        body_html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+  <h2 style="color:#1e40af;">{{heading}}</h2>
+  <p>Dear {{recipient_name}},</p>
+  <p>{{body_content}}</p>
+  <p>Best regards,<br/>HealthVet AI Team</p>
+</div>`,
+        body_text: "Dear {{recipient_name}},\n\n{{body_content}}\n\nBest regards,\nHealthVet AI Team",
+        category: newTemplateCategory,
+        variables: [
+          { key: "recipient_name", description: "Recipient's name" },
+          { key: "heading", description: "Email heading" },
+          { key: "body_content", description: "Main email body content" },
+        ],
+      });
+      if (result) {
+        showMessage("Template created successfully");
+        setShowCreateForm(false);
+        setNewTemplateKey("");
+        setNewTemplateName("");
+        setNewTemplateDesc("");
+        setNewTemplateCategory("general");
+        await loadTemplates();
+        setSelectedTemplate((result as unknown) as EmailTemplate);
+      }
+    } catch {
+      showMessage("Failed to create template — key may already exist");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedTemplate || !token) return;
+    if (!confirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await emailTemplatesApi.remove(token, selectedTemplate.id);
+      showMessage("Template deleted");
+      setSelectedTemplate(null);
+      await loadTemplates();
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      if (errMsg.includes("403") || errMsg.includes("Default")) {
+        showMessage("Default templates cannot be deleted");
+      } else {
+        showMessage("Failed to delete template");
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const isDefaultTemplate = (tpl: EmailTemplate): boolean => {
+    const defaultKeys = [
+      "employment_verification_request", "reference_request", "verification_reminder",
+      "expiry_warning_agency", "expiry_warning_candidate", "monitoring_alert_summary",
+      "invoice_notification", "payment_reminder", "candidate_invite", "subscription_confirmation",
+    ];
+    return defaultKeys.includes(tpl.template_key);
+  };
+
   const handleToggleActive = async (tpl: EmailTemplate) => {
     if (!token) return;
     try {
@@ -291,9 +369,61 @@ export default function EmailTemplatesPanel() {
         <div className="grid grid-cols-3 gap-6">
           {/* Template List */}
           <div className="col-span-1 space-y-2">
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-3">
-              {templates.length} Templates
-            </p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                {templates.length} Templates
+              </p>
+              <button onClick={() => setShowCreateForm(!showCreateForm)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:bg-blue-500/30 flex items-center gap-1">
+                <Plus size={12} /> New
+              </button>
+            </div>
+
+            {/* Create New Template Form */}
+            {showCreateForm && (
+              <div className="bg-slate-800/80 rounded-lg border border-blue-500/30 p-4 space-y-3 mb-3">
+                <p className="text-sm font-medium text-blue-300">Create New Template</p>
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">Template Key</label>
+                  <input value={newTemplateKey} onChange={(e) => setNewTemplateKey(e.target.value)}
+                    placeholder="e.g. custom_welcome_email"
+                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">Name</label>
+                  <input value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)}
+                    placeholder="e.g. Custom Welcome Email"
+                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">Category</label>
+                  <select value={newTemplateCategory} onChange={(e) => setNewTemplateCategory(e.target.value)}
+                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs">
+                    <option value="general">General</option>
+                    <option value="verification">Verification</option>
+                    <option value="compliance">Compliance</option>
+                    <option value="billing">Billing</option>
+                    <option value="onboarding">Onboarding</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">Description</label>
+                  <input value={newTemplateDesc} onChange={(e) => setNewTemplateDesc(e.target.value)}
+                    placeholder="Brief description..."
+                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleCreate} disabled={creating || !newTemplateKey || !newTemplateName}
+                    className="flex-1 bg-blue-500 hover:bg-blue-600 text-white text-xs px-3 py-1.5 rounded-lg disabled:opacity-50">
+                    {creating ? "Creating..." : "Create Template"}
+                  </button>
+                  <button onClick={() => setShowCreateForm(false)}
+                    className="text-slate-400 hover:text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             {templates.map((tpl) => (
               <button key={tpl.id} onClick={() => handleSelectTemplate(tpl)}
                 className={`w-full text-left p-3 rounded-lg border transition-all ${
@@ -410,10 +540,18 @@ export default function EmailTemplatesPanel() {
                       className="text-xs px-3 py-1.5 rounded-lg border border-amber-400/30 text-amber-400 hover:bg-amber-400/10 flex items-center gap-1">
                       <Edit size={12} /> Edit
                     </button>
-                    <button onClick={handleReset}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:bg-slate-700/50 flex items-center gap-1">
-                      <RotateCcw size={12} /> Reset
-                    </button>
+                    {isDefaultTemplate(selectedTemplate) && (
+                      <button onClick={handleReset}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:bg-slate-700/50 flex items-center gap-1">
+                        <RotateCcw size={12} /> Reset
+                      </button>
+                    )}
+                    {!isDefaultTemplate(selectedTemplate) && (
+                      <button onClick={handleDelete} disabled={deleting}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-red-400/30 text-red-400 hover:bg-red-400/10 flex items-center gap-1 disabled:opacity-50">
+                        <Trash2 size={12} /> {deleting ? "Deleting..." : "Delete"}
+                      </button>
+                    )}
                     <button onClick={() => setShowTestSend(!showTestSend)}
                       className="text-xs px-3 py-1.5 rounded-lg border border-blue-400/30 text-blue-400 hover:bg-blue-400/10 flex items-center gap-1">
                       <Send size={12} /> Test Send

@@ -692,6 +692,24 @@ def migrate_db():
             sent_at TEXT
         )""")
 
+    # Create email_rules table if it doesn't exist
+    try:
+        cursor.execute("SELECT 1 FROM email_rules LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS email_rules (
+            id TEXT PRIMARY KEY,
+            action_trigger TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            template_key TEXT NOT NULL,
+            recipient_type TEXT DEFAULT 'primary',
+            conditions TEXT DEFAULT '{}',
+            priority INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        )""")
+
     conn.commit()
     conn.close()
 

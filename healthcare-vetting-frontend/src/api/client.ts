@@ -630,8 +630,12 @@ export const emailTemplatesApi = {
     apiRequest<{ templates: Record<string, unknown>[] }>("/api/admin/email-templates", { token }),
   get: (token: string, templateId: string) =>
     apiRequest<Record<string, unknown>>(`/api/admin/email-templates/${templateId}`, { token }),
+  create: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-templates", { method: "POST", body: data, token }),
   update: (token: string, templateId: string, data: Record<string, unknown>) =>
     apiRequest<Record<string, unknown>>(`/api/admin/email-templates/${templateId}`, { method: "PUT", body: data, token }),
+  remove: (token: string, templateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/email-templates/${templateId}`, { method: "DELETE", token }),
   reset: (token: string, templateId: string) =>
     apiRequest<Record<string, unknown>>(`/api/admin/email-templates/${templateId}/reset`, { method: "POST", token }),
   preview: (token: string, templateId: string) =>
@@ -642,6 +646,20 @@ export const emailTemplatesApi = {
     apiRequest<Record<string, unknown>>("/api/admin/email-templates/stats", { token }),
   sendLog: (token: string, limit?: number) =>
     apiRequest<{ log: Record<string, unknown>[] }>(`/api/admin/email-templates/send-log${limit ? '?limit=' + limit : ''}`, { token }),
+};
+
+// Email Rules API
+export const emailRulesApi = {
+  list: (token: string) =>
+    apiRequest<{ rules: Record<string, unknown>[] }>("/api/admin/email-rules", { token }),
+  triggers: (token: string) =>
+    apiRequest<{ triggers: Record<string, unknown> }>("/api/admin/email-rules/triggers", { token }),
+  create: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-rules", { method: "POST", body: data, token }),
+  update: (token: string, ruleId: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/email-rules/${ruleId}`, { method: "PUT", body: data, token }),
+  remove: (token: string, ruleId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/email-rules/${ruleId}`, { method: "DELETE", token }),
 };
 
 // Agency Invites API

@@ -20,6 +20,17 @@ class TemplateUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class TemplateCreate(BaseModel):
+    template_key: str
+    name: str
+    description: str = ""
+    subject: str = ""
+    body_html: str = ""
+    body_text: str = ""
+    category: str = "general"
+    variables: list = []
+
+
 class TestSendRequest(BaseModel):
     template_key: str
     recipient_email: str
@@ -50,6 +61,24 @@ async def get_send_log(limit: int = 50, template_key: str = None):
     return {"log": log}
 
 
+@router.post("")
+async def create_template(body: TemplateCreate):
+    """Create a new custom email template."""
+    result = EmailTemplateService.create_template(
+        template_key=body.template_key,
+        name=body.name,
+        description=body.description,
+        subject=body.subject,
+        body_html=body.body_html,
+        body_text=body.body_text,
+        category=body.category,
+        variables=body.variables,
+    )
+    if not result:
+        raise HTTPException(status_code=409, detail="Template key already exists")
+    return result
+
+
 @router.get("/{template_id}")
 async def get_template(template_id: str):
     """Get a single template by ID."""
@@ -74,6 +103,17 @@ async def update_template(template_id: str, body: TemplateUpdate):
     if not result:
         raise HTTPException(status_code=404, detail="Template not found")
     return result
+
+
+@router.delete("/{template_id}")
+async def delete_template(template_id: str):
+    """Delete a custom template. Default templates cannot be deleted."""
+    result = EmailTemplateService.delete_template(template_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    if result is False:
+        raise HTTPException(status_code=403, detail="Default templates cannot be deleted")
+    return {"status": "deleted"}
 
 
 @router.post("/{template_id}/reset")

@@ -14,7 +14,28 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    """Email notification service. Uses templates + SendGrid when available."""
+    """Email notification service. Uses rules engine + templates + SendGrid when available."""
+
+    @staticmethod
+    def _resolve_template_key(
+        action_trigger: str,
+        default_template_key: str,
+        recipient_type: str = None,
+        context: dict = None,
+    ) -> str:
+        """Resolve which template to use via the rules engine, falling back to the hardcoded default."""
+        try:
+            from app.services.email_rules import EmailRulesService
+            matched = EmailRulesService.resolve_template_for_action(
+                action_trigger, recipient_type=recipient_type, context=context,
+            )
+            if matched:
+                resolved_key = matched[0]["template_key"]
+                logger.debug(f"Rule resolved: {action_trigger} -> {resolved_key} (rule: {matched[0]['rule_name']})")
+                return resolved_key
+        except Exception as e:
+            logger.warning(f"Rules engine lookup failed, using default: {e}")
+        return default_template_key
 
     @staticmethod
     def _send_via_template(template_key: str, recipient_email: str,
@@ -105,8 +126,12 @@ class EmailService:
                     fallback_body += "\nPlease log in to your dashboard to review these alerts.\n"
                     fallback_body += "\nBest regards,\nHealthVet AI Compliance Team"
 
+                    resolved_key = EmailService._resolve_template_key(
+                        "monitoring_alerts_detected", "monitoring_alert_summary",
+                        recipient_type="agency",
+                    )
                     EmailService._send_via_template(
-                        "monitoring_alert_summary", a["email"], a["name"],
+                        resolved_key, a["email"], a["name"],
                         variables, fallback_subject, fallback_body,
                         "monitoring_summary",
                     )
@@ -144,8 +169,12 @@ class EmailService:
             fallback_subject = f"HealthVet AI - {len(data['items'])} Credential(s) Expiring Soon"
             fallback_body = f"Dear {data['name']},\n\nThe following credentials are expiring soon:\n\n{items_text}\nPlease take action.\n\nBest regards,\nHealthVet AI"
 
+            resolved_key = EmailService._resolve_template_key(
+                "credential_expiring", "expiry_warning_agency",
+                recipient_type="agency",
+            )
             EmailService._send_via_template(
-                "expiry_warning_agency", email, data["name"],
+                resolved_key, email, data["name"],
                 variables, fallback_subject, fallback_body,
                 "expiry_warning",
             )
@@ -166,8 +195,13 @@ class EmailService:
                 fallback_subject = f"HealthVet AI - Your {type_label} Expires in {n['days_left']} Days"
                 fallback_body = f"Dear {n['candidate_name']},\n\nYour {type_label} expires on {n['expiry_date']} ({n['days_left']} days).\n\nBest regards,\nHealthVet AI"
 
+                resolved_key = EmailService._resolve_template_key(
+                    "credential_expiring", "expiry_warning_candidate",
+                    recipient_type="candidate",
+                    context={"days_left": n.get("days_left", 0)},
+                )
                 EmailService._send_via_template(
-                    "expiry_warning_candidate", candidate_email, n["candidate_name"],
+                    resolved_key, candidate_email, n["candidate_name"],
                     variables, fallback_subject, fallback_body,
                     "expiry_warning_candidate",
                 )
@@ -188,8 +222,12 @@ class EmailService:
         fallback_subject = f"HealthVet AI - New Invoice #{invoice_id[:8]}"
         fallback_body = f"Dear {agency_name},\n\nInvoice #{invoice_id[:8]}: \u00a3{amount:.2f}\nDescription: {description}\n\nBest regards,\nHealthVet AI"
 
+        resolved_key = EmailService._resolve_template_key(
+            "invoice_created", "invoice_notification",
+            recipient_type="agency",
+        )
         EmailService._send_via_template(
-            "invoice_notification", agency_email, agency_name,
+            resolved_key, agency_email, agency_name,
             variables, fallback_subject, fallback_body,
             "invoice", invoice_id,
         )
@@ -210,8 +248,12 @@ class EmailService:
         fallback_subject = f"HealthVet AI - Subscription Confirmed: {plan_name}"
         fallback_body = f"Dear {agency_name},\n\nPlan: {plan_name}\nAmount: \u00a3{amount:.2f}\n\nBest regards,\nHealthVet AI"
 
+        resolved_key = EmailService._resolve_template_key(
+            "subscription_purchased", "subscription_confirmation",
+            recipient_type="agency",
+        )
         EmailService._send_via_template(
-            "subscription_confirmation", agency_email, agency_name,
+            resolved_key, agency_email, agency_name,
             variables, fallback_subject, fallback_body,
             "subscription",
         )
@@ -238,8 +280,13 @@ class EmailService:
         fallback_subject = f"HealthVet AI - {urgency}: Invoice #{invoice_id[:8]} Payment Due"
         fallback_body = f"Dear {agency_name},\n\nInvoice #{invoice_id[:8]}: \u00a3{amount:.2f}\n{description}\n\nBest regards,\nHealthVet AI"
 
+        resolved_key = EmailService._resolve_template_key(
+            "payment_overdue", "payment_reminder",
+            recipient_type="agency",
+            context={"urgency": urgency},
+        )
         EmailService._send_via_template(
-            "payment_reminder", agency_email, agency_name,
+            resolved_key, agency_email, agency_name,
             variables, fallback_subject, fallback_body,
             "payment_reminder", invoice_id,
         )
