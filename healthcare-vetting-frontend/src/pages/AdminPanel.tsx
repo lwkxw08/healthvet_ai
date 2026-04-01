@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi } from "../api/client";
 import LeadGenerationPanel from "./LeadGenerationPanel";
 import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
+import EmailTemplatesPanel from "./EmailTemplatesPanel";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
@@ -1004,7 +1005,7 @@ export default function AdminPanel() {
       {mainTab === "settings" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "alerts-config", label: "Alert Settings" }].map((s) => (
+            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "alerts-config", label: "Alert Settings" }, { key: "email-templates", label: "Email Templates" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -1032,6 +1033,9 @@ export default function AdminPanel() {
 
         {/* Industry Plans Sub-tab under Settings */}
         {mainTab === "settings" && subTab === "industry-plans" && <SubscriptionPlansPanel />}
+
+        {/* Email Templates Sub-tab under Settings */}
+        {mainTab === "settings" && subTab === "email-templates" && <EmailTemplatesPanel />}
 
         {/* Overview Tab */}
         {tab === "overview" && stats && (

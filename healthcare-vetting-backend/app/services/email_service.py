@@ -1,8 +1,8 @@
 """
 Email Notification Service
 Handles sending email notifications for monitoring alerts, expiry warnings, and invoices.
-In production, integrate with SendGrid, AWS SES, or similar.
-Currently logs emails (simulated) and stores them in the database for the UI to display.
+Now uses the template system for rendering and SendGrid for delivery when configured.
+Falls back to DB-only storage when no SendGrid API key is set.
 """
 import json
 import logging
@@ -14,12 +14,39 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    """Email notification service. Currently simulated - stores in DB and logs."""
+    """Email notification service. Uses templates + SendGrid when available."""
+
+    @staticmethod
+    def _send_via_template(template_key: str, recipient_email: str,
+                           recipient_name: str, variables: dict,
+                           fallback_subject: str = "", fallback_body: str = "",
+                           notification_type: str = None, related_id: str = None):
+        """Try to send via template system; fall back to legacy storage."""
+        try:
+            from app.services.email_templates import EmailTemplateService
+            result = EmailTemplateService.send_email(
+                template_key=template_key,
+                recipient_email=recipient_email,
+                recipient_name=recipient_name,
+                variables=variables,
+            )
+            if result and result.get("status") != "error":
+                return result
+        except Exception as e:
+            logger.warning(f"Template send failed, using fallback: {e}")
+
+        # Fallback: store in legacy email_notifications table
+        EmailService._store_notification(
+            recipient_email, recipient_name,
+            fallback_subject, fallback_body,
+            notification_type or template_key, related_id,
+        )
+        return {"status": "fallback"}
 
     @staticmethod
     def _store_notification(recipient_email: str, recipient_name: str, subject: str,
                            body: str, notification_type: str, related_id: str = None):
-        """Store notification in database."""
+        """Store notification in database (legacy)."""
         now = datetime.now(timezone.utc).isoformat()
         try:
             with get_db() as db:
@@ -37,20 +64,16 @@ class EmailService:
     @staticmethod
     def send_monitoring_summary(results: dict):
         """Send monitoring summary to all agencies with affected candidates."""
-        from app.database import get_db
-
         with get_db() as db:
             agencies = db.execute("SELECT * FROM agencies").fetchall()
             for agency in agencies:
                 a = dict(agency)
-                # Get agency's candidates
                 candidates = db.execute(
                     "SELECT candidate_id FROM agency_candidates WHERE agency_id=?",
                     (a["id"],),
                 ).fetchall()
                 candidate_ids = {dict(c)["candidate_id"] for c in candidates}
 
-                # Check if any alerts affect this agency's candidates
                 affected = []
                 for alert_type, alerts in results.items():
                     for alert in alerts:
@@ -58,19 +81,34 @@ class EmailService:
                             affected.append({"type": alert_type, **alert})
 
                 if affected:
-                    subject = f"HealthVet AI - {len(affected)} New Monitoring Alert(s)"
-                    body = f"Dear {a.get('contact_name', a['name'])},\n\n"
-                    body += f"Our automated monitoring has detected {len(affected)} new alert(s) "
-                    body += "for your candidates:\n\n"
+                    # Build alert list HTML and text
+                    alert_items_html = ""
+                    alert_items_text = ""
                     for alert in affected:
-                        body += f"  - {alert['type'].replace('_', ' ').title()}: "
-                        body += f"Candidate {alert.get('candidate_id', 'N/A')}\n"
-                    body += "\nPlease log in to your dashboard to review these alerts.\n"
-                    body += "\nBest regards,\nHealthVet AI Compliance Team"
+                        label = alert["type"].replace("_", " ").title()
+                        cid = alert.get("candidate_id", "N/A")
+                        alert_items_html += f'<p style="margin:4px 0;">&#8226; <strong>{label}</strong>: Candidate {cid}</p>'
+                        alert_items_text += f"  - {label}: Candidate {cid}\n"
 
-                    EmailService._store_notification(
-                        a["email"], a["name"], subject, body,
-                        "monitoring_summary", None,
+                    variables = {
+                        "agency_name": a.get("contact_name", a["name"]),
+                        "alert_count": str(len(affected)),
+                        "alert_items_html": alert_items_html,
+                        "alert_items_text": alert_items_text,
+                        "dashboard_link": "https://app.healthvet.ai/agency/dashboard",
+                    }
+
+                    fallback_subject = f"HealthVet AI - {len(affected)} New Monitoring Alert(s)"
+                    fallback_body = f"Dear {a.get('contact_name', a['name'])},\n\n"
+                    fallback_body += f"Our automated monitoring has detected {len(affected)} new alert(s) for your candidates:\n\n"
+                    fallback_body += alert_items_text
+                    fallback_body += "\nPlease log in to your dashboard to review these alerts.\n"
+                    fallback_body += "\nBest regards,\nHealthVet AI Compliance Team"
+
+                    EmailService._send_via_template(
+                        "monitoring_alert_summary", a["email"], a["name"],
+                        variables, fallback_subject, fallback_body,
+                        "monitoring_summary",
                     )
                     logger.info(f"Monitoring summary sent to {a['email']}: {len(affected)} alerts")
 
@@ -88,19 +126,28 @@ class EmailService:
 
         # Send agency summary emails
         for email, data in by_agency.items():
-            subject = f"HealthVet AI - {len(data['items'])} Credential(s) Expiring Soon"
-            body = f"Dear {data['name']},\n\n"
-            body += "The following credentials are expiring soon:\n\n"
+            items_html = ""
+            items_text = ""
             for item in data["items"]:
                 type_label = item["type"].replace("_", " ").title()
-                body += f"  - {item['candidate_name']}: {type_label} "
-                body += f"expires in {item['days_left']} days ({item['expiry_date']})\n"
-            body += "\nPlease take action to ensure continued compliance.\n"
-            body += "\nBest regards,\nHealthVet AI Compliance Team"
+                items_html += f'<p style="margin:4px 0;">&#8226; <strong>{item["candidate_name"]}</strong>: {type_label} expires in {item["days_left"]} days ({item["expiry_date"]})</p>'
+                items_text += f"  - {item['candidate_name']}: {type_label} expires in {item['days_left']} days ({item['expiry_date']})\n"
 
-            EmailService._store_notification(
-                email, data["name"], subject, body,
-                "expiry_warning", None,
+            variables = {
+                "agency_name": data["name"],
+                "expiry_count": str(len(data["items"])),
+                "expiry_items_html": items_html,
+                "expiry_items_text": items_text,
+                "dashboard_link": "https://app.healthvet.ai/agency/dashboard",
+            }
+
+            fallback_subject = f"HealthVet AI - {len(data['items'])} Credential(s) Expiring Soon"
+            fallback_body = f"Dear {data['name']},\n\nThe following credentials are expiring soon:\n\n{items_text}\nPlease take action.\n\nBest regards,\nHealthVet AI"
+
+            EmailService._send_via_template(
+                "expiry_warning_agency", email, data["name"],
+                variables, fallback_subject, fallback_body,
+                "expiry_warning",
             )
 
         # Send candidate notification emails
@@ -108,51 +155,65 @@ class EmailService:
             candidate_email = n.get("candidate_email")
             if candidate_email:
                 type_label = n["type"].replace("_", " ").title()
-                subject = f"HealthVet AI - Your {type_label} Expires in {n['days_left']} Days"
-                body = f"Dear {n['candidate_name']},\n\n"
-                body += f"Your {type_label} is due to expire on {n['expiry_date']} "
-                body += f"({n['days_left']} days from now).\n\n"
-                body += "Please take action to renew this credential to maintain your compliance status.\n"
-                body += "\nBest regards,\nHealthVet AI Compliance Team"
+                variables = {
+                    "candidate_name": n["candidate_name"],
+                    "credential_type": type_label,
+                    "expiry_date": n["expiry_date"],
+                    "days_left": str(n["days_left"]),
+                    "portal_link": "https://app.healthvet.ai/candidate/portal",
+                }
 
-                EmailService._store_notification(
-                    candidate_email, n["candidate_name"], subject, body,
-                    "expiry_warning_candidate", None,
+                fallback_subject = f"HealthVet AI - Your {type_label} Expires in {n['days_left']} Days"
+                fallback_body = f"Dear {n['candidate_name']},\n\nYour {type_label} expires on {n['expiry_date']} ({n['days_left']} days).\n\nBest regards,\nHealthVet AI"
+
+                EmailService._send_via_template(
+                    "expiry_warning_candidate", candidate_email, n["candidate_name"],
+                    variables, fallback_subject, fallback_body,
+                    "expiry_warning_candidate",
                 )
 
     @staticmethod
     def send_invoice_notification(agency_email: str, agency_name: str,
                                   invoice_id: str, amount: float, description: str):
         """Send invoice notification to agency."""
-        subject = f"HealthVet AI - New Invoice #{invoice_id[:8]}"
-        body = f"Dear {agency_name},\n\n"
-        body += f"A new invoice has been generated:\n\n"
-        body += f"  Invoice: #{invoice_id[:8]}\n"
-        body += f"  Amount: \u00a3{amount:.2f}\n"
-        body += f"  Description: {description}\n\n"
-        body += "Please log in to your dashboard to view and pay this invoice.\n"
-        body += "\nBest regards,\nHealthVet AI Billing Team"
+        variables = {
+            "agency_name": agency_name,
+            "invoice_ref": invoice_id[:8],
+            "amount": f"\u00a3{amount:.2f}",
+            "description": description,
+            "invoice_date": datetime.now(timezone.utc).strftime("%d %B %Y"),
+            "payment_link": "https://app.healthvet.ai/agency/billing",
+        }
 
-        EmailService._store_notification(
-            agency_email, agency_name, subject, body,
+        fallback_subject = f"HealthVet AI - New Invoice #{invoice_id[:8]}"
+        fallback_body = f"Dear {agency_name},\n\nInvoice #{invoice_id[:8]}: \u00a3{amount:.2f}\nDescription: {description}\n\nBest regards,\nHealthVet AI"
+
+        EmailService._send_via_template(
+            "invoice_notification", agency_email, agency_name,
+            variables, fallback_subject, fallback_body,
             "invoice", invoice_id,
         )
 
     @staticmethod
     def send_subscription_confirmation(agency_email: str, agency_name: str,
                                         plan_name: str, amount: float):
-        """Send subscription confirmation email."""
-        subject = f"HealthVet AI - Subscription Confirmed: {plan_name}"
-        body = f"Dear {agency_name},\n\n"
-        body += f"Your subscription has been confirmed:\n\n"
-        body += f"  Plan: {plan_name}\n"
-        body += f"  Monthly Amount: \u00a3{amount:.2f}\n\n"
-        body += "Thank you for choosing HealthVet AI.\n"
-        body += "\nBest regards,\nHealthVet AI Team"
+        """Send subscription / credit pack confirmation email."""
+        variables = {
+            "agency_name": agency_name,
+            "plan_name": plan_name,
+            "credits": "",
+            "amount": f"\u00a3{amount:.2f}",
+            "expiry_date": "",
+            "dashboard_link": "https://app.healthvet.ai/agency/dashboard",
+        }
 
-        EmailService._store_notification(
-            agency_email, agency_name, subject, body,
-            "subscription", None,
+        fallback_subject = f"HealthVet AI - Subscription Confirmed: {plan_name}"
+        fallback_body = f"Dear {agency_name},\n\nPlan: {plan_name}\nAmount: \u00a3{amount:.2f}\n\nBest regards,\nHealthVet AI"
+
+        EmailService._send_via_template(
+            "subscription_confirmation", agency_email, agency_name,
+            variables, fallback_subject, fallback_body,
+            "subscription",
         )
 
     @staticmethod
@@ -160,21 +221,26 @@ class EmailService:
                                invoice_id: str, amount: float, description: str,
                                urgency: str = "Reminder"):
         """Send payment reminder for unpaid invoice."""
-        subject = f"HealthVet AI - {urgency}: Invoice #{invoice_id[:8]} Payment Due"
-        body = f"Dear {agency_name},\n\n"
+        urgency_msg = ""
         if urgency == "Final Notice":
-            body += "IMPORTANT: This is your final payment reminder.\n\n"
-        body += f"We have an outstanding invoice that requires your attention:\n\n"
-        body += f"  Invoice: #{invoice_id[:8]}\n"
-        body += f"  Amount Due: \u00a3{amount:.2f}\n"
-        body += f"  Description: {description}\n\n"
-        if urgency == "Final Notice":
-            body += "Failure to pay may result in service suspension.\n\n"
-        body += "Please log in to your dashboard to make payment.\n"
-        body += "\nBest regards,\nHealthVet AI Billing Team"
+            urgency_msg = '<p style="color:#ef4444;font-weight:600;">IMPORTANT: This is your final payment reminder.</p>'
 
-        EmailService._store_notification(
-            agency_email, agency_name, subject, body,
+        variables = {
+            "agency_name": agency_name,
+            "invoice_ref": invoice_id[:8],
+            "amount": f"\u00a3{amount:.2f}",
+            "description": description,
+            "urgency": urgency,
+            "urgency_message": urgency_msg,
+            "payment_link": "https://app.healthvet.ai/agency/billing",
+        }
+
+        fallback_subject = f"HealthVet AI - {urgency}: Invoice #{invoice_id[:8]} Payment Due"
+        fallback_body = f"Dear {agency_name},\n\nInvoice #{invoice_id[:8]}: \u00a3{amount:.2f}\n{description}\n\nBest regards,\nHealthVet AI"
+
+        EmailService._send_via_template(
+            "payment_reminder", agency_email, agency_name,
+            variables, fallback_subject, fallback_body,
             "payment_reminder", invoice_id,
         )
 

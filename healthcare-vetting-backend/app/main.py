@@ -21,6 +21,7 @@ from app.routes import benchmarking
 from app.routes import industry_templates
 from app.routes import lead_generation
 from app.routes import subscription_plans
+from app.routes import email_templates
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
@@ -76,12 +77,16 @@ app.include_router(industry_templates.router)
 app.include_router(industry_templates.agency_router)
 app.include_router(lead_generation.router)
 app.include_router(subscription_plans.router)
+app.include_router(email_templates.router)
 
 
 @app.on_event("startup")
 async def startup():
     init_db()
     migrate_db()
+    # Seed default email templates
+    from app.services.email_templates import EmailTemplateService
+    EmailTemplateService.seed_defaults()
     # Start the background scheduler for monitoring tasks
     from app.services.scheduler import start_scheduler
     start_scheduler()

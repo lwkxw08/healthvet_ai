@@ -653,6 +653,45 @@ def migrate_db():
     except Exception:
         pass
 
+    # Create email_templates table if it doesn't exist
+    try:
+        cursor.execute("SELECT 1 FROM email_templates LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS email_templates (
+            id TEXT PRIMARY KEY,
+            template_key TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            subject TEXT NOT NULL,
+            body_html TEXT NOT NULL,
+            body_text TEXT,
+            category TEXT DEFAULT 'general',
+            variables TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        )""")
+
+    # Create email_send_log table if it doesn't exist
+    try:
+        cursor.execute("SELECT 1 FROM email_send_log LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS email_send_log (
+            id TEXT PRIMARY KEY,
+            template_key TEXT,
+            recipient_email TEXT NOT NULL,
+            recipient_name TEXT,
+            subject TEXT NOT NULL,
+            body_rendered TEXT,
+            status TEXT DEFAULT 'queued',
+            provider TEXT DEFAULT 'sendgrid',
+            provider_message_id TEXT,
+            error_message TEXT,
+            variables_used TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            sent_at TEXT
+        )""")
+
     conn.commit()
     conn.close()
 

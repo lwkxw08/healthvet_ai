@@ -624,6 +624,26 @@ export const agencyRevetApi = {
     apiRequest<Record<string, unknown>[]>("/api/agencies/revet-requests", { token }),
 };
 
+// Email Templates API (Admin)
+export const emailTemplatesApi = {
+  list: (token: string) =>
+    apiRequest<{ templates: Record<string, unknown>[] }>("/api/admin/email-templates", { token }),
+  get: (token: string, templateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/email-templates/${templateId}`, { token }),
+  update: (token: string, templateId: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/email-templates/${templateId}`, { method: "PUT", body: data, token }),
+  reset: (token: string, templateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/email-templates/${templateId}/reset`, { method: "POST", token }),
+  preview: (token: string, templateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/email-templates/${templateId}/preview`, { token }),
+  testSend: (token: string, data: { template_key: string; recipient_email: string; recipient_name?: string; variables?: Record<string, string> }) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-templates/test-send", { method: "POST", body: data, token }),
+  stats: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-templates/stats", { token }),
+  sendLog: (token: string, limit?: number) =>
+    apiRequest<{ log: Record<string, unknown>[] }>(`/api/admin/email-templates/send-log${limit ? '?limit=' + limit : ''}`, { token }),
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   getVettingPricing: (token: string) =>
