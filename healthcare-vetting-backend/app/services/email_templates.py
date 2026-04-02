@@ -730,11 +730,12 @@ class EmailTemplateService:
 
     @staticmethod
     def seed_defaults():
-        """Insert default templates if they don't exist."""
+        """Insert default templates if they don't exist, or update if content changed."""
+        now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             for tpl in DEFAULT_TEMPLATES:
                 existing = db.execute(
-                    "SELECT id FROM email_templates WHERE template_key=?",
+                    "SELECT id, subject, body_html FROM email_templates WHERE template_key=?",
                     (tpl["template_key"],),
                 ).fetchone()
                 if not existing:
@@ -755,6 +756,26 @@ class EmailTemplateService:
                             tpl.get("variables", "[]"),
                         ),
                     )
+                else:
+                    # Update existing default templates if the code version has changed
+                    ex = dict(existing)
+                    if ex["subject"] != tpl["subject"] or ex["body_html"] != tpl["body_html"]:
+                        db.execute(
+                            """UPDATE email_templates SET
+                               subject=?, body_html=?, body_text=?, variables=?,
+                               description=?, updated_at=?
+                               WHERE template_key=?""",
+                            (
+                                tpl["subject"],
+                                tpl["body_html"],
+                                tpl.get("body_text", ""),
+                                tpl.get("variables", "[]"),
+                                tpl["description"],
+                                now,
+                                tpl["template_key"],
+                            ),
+                        )
+                        logger.info(f"Updated default template: {tpl['template_key']}")
 
     @staticmethod
     def get_all_templates() -> list:
