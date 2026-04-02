@@ -7,11 +7,57 @@ import json
 import logging
 import os
 import re
+import secrets
+import string
 from datetime import datetime, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
 
 logger = logging.getLogger(__name__)
+
+
+# ── Verification Code Generation ─────────────────────────────────────────────
+
+# Alphabet excludes ambiguous characters: 0/O, 1/I/L
+_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+
+
+def generate_verification_code() -> str:
+    """Generate a short human-readable verification code like HV-7X9K-2M4P."""
+    part1 = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(4))
+    part2 = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(4))
+    return f"HV-{part1}-{part2}"
+
+
+# ── Trust Signal Defaults ─────────────────────────────────────────────────────
+# These are injected into verification templates automatically.
+# Admins can override them via Admin → Settings → Email Provider (trust settings).
+
+TRUST_SIGNAL_DEFAULTS = {
+    "company_reg_info": "Registered in England & Wales",
+    "ico_registration": "Pending",
+    "verification_phone": "+44 (0) XXX XXX XXXX",
+    "verification_email": "verify@healthvet.ai",
+    "privacy_url": "https://healthvet.ai/privacy",
+    "verification_url": "verify.healthvet.ai",
+}
+
+
+def get_trust_signal_variables() -> dict:
+    """Load trust signal values from DB settings, falling back to defaults."""
+    result = dict(TRUST_SIGNAL_DEFAULTS)
+    try:
+        with get_db() as db:
+            for key in TRUST_SIGNAL_DEFAULTS:
+                row = db.execute(
+                    "SELECT setting_value FROM system_settings WHERE setting_key=?",
+                    (f"trust_{key}",),
+                ).fetchone()
+                if row and row["setting_value"]:
+                    result[key] = row["setting_value"]
+    except Exception:
+        pass
+    return result
 
 # ── Email Provider Configuration ───────────────────────────────────────────
 # Config is loaded from DB (admin UI) first, then falls back to env vars.
@@ -85,15 +131,16 @@ DEFAULT_TEMPLATES = [
         "name": "Employment Verification Request",
         "description": "Sent to a previous employer to verify a candidate's employment history.",
         "category": "verification",
-        "subject": "Employment Verification Request — {{candidate_name}}",
+        "subject": "{{agency_name}} — Please confirm {{candidate_name}}'s employment",
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
-    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Employment Verification Request</p>
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">{{agency_name}}</h1>
+    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Employment Verification Request via HealthVet AI</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
     <p>Dear {{verifier_name}},</p>
-    <p>We are conducting a pre-employment compliance check on behalf of <strong>{{agency_name}}</strong> and would appreciate your assistance in verifying the following employment details for <strong>{{candidate_name}}</strong>.</p>
+    <p><strong>{{candidate_name}}</strong> should have notified you prior to this request.</p>
+    <p>We are conducting a pre-employment compliance check on behalf of <strong>{{agency_name}}</strong> and would appreciate your assistance in verifying the following employment details.</p>
     <div style="background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 15px; margin: 20px 0;">
         <table style="width: 100%; border-collapse: collapse;">
             <tr><td style="padding: 8px 0; color: #64748b; width: 40%;">Candidate:</td><td style="padding: 8px 0; font-weight: 600;">{{candidate_name}}</td></tr>
@@ -102,33 +149,54 @@ DEFAULT_TEMPLATES = [
             <tr><td style="padding: 8px 0; color: #64748b;">Period:</td><td style="padding: 8px 0; font-weight: 600;">{{start_date}} — {{end_date}}</td></tr>
         </table>
     </div>
-    <p>Please click the button below to confirm or dispute these details. This should take approximately 2 minutes.</p>
-    <div style="text-align: center; margin: 25px 0;">
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 15px; margin: 20px 0; text-align: center;">
+        <p style="margin: 0 0 5px; color: #1e40af; font-weight: 600;">Verification Code</p>
+        <p style="margin: 0; font-size: 28px; font-weight: 700; letter-spacing: 3px; color: #1e3a5f;">{{verification_code}}</p>
+        <p style="margin: 8px 0 0; color: #64748b; font-size: 13px;">Visit <strong>{{verification_url}}</strong> and enter this code to respond.<br>This avoids clicking any links — you type the address yourself.</p>
+    </div>
+    <p style="color: #64748b; font-size: 13px;">Alternatively, click the button below:</p>
+    <div style="text-align: center; margin: 15px 0;">
         <a href="{{verification_link}}" style="background: #3b82f6; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">Verify Employment</a>
     </div>
-    <p style="color: #64748b; font-size: 13px;">If the button doesn't work, copy and paste this link into your browser:<br>{{verification_link}}</p>
+    <p style="color: #64748b; font-size: 12px;">If the button doesn't work, copy and paste this link: {{verification_link}}</p>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">This is an automated request from HealthVet AI, a healthcare compliance platform. If you believe you received this in error, please disregard this email. This link will expire in 14 days.</p>
+    <div style="color: #64748b; font-size: 11px; line-height: 1.5;">
+        <p style="margin: 0 0 8px;"><strong>Why am I receiving this?</strong> {{agency_name}} is conducting pre-employment checks as required under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.</p>
+        <p style="margin: 0 0 8px;">HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
+        <p style="margin: 0;">We process personal data in accordance with UK GDPR. Your response will be retained for 6 years in line with regulatory requirements. See our privacy policy at {{privacy_url}}.</p>
+    </div>
 </div>
 </div>""",
-        "body_text": """Employment Verification Request
+        "body_text": """{{agency_name}} — Employment Verification Request
 
 Dear {{verifier_name}},
 
-We are conducting a pre-employment compliance check on behalf of {{agency_name}} and would appreciate your assistance in verifying the following employment details for {{candidate_name}}.
+{{candidate_name}} should have notified you prior to this request.
+
+We are conducting a pre-employment compliance check on behalf of {{agency_name}} and would appreciate your assistance in verifying the following employment details.
 
 Candidate: {{candidate_name}}
 Employer: {{employer_name}}
 Job Title: {{job_title}}
 Period: {{start_date}} — {{end_date}}
 
-Please visit the following link to confirm or dispute these details:
+VERIFICATION CODE: {{verification_code}}
+Visit {{verification_url}} and enter the code above to respond.
+This avoids clicking any links — you type the address yourself.
+
+Alternatively, visit this link:
 {{verification_link}}
 
-This should take approximately 2 minutes. The link will expire in 14 days.
+This should take approximately 2 minutes. The code will expire in 14 days.
+
+---
+This request is made under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.
+HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}}
+To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}
+Privacy policy: {{privacy_url}}
 
 Best regards,
-HealthVet AI Compliance Team""",
+{{agency_name}} via HealthVet AI Compliance""",
         "variables": json.dumps([
             {"key": "candidate_name", "description": "Full name of the candidate"},
             {"key": "verifier_name", "description": "Name of the employer/verifier"},
@@ -137,7 +205,14 @@ HealthVet AI Compliance Team""",
             {"key": "job_title", "description": "Job title to verify"},
             {"key": "start_date", "description": "Employment start date"},
             {"key": "end_date", "description": "Employment end date"},
-            {"key": "verification_link", "description": "Unique link for the verifier to submit their response"},
+            {"key": "verification_code", "description": "Short verification code (e.g. HV-7X9K-2M4P)"},
+            {"key": "verification_url", "description": "Domain for manual code entry (e.g. verify.healthvet.ai)"},
+            {"key": "verification_link", "description": "Direct link for the verifier to submit their response"},
+            {"key": "company_reg_info", "description": "Company registration details"},
+            {"key": "ico_registration", "description": "ICO registration number"},
+            {"key": "verification_phone", "description": "Phone number to verify request authenticity"},
+            {"key": "verification_email", "description": "Email to verify request authenticity"},
+            {"key": "privacy_url", "description": "Link to privacy policy"},
         ]),
     },
     {
@@ -145,44 +220,71 @@ HealthVet AI Compliance Team""",
         "name": "Reference Request",
         "description": "Sent to a referee to request a professional reference for a candidate.",
         "category": "verification",
-        "subject": "Reference Request — {{candidate_name}}",
+        "subject": "{{agency_name}} — Professional reference for {{candidate_name}}",
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
-    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Professional Reference Request</p>
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">{{agency_name}}</h1>
+    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Professional Reference Request via HealthVet AI</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
     <p>Dear {{referee_name}},</p>
-    <p><strong>{{candidate_name}}</strong> has listed you as a professional referee as part of their compliance vetting with <strong>{{agency_name}}</strong>.</p>
-    <p>We would be grateful if you could take a few minutes to complete a structured reference form covering their professional conduct, competency, and suitability for healthcare roles.</p>
-    <div style="text-align: center; margin: 25px 0;">
+    <p><strong>{{candidate_name}}</strong> should have notified you prior to this request.</p>
+    <p>{{candidate_name}} has listed you as a professional referee as part of their compliance vetting with <strong>{{agency_name}}</strong>. We would be grateful if you could take a few minutes to complete a structured reference form covering their professional conduct, competency, and suitability.</p>
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 15px; margin: 20px 0; text-align: center;">
+        <p style="margin: 0 0 5px; color: #1e40af; font-weight: 600;">Verification Code</p>
+        <p style="margin: 0; font-size: 28px; font-weight: 700; letter-spacing: 3px; color: #1e3a5f;">{{verification_code}}</p>
+        <p style="margin: 8px 0 0; color: #64748b; font-size: 13px;">Visit <strong>{{verification_url}}</strong> and enter this code to respond.<br>This avoids clicking any links — you type the address yourself.</p>
+    </div>
+    <p style="color: #64748b; font-size: 13px;">Alternatively, click the button below:</p>
+    <div style="text-align: center; margin: 15px 0;">
         <a href="{{reference_link}}" style="background: #3b82f6; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">Submit Reference</a>
     </div>
-    <p style="color: #64748b; font-size: 13px;">If the button doesn't work, copy and paste this link into your browser:<br>{{reference_link}}</p>
+    <p style="color: #64748b; font-size: 12px;">If the button doesn't work, copy and paste this link: {{reference_link}}</p>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">This is an automated request from HealthVet AI. Your response will be treated in confidence. This link will expire in 14 days.</p>
+    <div style="color: #64748b; font-size: 11px; line-height: 1.5;">
+        <p style="margin: 0 0 8px;"><strong>Why am I receiving this?</strong> {{agency_name}} is conducting pre-employment checks as required under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.</p>
+        <p style="margin: 0 0 8px;">HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
+        <p style="margin: 0;">We process personal data in accordance with UK GDPR. Your response will be treated in confidence and retained for 6 years in line with regulatory requirements. See our privacy policy at {{privacy_url}}.</p>
+    </div>
 </div>
 </div>""",
-        "body_text": """Reference Request
+        "body_text": """{{agency_name}} — Professional Reference Request
 
 Dear {{referee_name}},
 
-{{candidate_name}} has listed you as a professional referee as part of their compliance vetting with {{agency_name}}.
+{{candidate_name}} should have notified you prior to this request.
 
-We would be grateful if you could take a few minutes to complete a structured reference form covering their professional conduct, competency, and suitability for healthcare roles.
+{{candidate_name}} has listed you as a professional referee as part of their compliance vetting with {{agency_name}}. We would be grateful if you could take a few minutes to complete a structured reference form.
 
-Please visit the following link to submit your reference:
+VERIFICATION CODE: {{verification_code}}
+Visit {{verification_url}} and enter the code above to respond.
+This avoids clicking any links — you type the address yourself.
+
+Alternatively, visit this link:
 {{reference_link}}
 
-Your response will be treated in confidence. This link will expire in 14 days.
+Your response will be treated in confidence. The code will expire in 14 days.
+
+---
+This request is made under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.
+HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}}
+To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}
+Privacy policy: {{privacy_url}}
 
 Best regards,
-HealthVet AI Compliance Team""",
+{{agency_name}} via HealthVet AI Compliance""",
         "variables": json.dumps([
             {"key": "candidate_name", "description": "Full name of the candidate"},
             {"key": "referee_name", "description": "Name of the referee"},
             {"key": "agency_name", "description": "Name of the hiring agency"},
-            {"key": "reference_link", "description": "Unique link for the referee to submit their reference"},
+            {"key": "verification_code", "description": "Short verification code (e.g. HV-7X9K-2M4P)"},
+            {"key": "verification_url", "description": "Domain for manual code entry (e.g. verify.healthvet.ai)"},
+            {"key": "reference_link", "description": "Direct link for the referee to submit their reference"},
+            {"key": "company_reg_info", "description": "Company registration details"},
+            {"key": "ico_registration", "description": "ICO registration number"},
+            {"key": "verification_phone", "description": "Phone number to verify request authenticity"},
+            {"key": "verification_email", "description": "Email to verify request authenticity"},
+            {"key": "privacy_url", "description": "Link to privacy policy"},
         ]),
     },
     {
@@ -190,25 +292,35 @@ HealthVet AI Compliance Team""",
         "name": "Verification / Reference Reminder",
         "description": "Follow-up reminder sent when a verification or reference request has not been completed.",
         "category": "verification",
-        "subject": "Reminder: {{request_type}} for {{candidate_name}}",
+        "subject": "{{agency_name}} — Reminder: {{request_type}} for {{candidate_name}}",
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
-    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Friendly Reminder</p>
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">{{agency_name}}</h1>
+    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Friendly Reminder via HealthVet AI</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
     <p>Dear {{recipient_name}},</p>
     <p>This is a friendly reminder regarding a pending <strong>{{request_type}}</strong> for <strong>{{candidate_name}}</strong> that was sent on {{original_sent_date}}.</p>
     <p>We understand you may be busy, but your response is important for the candidate's compliance process. This is reminder {{reminder_number}} of 3.</p>
-    <div style="text-align: center; margin: 25px 0;">
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 15px; margin: 20px 0; text-align: center;">
+        <p style="margin: 0 0 5px; color: #1e40af; font-weight: 600;">Your Verification Code</p>
+        <p style="margin: 0; font-size: 28px; font-weight: 700; letter-spacing: 3px; color: #1e3a5f;">{{verification_code}}</p>
+        <p style="margin: 8px 0 0; color: #64748b; font-size: 13px;">Visit <strong>{{verification_url}}</strong> and enter this code to respond.</p>
+    </div>
+    <p style="color: #64748b; font-size: 13px;">Alternatively, click the button below:</p>
+    <div style="text-align: center; margin: 15px 0;">
         <a href="{{action_link}}" style="background: #f59e0b; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">Complete Now</a>
     </div>
-    <p style="color: #64748b; font-size: 13px;">If the button doesn't work, copy and paste this link into your browser:<br>{{action_link}}</p>
+    <p style="color: #64748b; font-size: 12px;">If the button doesn't work, copy and paste this link: {{action_link}}</p>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">If you have already responded, please disregard this reminder.</p>
+    <div style="color: #64748b; font-size: 11px; line-height: 1.5;">
+        <p style="margin: 0 0 8px;">This request is made under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.</p>
+        <p style="margin: 0 0 8px;">HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
+        <p style="margin: 0;">Privacy policy: {{privacy_url}} | If you have already responded, please disregard this reminder.</p>
+    </div>
 </div>
 </div>""",
-        "body_text": """Reminder: {{request_type}} for {{candidate_name}}
+        "body_text": """{{agency_name}} — Reminder: {{request_type}} for {{candidate_name}}
 
 Dear {{recipient_name}},
 
@@ -216,20 +328,37 @@ This is a friendly reminder regarding a pending {{request_type}} for {{candidate
 
 We understand you may be busy, but your response is important for the candidate's compliance process. This is reminder {{reminder_number}} of 3.
 
-Please visit the following link to complete your response:
+VERIFICATION CODE: {{verification_code}}
+Visit {{verification_url}} and enter the code above to respond.
+
+Alternatively, visit this link:
 {{action_link}}
 
 If you have already responded, please disregard this reminder.
 
+---
+This request is made under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.
+HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}}
+To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}
+Privacy policy: {{privacy_url}}
+
 Best regards,
-HealthVet AI Compliance Team""",
+{{agency_name}} via HealthVet AI Compliance""",
         "variables": json.dumps([
             {"key": "recipient_name", "description": "Name of the verifier or referee"},
             {"key": "request_type", "description": "Type of request (e.g., Employment Verification, Reference)"},
             {"key": "candidate_name", "description": "Full name of the candidate"},
+            {"key": "agency_name", "description": "Name of the hiring agency"},
             {"key": "original_sent_date", "description": "Date the original request was sent"},
             {"key": "reminder_number", "description": "Which reminder this is (1, 2, or 3)"},
-            {"key": "action_link", "description": "Link to complete the verification or reference"},
+            {"key": "verification_code", "description": "Short verification code (e.g. HV-7X9K-2M4P)"},
+            {"key": "verification_url", "description": "Domain for manual code entry"},
+            {"key": "action_link", "description": "Direct link to complete the verification or reference"},
+            {"key": "company_reg_info", "description": "Company registration details"},
+            {"key": "ico_registration", "description": "ICO registration number"},
+            {"key": "verification_phone", "description": "Phone number to verify request authenticity"},
+            {"key": "verification_email", "description": "Email to verify request authenticity"},
+            {"key": "privacy_url", "description": "Link to privacy policy"},
         ]),
     },
     {

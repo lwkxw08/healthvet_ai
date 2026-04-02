@@ -23,8 +23,10 @@ class ReferenceAutomationService:
         referee_job_title: str = None,
         relationship: str = None,
     ) -> dict:
+        from app.services.email_templates import generate_verification_code
         ref_id = generate_id()
         token = secrets.token_urlsafe(32)
+        verification_code = generate_verification_code()
         now = datetime.now(timezone.utc).isoformat()
 
         # Domain verification
@@ -36,12 +38,12 @@ class ReferenceAutomationService:
                 """INSERT INTO references_
                    (id, candidate_id, referee_name, referee_email, referee_phone,
                     referee_organisation, referee_job_title, relationship, token,
-                    status, domain_verified, sent_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?)""",
+                    verification_code, status, domain_verified, sent_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?)""",
                 (
                     ref_id, candidate_id, referee_name, referee_email,
                     referee_phone, referee_organisation, referee_job_title,
-                    relationship, token,
+                    relationship, token, verification_code,
                     1 if domain_verified else 0,
                     now,
                 ),
@@ -148,16 +150,32 @@ class ReferenceAutomationService:
                 (new_count, ref_id),
             )
 
-            # Auto-escalate after 3 reminders
+            # Auto-escalate after 3 reminders — notify candidate to chase
             if new_count >= 3:
+                # Alert agency/admin
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
                        VALUES (?, ?, 'reference_no_response', 'medium', ?, ?, ?)""",
                     (
                         generate_id(), ref_dict["candidate_id"],
-                        f"Reference from {ref_dict['referee_name']} not received after {new_count} reminders",
-                        json.dumps({"ref_id": ref_id, "reminders_sent": new_count}),
+                        f"Reference from {ref_dict['referee_name']} not received after {new_count} reminders. Candidate has been notified to chase the referee.",
+                        json.dumps({"ref_id": ref_id, "reminders_sent": new_count,
+                                    "action": "candidate_notified_to_chase"}),
+                        now,
+                    ),
+                )
+                # Notify candidate to chase the referee
+                db.execute(
+                    """INSERT INTO monitoring_alerts
+                       (id, candidate_id, alert_type, severity, message, details, created_at)
+                       VALUES (?, ?, 'candidate_chase_verifier', 'low', ?, ?, ?)""",
+                    (
+                        generate_id(), ref_dict["candidate_id"],
+                        f"Your referee ({ref_dict['referee_name']} at {ref_dict.get('referee_email', 'N/A')}) has not responded after {new_count} reminder emails. Please contact them directly and ask them to complete the reference.",
+                        json.dumps({"ref_id": ref_id, "referee_name": ref_dict["referee_name"],
+                                    "referee_email": ref_dict.get("referee_email", ""),
+                                    "type": "reference"}),
                         now,
                     ),
                 )

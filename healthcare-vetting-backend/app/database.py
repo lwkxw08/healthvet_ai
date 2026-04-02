@@ -720,6 +720,18 @@ def migrate_db():
             updated_at TEXT DEFAULT (datetime('now'))
         )""")
 
+    # Add verification_code column to employment_verifications
+    try:
+        cursor.execute("SELECT verification_code FROM employment_verifications LIMIT 1")
+    except Exception:
+        cursor.execute("ALTER TABLE employment_verifications ADD COLUMN verification_code TEXT")
+
+    # Add verification_code column to references_
+    try:
+        cursor.execute("SELECT verification_code FROM references_ LIMIT 1")
+    except Exception:
+        cursor.execute("ALTER TABLE references_ ADD COLUMN verification_code TEXT")
+
     conn.commit()
     conn.close()
 

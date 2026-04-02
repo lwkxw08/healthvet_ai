@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { emailConfigApi } from "../api/client";
-import { Shield, Save, RefreshCw, CheckCircle, AlertTriangle, Mail, Key, Globe } from "lucide-react";
+import { Shield, Save, RefreshCw, CheckCircle, AlertTriangle, Mail, Key, Globe, FileText } from "lucide-react";
 
 type Provider = "" | "sendgrid" | "mailgun" | "resend";
 
@@ -48,6 +48,15 @@ export default function EmailConfigPanel() {
   const [fromAddress, setFromAddress] = useState("");
   const [fromName, setFromName] = useState("");
 
+  // Trust signal state
+  const [trustCompanyReg, setTrustCompanyReg] = useState("");
+  const [trustIco, setTrustIco] = useState("");
+  const [trustPhone, setTrustPhone] = useState("");
+  const [trustEmail, setTrustEmail] = useState("");
+  const [trustPrivacyUrl, setTrustPrivacyUrl] = useState("");
+  const [trustVerifyUrl, setTrustVerifyUrl] = useState("");
+  const [savingTrust, setSavingTrust] = useState(false);
+
   const loadConfig = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -61,6 +70,15 @@ export default function EmailConfigPanel() {
       setResendKey(data.resend_api_key || "");
       setFromAddress(data.email_from_address || "");
       setFromName(data.email_from_name || "");
+
+      // Load trust settings
+      const trust = await emailConfigApi.getTrust(token);
+      setTrustCompanyReg(trust.company_reg_info || "");
+      setTrustIco(trust.ico_registration || "");
+      setTrustPhone(trust.verification_phone || "");
+      setTrustEmail(trust.verification_email || "");
+      setTrustPrivacyUrl(trust.privacy_url || "");
+      setTrustVerifyUrl(trust.verification_url || "");
     } catch {
       setMessage({ type: "error", text: "Failed to load email configuration" });
     } finally {
@@ -347,6 +365,117 @@ export default function EmailConfigPanel() {
         </div>
       </div>
 
+      {/* Trust Signals Section */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <FileText size={16} className="text-green-400" />
+              Trust Signals — Verification Email Footer
+            </h3>
+            <p className="text-[10px] text-slate-500 mt-1">These details appear in all verification and reference emails to help recipients trust the request is genuine.</p>
+          </div>
+          <button onClick={async () => {
+            if (!token) return;
+            setSavingTrust(true);
+            setMessage(null);
+            try {
+              await emailConfigApi.updateTrust(token, {
+                company_reg_info: trustCompanyReg,
+                ico_registration: trustIco,
+                verification_phone: trustPhone,
+                verification_email: trustEmail,
+                privacy_url: trustPrivacyUrl,
+                verification_url: trustVerifyUrl,
+              });
+              setMessage({ type: "success", text: "Trust settings saved successfully" });
+            } catch {
+              setMessage({ type: "error", text: "Failed to save trust settings" });
+            } finally {
+              setSavingTrust(false);
+            }
+          }} disabled={savingTrust}
+            className="flex items-center gap-1.5 px-3 py-2 bg-green-600 hover:bg-green-500 text-white text-xs rounded-lg font-medium transition-colors disabled:opacity-50">
+            {savingTrust ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+            Save Trust Settings
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Company Registration</label>
+            <input
+              type="text"
+              value={trustCompanyReg}
+              onChange={(e) => setTrustCompanyReg(e.target.value)}
+              placeholder="Registered in England & Wales (No. 12345678)"
+              className={inputCls}
+            />
+            <p className="text-[10px] text-slate-600 mt-1">e.g. "Registered in England & Wales (No. 12345678)"</p>
+          </div>
+          <div>
+            <label className={labelCls}>ICO Registration Number</label>
+            <input
+              type="text"
+              value={trustIco}
+              onChange={(e) => setTrustIco(e.target.value)}
+              placeholder="ZB 1234567"
+              className={inputCls}
+            />
+            <p className="text-[10px] text-slate-600 mt-1">Your ICO data protection registration reference</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Verification Phone Number</label>
+            <input
+              type="tel"
+              value={trustPhone}
+              onChange={(e) => setTrustPhone(e.target.value)}
+              placeholder="+44 (0) XXX XXX XXXX"
+              className={inputCls}
+            />
+            <p className="text-[10px] text-slate-600 mt-1">Recipients can call this to verify the request is genuine</p>
+          </div>
+          <div>
+            <label className={labelCls}>Verification Email Address</label>
+            <input
+              type="email"
+              value={trustEmail}
+              onChange={(e) => setTrustEmail(e.target.value)}
+              placeholder="verify@healthvet.ai"
+              className={inputCls}
+            />
+            <p className="text-[10px] text-slate-600 mt-1">Recipients can email this to verify the request</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Privacy Policy URL</label>
+            <input
+              type="url"
+              value={trustPrivacyUrl}
+              onChange={(e) => setTrustPrivacyUrl(e.target.value)}
+              placeholder="https://healthvet.ai/privacy"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Verification Portal URL</label>
+            <input
+              type="text"
+              value={trustVerifyUrl}
+              onChange={(e) => setTrustVerifyUrl(e.target.value)}
+              placeholder="verify.healthvet.ai"
+              className={inputCls}
+            />
+            <p className="text-[10px] text-slate-600 mt-1">Where verifiers go to enter their code</p>
+          </div>
+        </div>
+      </div>
+
       {/* Help Section */}
       <div className="bg-slate-900/50 rounded-xl border border-slate-700/30 p-5">
         <h3 className="text-sm font-semibold text-slate-300 mb-3">How it works</h3>
@@ -361,11 +490,11 @@ export default function EmailConfigPanel() {
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-400 mt-0.5">3.</span>
-            <span>Click "Save Configuration" then "Test Connection" to verify everything works.</span>
+            <span>Fill in your Trust Signals — company registration, ICO number, phone — these appear in verification email footers so recipients know the request is legitimate.</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-400 mt-0.5">4.</span>
-            <span>Without a provider configured, all emails are logged to the database and can be viewed in the Email Templates send log — nothing is lost.</span>
+            <span>Click "Save Configuration" then "Test Connection" to verify everything works. Without a provider, emails are logged to the database only.</span>
           </li>
         </ul>
       </div>

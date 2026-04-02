@@ -155,8 +155,10 @@ class EmploymentVerificationService:
         Works like the reference system: generates a unique token/link,
         the verifier confirms job title, dates, and reason for leaving.
         """
+        from app.services.email_templates import generate_verification_code
         ver_id = generate_id()
         token = secrets.token_urlsafe(32)
+        verification_code = generate_verification_code()
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
@@ -173,13 +175,13 @@ class EmploymentVerificationService:
             db.execute(
                 """INSERT INTO employment_verifications
                    (id, candidate_id, employment_id, verifier_name, verifier_email,
-                    verifier_job_title, employer_name, token, status,
+                    verifier_job_title, employer_name, token, verification_code, status,
                     domain_verified, sent_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?)""",
                 (
                     ver_id, candidate_id, employment_id,
                     verifier_name, verifier_email, verifier_job_title,
-                    employer_name, token,
+                    employer_name, token, verification_code,
                     1 if domain_verified else 0,
                     now,
                 ),
@@ -317,14 +319,30 @@ class EmploymentVerificationService:
             )
 
             if new_count >= 3:
+                # Alert the agency/admin that verifier hasn't responded
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
                        VALUES (?, ?, 'employment_verification_no_response', 'medium', ?, ?, ?)""",
                     (
                         generate_id(), ver_dict["candidate_id"],
-                        f"Employment verification from {ver_dict['verifier_name']} not received after {new_count} reminders",
-                        json.dumps({"ver_id": verification_id, "reminders_sent": new_count}),
+                        f"Employment verification from {ver_dict['verifier_name']} not received after {new_count} reminders. Candidate has been notified to chase the verifier.",
+                        json.dumps({"ver_id": verification_id, "reminders_sent": new_count,
+                                    "action": "candidate_notified_to_chase"}),
+                        now,
+                    ),
+                )
+                # Create a notification for the candidate to chase the verifier
+                db.execute(
+                    """INSERT INTO monitoring_alerts
+                       (id, candidate_id, alert_type, severity, message, details, created_at)
+                       VALUES (?, ?, 'candidate_chase_verifier', 'low', ?, ?, ?)""",
+                    (
+                        generate_id(), ver_dict["candidate_id"],
+                        f"Your employment verifier ({ver_dict['verifier_name']} at {ver_dict.get('verifier_email', 'N/A')}) has not responded after {new_count} reminder emails. Please contact them directly and ask them to complete the verification.",
+                        json.dumps({"ver_id": verification_id, "verifier_name": ver_dict["verifier_name"],
+                                    "verifier_email": ver_dict.get("verifier_email", ""),
+                                    "type": "employment_verification"}),
                         now,
                     ),
                 )

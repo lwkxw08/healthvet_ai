@@ -670,6 +670,10 @@ export const emailConfigApi = {
     apiRequest<Record<string, unknown>>("/api/admin/email-config", { method: "PUT", body: data, token }),
   test: (token: string) =>
     apiRequest<Record<string, unknown>>("/api/admin/email-config/test", { method: "POST", token }),
+  getTrust: (token: string) =>
+    apiRequest<Record<string, string>>("/api/admin/email-config/trust", { token }),
+  updateTrust: (token: string, data: Record<string, string>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-config/trust", { method: "PUT", body: data, token }),
 };
 
 // Agency Invites API

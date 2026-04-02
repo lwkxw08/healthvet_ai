@@ -28,6 +28,16 @@ EMAIL_SETTING_KEYS = [
     "email_from_name",
 ]
 
+# Trust signal settings (displayed in verification email footers)
+TRUST_SETTING_KEYS = [
+    "trust_company_reg_info",
+    "trust_ico_registration",
+    "trust_verification_phone",
+    "trust_verification_email",
+    "trust_privacy_url",
+    "trust_verification_url",
+]
+
 
 class EmailConfigUpdate(BaseModel):
     email_provider: Optional[str] = ""
@@ -37,6 +47,15 @@ class EmailConfigUpdate(BaseModel):
     resend_api_key: Optional[str] = ""
     email_from_address: Optional[str] = ""
     email_from_name: Optional[str] = ""
+
+
+class TrustSettingsUpdate(BaseModel):
+    company_reg_info: Optional[str] = ""
+    ico_registration: Optional[str] = ""
+    verification_phone: Optional[str] = ""
+    verification_email: Optional[str] = ""
+    privacy_url: Optional[str] = ""
+    verification_url: Optional[str] = ""
 
 
 def _get_setting(db, key: str) -> str:
@@ -123,6 +142,30 @@ async def update_email_config(data: EmailConfigUpdate, admin=Depends(get_current
 
     logger.info(f"Email configuration updated by admin {admin.get('email', 'unknown')}")
     return {"status": "ok", "message": "Email configuration updated"}
+
+
+@router.get("/trust")
+async def get_trust_settings(admin=Depends(get_current_admin)):
+    """Get current trust signal settings for verification emails."""
+    from app.services.email_templates import TRUST_SIGNAL_DEFAULTS
+    with get_db() as db:
+        result = {}
+        for key, default in TRUST_SIGNAL_DEFAULTS.items():
+            val = _get_setting(db, f"trust_{key}")
+            result[key] = val if val else default
+    return result
+
+
+@router.put("/trust")
+async def update_trust_settings(data: TrustSettingsUpdate, admin=Depends(get_current_admin)):
+    """Update trust signal settings for verification emails."""
+    with get_db() as db:
+        updates = data.dict()
+        for key, value in updates.items():
+            if value is not None:
+                _set_setting(db, f"trust_{key}", value)
+    logger.info(f"Trust settings updated by admin {admin.get('email', 'unknown')}")
+    return {"status": "ok", "message": "Trust settings updated"}
 
 
 @router.post("/test")
