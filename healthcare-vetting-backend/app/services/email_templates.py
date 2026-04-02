@@ -14,40 +14,67 @@ from app.utils.auth import generate_id
 logger = logging.getLogger(__name__)
 
 # ── Email Provider Configuration ───────────────────────────────────────────
-# Set EMAIL_PROVIDER to choose: "sendgrid", "mailgun", or "resend"
-# Falls back to auto-detect based on which API key is present.
-EMAIL_PROVIDER = os.environ.get("EMAIL_PROVIDER", "").lower()
+# Config is loaded from DB (admin UI) first, then falls back to env vars.
+# This allows admins to configure email providers from the Settings page.
 
-# SendGrid
-SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
+_config = {
+    "email_provider": os.environ.get("EMAIL_PROVIDER", "").lower(),
+    "sendgrid_api_key": os.environ.get("SENDGRID_API_KEY", ""),
+    "mailgun_api_key": os.environ.get("MAILGUN_API_KEY", ""),
+    "mailgun_domain": os.environ.get("MAILGUN_DOMAIN", ""),
+    "resend_api_key": os.environ.get("RESEND_API_KEY", ""),
+    "email_from_address": os.environ.get(
+        "EMAIL_FROM_ADDRESS",
+        os.environ.get("SENDGRID_FROM_EMAIL", "noreply@healthvet.ai"),
+    ),
+    "email_from_name": os.environ.get(
+        "EMAIL_FROM_NAME",
+        os.environ.get("SENDGRID_FROM_NAME", "HealthVet AI"),
+    ),
+}
 
-# Mailgun
-MAILGUN_API_KEY = os.environ.get("MAILGUN_API_KEY", "")
-MAILGUN_DOMAIN = os.environ.get("MAILGUN_DOMAIN", "")  # e.g. mg.healthvet.ai
 
-# Resend
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-
-# Shared sender config
-FROM_EMAIL = os.environ.get("EMAIL_FROM_ADDRESS", os.environ.get("SENDGRID_FROM_EMAIL", "noreply@healthvet.ai"))
-FROM_NAME = os.environ.get("EMAIL_FROM_NAME", os.environ.get("SENDGRID_FROM_NAME", "HealthVet AI"))
+def reload_email_config():
+    """Reload email config from the database, falling back to env vars."""
+    try:
+        from app.routes.email_config import get_email_config_from_db
+        db_cfg = get_email_config_from_db()
+        for key in list(_config.keys()):
+            db_val = db_cfg.get(key, "")
+            if db_val:
+                _config[key] = db_val
+    except Exception as e:
+        logger.debug(f"Could not load email config from DB (using env vars): {e}")
 
 
 def _detect_provider() -> str:
     """Auto-detect which provider to use based on available API keys."""
-    if EMAIL_PROVIDER in ("sendgrid", "mailgun", "resend"):
-        return EMAIL_PROVIDER
-    if SENDGRID_API_KEY:
+    provider = _config["email_provider"]
+    if provider in ("sendgrid", "mailgun", "resend"):
+        return provider
+    if _config["sendgrid_api_key"]:
         return "sendgrid"
-    if MAILGUN_API_KEY and MAILGUN_DOMAIN:
+    if _config["mailgun_api_key"] and _config["mailgun_domain"]:
         return "mailgun"
-    if RESEND_API_KEY:
+    if _config["resend_api_key"]:
         return "resend"
     return ""
 
 
 def _provider_configured() -> bool:
     return bool(_detect_provider())
+
+
+def get_active_provider_info() -> dict:
+    """Get info about the currently active email provider (used by admin UI)."""
+    reload_email_config()
+    provider = _detect_provider()
+    return {
+        "provider": provider or None,
+        "configured": bool(provider),
+        "from_email": _config["email_from_address"],
+        "from_name": _config["email_from_name"],
+    }
 
 
 # ── Default Templates ────────────────────────────────────────────────────────
@@ -911,7 +938,7 @@ class EmailTemplateService:
         response = httpx.post(
             "https://api.sendgrid.com/v3/mail/send",
             headers={
-                "Authorization": f"Bearer {SENDGRID_API_KEY}",
+                "Authorization": f"Bearer {_config['sendgrid_api_key']}",
                 "Content-Type": "application/json",
             },
             json={
@@ -919,8 +946,8 @@ class EmailTemplateService:
                     "to": [{"email": to_email, "name": to_name}],
                 }],
                 "from": {
-                    "email": FROM_EMAIL,
-                    "name": FROM_NAME,
+                    "email": _config["email_from_address"],
+                    "name": _config["email_from_name"],
                 },
                 "subject": subject,
                 "content": [
@@ -946,10 +973,10 @@ class EmailTemplateService:
         import httpx
 
         response = httpx.post(
-            f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
-            auth=("api", MAILGUN_API_KEY),
+            f"https://api.mailgun.net/v3/{_config['mailgun_domain']}/messages",
+            auth=("api", _config["mailgun_api_key"]),
             data={
-                "from": f"{FROM_NAME} <{FROM_EMAIL}>",
+                "from": f"{_config['email_from_name']} <{_config['email_from_address']}>",
                 "to": [f"{to_name} <{to_email}>"],
                 "subject": subject,
                 "text": text_content or subject,
@@ -975,11 +1002,11 @@ class EmailTemplateService:
         response = httpx.post(
             "https://api.resend.com/emails",
             headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Authorization": f"Bearer {_config['resend_api_key']}",
                 "Content-Type": "application/json",
             },
             json={
-                "from": f"{FROM_NAME} <{FROM_EMAIL}>",
+                "from": f"{_config['email_from_name']} <{_config['email_from_address']}>",
                 "to": [to_email],
                 "subject": subject,
                 "html": html_content,

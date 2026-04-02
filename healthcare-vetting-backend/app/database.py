@@ -710,6 +710,16 @@ def migrate_db():
             updated_at TEXT DEFAULT (datetime('now'))
         )""")
 
+    # Create system_settings table for admin-configurable settings (email provider, API keys, etc.)
+    try:
+        cursor.execute("SELECT 1 FROM system_settings LIMIT 1")
+    except Exception:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS system_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        )""")
+
     conn.commit()
     conn.close()
 

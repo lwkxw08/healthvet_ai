@@ -662,6 +662,16 @@ export const emailRulesApi = {
     apiRequest<Record<string, unknown>>(`/api/admin/email-rules/${ruleId}`, { method: "DELETE", token }),
 };
 
+// Email Config API (Admin)
+export const emailConfigApi = {
+  get: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-config", { token }),
+  update: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-config", { method: "PUT", body: data, token }),
+  test: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-config/test", { method: "POST", token }),
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   getVettingPricing: (token: string) =>

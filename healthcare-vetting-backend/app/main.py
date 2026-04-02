@@ -23,6 +23,7 @@ from app.routes import lead_generation
 from app.routes import subscription_plans
 from app.routes import email_templates
 from app.routes import email_rules
+from app.routes import email_config
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
@@ -80,6 +81,7 @@ app.include_router(lead_generation.router)
 app.include_router(subscription_plans.router)
 app.include_router(email_templates.router)
 app.include_router(email_rules.router)
+app.include_router(email_config.router)
 
 
 @app.on_event("startup")
