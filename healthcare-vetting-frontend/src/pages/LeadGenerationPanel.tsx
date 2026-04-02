@@ -139,6 +139,15 @@ export default function LeadGenerationPanel() {
     }
   };
 
+  const retryJob = async (jobId: string) => {
+    if (!token) return;
+    try {
+      await leadGenerationApi.retryJob(token, jobId);
+      showMessage("Scrape job retried! Check back shortly.");
+      loadJobs();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed to retry"}`); }
+  };
+
   const exportLeads = async () => {
     if (!token) return;
     try {
@@ -297,6 +306,7 @@ export default function LeadGenerationPanel() {
                     <th className="py-3 px-4 text-center text-slate-400 text-xs">Results</th>
                     <th className="py-3 px-4 text-left text-slate-400 text-xs">Started</th>
                     <th className="py-3 px-4 text-left text-slate-400 text-xs">Completed</th>
+                    <th className="py-3 px-4 text-center text-slate-400 text-xs">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/50">
@@ -315,6 +325,14 @@ export default function LeadGenerationPanel() {
                       <td className="py-3 px-4 text-center text-emerald-400 font-medium">{String(job.results_count || 0)}</td>
                       <td className="py-3 px-4 text-slate-400 text-xs">{job.started_at ? new Date(String(job.started_at)).toLocaleString() : "-"}</td>
                       <td className="py-3 px-4 text-slate-400 text-xs">{job.completed_at ? new Date(String(job.completed_at)).toLocaleString() : "-"}</td>
+                      <td className="py-3 px-4 text-center">
+                        {(job.status === "failed" || job.status === "pending") && (
+                          <button onClick={() => retryJob(String(job.id))}
+                            className="px-2 py-1 bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 rounded text-xs font-medium flex items-center gap-1 mx-auto">
+                            <RefreshCw size={12} /> Retry
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

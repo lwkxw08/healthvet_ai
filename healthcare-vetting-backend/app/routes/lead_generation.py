@@ -44,6 +44,28 @@ class BulkDeleteRequest(BaseModel):
     lead_ids: List[str]
 
 
+# ── Startup recovery ─────────────────────────────────────────────────
+
+def recover_stale_scrape_jobs():
+    """Mark orphaned pending/running scrape jobs as failed on server startup.
+    Daemon threads die on restart, so any job still pending/running is stale."""
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with get_db() as db:
+            stale = db.execute(
+                "SELECT id, status FROM scrape_jobs WHERE status IN ('pending', 'running')"
+            ).fetchall()
+            for row in stale:
+                db.execute(
+                    "UPDATE scrape_jobs SET status='failed', error_message=?, completed_at=? WHERE id=?",
+                    ("Server restarted — job did not complete. Please retry.", now, row["id"]),
+                )
+            if stale:
+                logger.info(f"Recovered {len(stale)} stale scrape jobs on startup")
+    except Exception as e:
+        logger.error(f"Error recovering stale scrape jobs: {e}")
+
+
 # ── Background scrape runner ─────────────────────────────────────────
 
 def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: str, industry_slug: str):
@@ -161,6 +183,37 @@ async def trigger_scrape(data: ScrapeJobRequest, current_user: dict = Depends(ge
     thread.start()
 
     return {"job_id": job_id, "status": "pending", "message": f"Scrape job started for {data.source}"}
+
+
+@router.post("/jobs/{job_id}/retry")
+async def retry_scrape_job(job_id: str, current_user: dict = Depends(get_current_user)):
+    """Retry a failed or stale scrape job."""
+    if current_user.get("role") != "admin" and current_user.get("type") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    with get_db() as db:
+        job = db.execute("SELECT * FROM scrape_jobs WHERE id=?", (job_id,)).fetchone()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job_dict = dict(job)
+        if job_dict["status"] not in ("failed", "pending"):
+            raise HTTPException(status_code=400, detail=f"Cannot retry job with status '{job_dict['status']}'")
+
+        # Reset job status
+        db.execute(
+            "UPDATE scrape_jobs SET status='pending', error_message=NULL, started_at=NULL, completed_at=NULL, results_count=0 WHERE id=?",
+            (job_id,),
+        )
+
+    config = json.loads(job_dict.get("config") or "{}")
+    thread = threading.Thread(
+        target=_run_scrape_in_background,
+        args=(job_id, job_dict["source"], config, job_dict.get("industry", ""), job_dict.get("industry_slug", "")),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"job_id": job_id, "status": "pending", "message": "Scrape job retried"}
 
 
 @router.get("/jobs")

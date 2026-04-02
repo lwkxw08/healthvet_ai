@@ -586,6 +586,8 @@ export const leadGenerationApi = {
     apiRequest<Record<string, unknown>>("/api/lead-generation/registration-scrape", { method: "POST", body: data, token }),
   getRegistrationScrapes: (token: string, candidateId: string) =>
     apiRequest<Record<string, unknown>[]>(`/api/lead-generation/registration-scrape/${candidateId}`, { token }),
+  retryJob: (token: string, jobId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/lead-generation/jobs/${jobId}/retry`, { method: "POST", token }),
 };
 
 // Subscription Plans API (Admin - Industry-Specific)

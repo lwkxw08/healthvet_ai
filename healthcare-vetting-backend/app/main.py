@@ -93,6 +93,9 @@ async def startup():
     EmailTemplateService.seed_defaults()
     from app.services.email_rules import EmailRulesService
     EmailRulesService.seed_defaults()
+    # Recover any scrape jobs orphaned by a previous server restart
+    from app.routes.lead_generation import recover_stale_scrape_jobs
+    recover_stale_scrape_jobs()
     # Start the background scheduler for monitoring tasks
     from app.services.scheduler import start_scheduler
     start_scheduler()
