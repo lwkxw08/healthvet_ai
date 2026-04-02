@@ -33,6 +33,162 @@ interface TemplateOption {
   is_active: number;
 }
 
+// Visual Conditions Builder types and helpers
+interface ConditionValues {
+  minDaysSinceRequest: string;
+  maxDaysLeft: string;
+  checkTypes: string[];
+  urgency: string;
+}
+
+const AVAILABLE_CHECK_TYPES = [
+  { value: "dbs", label: "DBS Check" },
+  { value: "identity", label: "Identity Verification" },
+  { value: "right_to_work", label: "Right to Work" },
+  { value: "references", label: "References" },
+  { value: "employment", label: "Employment Verification" },
+  { value: "registration", label: "Registration Check" },
+  { value: "training", label: "Training Verification" },
+  { value: "monitoring", label: "Continuous Monitoring" },
+];
+
+const URGENCY_OPTIONS = [
+  { value: "", label: "Any urgency" },
+  { value: "First Reminder", label: "First Reminder" },
+  { value: "Second Reminder", label: "Second Reminder" },
+  { value: "Final Notice", label: "Final Notice" },
+  { value: "Overdue", label: "Overdue" },
+];
+
+const EMPTY_CONDITIONS: ConditionValues = { minDaysSinceRequest: "", maxDaysLeft: "", checkTypes: [], urgency: "" };
+
+function jsonToConditionValues(jsonStr: string): ConditionValues {
+  try {
+    const obj = JSON.parse(jsonStr || "{}");
+    return {
+      minDaysSinceRequest: obj.min_days_since_request?.toString() || "",
+      maxDaysLeft: obj.max_days_left?.toString() || "",
+      checkTypes: Array.isArray(obj.check_types) ? obj.check_types : [],
+      urgency: obj.urgency || "",
+    };
+  } catch {
+    return { ...EMPTY_CONDITIONS };
+  }
+}
+
+function conditionValuesToJson(vals: ConditionValues): string {
+  const obj: Record<string, unknown> = {};
+  if (vals.minDaysSinceRequest && parseInt(vals.minDaysSinceRequest) > 0)
+    obj.min_days_since_request = parseInt(vals.minDaysSinceRequest);
+  if (vals.maxDaysLeft && parseInt(vals.maxDaysLeft) > 0)
+    obj.max_days_left = parseInt(vals.maxDaysLeft);
+  if (vals.checkTypes.length > 0)
+    obj.check_types = vals.checkTypes;
+  if (vals.urgency)
+    obj.urgency = vals.urgency;
+  return JSON.stringify(obj);
+}
+
+function ConditionsBuilder({
+  values,
+  onChange,
+}: {
+  values: ConditionValues;
+  onChange: (v: ConditionValues) => void;
+  compact?: boolean;
+}) {
+  const inputCls = "w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs";
+  const hasAny = values.minDaysSinceRequest || values.maxDaysLeft || values.checkTypes.length > 0 || values.urgency;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-[11px] text-slate-400">
+        <span className="font-medium text-slate-300">Conditions</span>
+        {!hasAny && <span className="text-slate-600 italic">(none set &mdash; rule always fires)</span>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[11px] text-slate-500 mb-1">
+            Minimum days since request
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              value={values.minDaysSinceRequest}
+              onChange={(e) => onChange({ ...values, minDaysSinceRequest: e.target.value })}
+              placeholder="e.g. 7"
+              className={inputCls}
+            />
+            <span className="text-[10px] text-slate-600 whitespace-nowrap">days</span>
+          </div>
+          <p className="text-[10px] text-slate-600 mt-1">Only fire if request was sent at least this many days ago</p>
+        </div>
+
+        <div>
+          <label className="block text-[11px] text-slate-500 mb-1">
+            Maximum days until expiry
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              value={values.maxDaysLeft}
+              onChange={(e) => onChange({ ...values, maxDaysLeft: e.target.value })}
+              placeholder="e.g. 14"
+              className={inputCls}
+            />
+            <span className="text-[10px] text-slate-600 whitespace-nowrap">days</span>
+          </div>
+          <p className="text-[10px] text-slate-600 mt-1">Only fire if credential expires within this many days</p>
+        </div>
+
+        <div>
+          <label className="block text-[11px] text-slate-500 mb-1">
+            Urgency level
+          </label>
+          <select
+            value={values.urgency}
+            onChange={(e) => onChange({ ...values, urgency: e.target.value })}
+            className={inputCls}
+          >
+            {URGENCY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <p className="text-[10px] text-slate-600 mt-1">Only fire for this urgency level (e.g. payment reminders)</p>
+        </div>
+
+        <div>
+          <label className="block text-[11px] text-slate-500 mb-1">
+            Specific check types only
+          </label>
+          <div className="bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 max-h-28 overflow-y-auto space-y-1">
+            {AVAILABLE_CHECK_TYPES.map((ct) => (
+              <label key={ct.value} className="flex items-center gap-2 cursor-pointer text-xs">
+                <input
+                  type="checkbox"
+                  checked={values.checkTypes.includes(ct.value)}
+                  onChange={(e) => {
+                    const newTypes = e.target.checked
+                      ? [...values.checkTypes, ct.value]
+                      : values.checkTypes.filter((t) => t !== ct.value);
+                    onChange({ ...values, checkTypes: newTypes });
+                  }}
+                  className="rounded border-slate-600 bg-slate-800 text-blue-500"
+                />
+                <span className="text-slate-400">{ct.label}</span>
+              </label>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-600 mt-1">Leave all unchecked to apply to all check types</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EmailRulesPanel() {
   const { token } = useAuth();
   const [rules, setRules] = useState<EmailRule[]>([]);
@@ -49,7 +205,7 @@ export default function EmailRulesPanel() {
   const [editDescription, setEditDescription] = useState("");
   const [editTemplateKey, setEditTemplateKey] = useState("");
   const [editRecipientType, setEditRecipientType] = useState("primary");
-  const [editConditions, setEditConditions] = useState("{}");
+  const [editConditions, setEditConditions] = useState<ConditionValues>({ ...EMPTY_CONDITIONS });
   const [editPriority, setEditPriority] = useState(0);
   const [saving, setSaving] = useState(false);
 
@@ -59,7 +215,7 @@ export default function EmailRulesPanel() {
   const [newDescription, setNewDescription] = useState("");
   const [newTemplateKey, setNewTemplateKey] = useState("");
   const [newRecipientType, setNewRecipientType] = useState("primary");
-  const [newConditions, setNewConditions] = useState("{}");
+  const [newConditions, setNewConditions] = useState<ConditionValues>({ ...EMPTY_CONDITIONS });
   const [newPriority, setNewPriority] = useState(0);
   const [creating, setCreating] = useState(false);
 
@@ -119,7 +275,7 @@ export default function EmailRulesPanel() {
     setEditDescription(rule.description || "");
     setEditTemplateKey(rule.template_key);
     setEditRecipientType(rule.recipient_type);
-    setEditConditions(typeof rule.conditions === "string" ? rule.conditions : JSON.stringify(rule.conditions));
+    setEditConditions(jsonToConditionValues(typeof rule.conditions === "string" ? rule.conditions : JSON.stringify(rule.conditions)));
     setEditPriority(rule.priority);
   };
 
@@ -127,8 +283,9 @@ export default function EmailRulesPanel() {
     if (!token) return;
     setSaving(true);
     try {
+      const condJson = conditionValuesToJson(editConditions);
       let parsedConditions = {};
-      try { parsedConditions = JSON.parse(editConditions); } catch { /* keep empty */ }
+      try { parsedConditions = JSON.parse(condJson); } catch { /* keep empty */ }
       await emailRulesApi.update(token, ruleId, {
         name: editName,
         description: editDescription,
@@ -174,8 +331,9 @@ export default function EmailRulesPanel() {
     if (!token || !newTrigger || !newName || !newTemplateKey) return;
     setCreating(true);
     try {
+      const condJson = conditionValuesToJson(newConditions);
       let parsedConditions = {};
-      try { parsedConditions = JSON.parse(newConditions); } catch { /* keep empty */ }
+      try { parsedConditions = JSON.parse(condJson); } catch { /* keep empty */ }
       await emailRulesApi.create(token, {
         action_trigger: newTrigger,
         name: newName,
@@ -192,7 +350,7 @@ export default function EmailRulesPanel() {
       setNewDescription("");
       setNewTemplateKey("");
       setNewRecipientType("primary");
-      setNewConditions("{}");
+      setNewConditions({ ...EMPTY_CONDITIONS });
       setNewPriority(0);
       await loadRules();
     } catch {
@@ -321,18 +479,16 @@ export default function EmailRulesPanel() {
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs" />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-500 mb-1">Conditions (JSON)</label>
-              <input value={newConditions} onChange={(e) => setNewConditions(e.target.value)}
-                placeholder='e.g. {"max_days_left": 14}'
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs font-mono" />
-              <p className="text-[10px] text-slate-600 mt-1">Supported: min_days_since_request, max_days_left, check_types (array), urgency</p>
-            </div>
-            <div>
               <label className="block text-[11px] text-slate-500 mb-1">Priority (lower = first)</label>
               <input type="number" value={newPriority} onChange={(e) => setNewPriority(parseInt(e.target.value) || 0)}
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs" />
             </div>
           </div>
+
+          <div className="border-t border-slate-700/50 pt-4">
+            <ConditionsBuilder values={newConditions} onChange={setNewConditions} />
+          </div>
+
           <div className="flex gap-2 pt-2">
             <button onClick={handleCreate} disabled={creating || !newTrigger || !newName || !newTemplateKey}
               className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-4 py-2 rounded-lg disabled:opacity-50">
@@ -432,11 +588,9 @@ export default function EmailRulesPanel() {
                                   <input value={editDescription} onChange={(e) => setEditDescription(e.target.value)}
                                     className="w-full bg-slate-900/50 border border-slate-700 rounded px-2 py-1.5 text-white text-xs" />
                                 </div>
-                                <div className="col-span-2">
-                                  <label className="block text-[10px] text-slate-500 mb-1">Conditions (JSON)</label>
-                                  <input value={editConditions} onChange={(e) => setEditConditions(e.target.value)}
-                                    className="w-full bg-slate-900/50 border border-slate-700 rounded px-2 py-1.5 text-white text-xs font-mono" />
-                                </div>
+                              </div>
+                              <div className="border-t border-slate-700/30 pt-3">
+                                <ConditionsBuilder values={editConditions} onChange={setEditConditions} compact />
                               </div>
                               <div className="flex gap-2">
                                 <button onClick={() => handleSave(rule.id)} disabled={saving}
@@ -494,29 +648,25 @@ export default function EmailRulesPanel() {
         })}
       </div>
 
-      {/* Supported Conditions Reference */}
+      {/* Conditions Reference */}
       <div className="bg-slate-800/40 rounded-lg border border-slate-700/50 px-5 py-4">
-        <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-3">Supported Conditions</p>
+        <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-3">Conditions Reference</p>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div className="bg-slate-900/50 rounded-lg px-3 py-2 border border-slate-700/50">
-            <code className="text-amber-400">min_days_since_request</code>
-            <p className="text-slate-500 mt-1">Only fire if the request was sent at least N days ago. Useful for reminders.</p>
-            <p className="text-slate-600 mt-1 font-mono">{"Example: {\"min_days_since_request\": 7}"}</p>
+            <span className="text-amber-400 font-medium">Minimum days since request</span>
+            <p className="text-slate-500 mt-1">Only fire if the verification request was sent at least N days ago. Useful for automated reminders.</p>
           </div>
           <div className="bg-slate-900/50 rounded-lg px-3 py-2 border border-slate-700/50">
-            <code className="text-amber-400">max_days_left</code>
-            <p className="text-slate-500 mt-1">Only fire if credential expires within N days. Useful for urgency-based rules.</p>
-            <p className="text-slate-600 mt-1 font-mono">{"Example: {\"max_days_left\": 14}"}</p>
+            <span className="text-amber-400 font-medium">Maximum days until expiry</span>
+            <p className="text-slate-500 mt-1">Only fire if a credential expires within N days. Useful for urgency-based escalation.</p>
           </div>
           <div className="bg-slate-900/50 rounded-lg px-3 py-2 border border-slate-700/50">
-            <code className="text-amber-400">check_types</code>
-            <p className="text-slate-500 mt-1">Only fire for specific check types (array). E.g. DBS, RTW only.</p>
-            <p className="text-slate-600 mt-1 font-mono">{"Example: {\"check_types\": [\"dbs\", \"rtw\"]}"}</p>
+            <span className="text-amber-400 font-medium">Specific check types</span>
+            <p className="text-slate-500 mt-1">Restrict the rule to fire only for certain check types (e.g. DBS only, or Right to Work only).</p>
           </div>
           <div className="bg-slate-900/50 rounded-lg px-3 py-2 border border-slate-700/50">
-            <code className="text-amber-400">urgency</code>
-            <p className="text-slate-500 mt-1">Only fire if urgency level matches. Useful for payment reminders.</p>
-            <p className="text-slate-600 mt-1 font-mono">{"Example: {\"urgency\": \"Final Notice\"}"}</p>
+            <span className="text-amber-400 font-medium">Urgency level</span>
+            <p className="text-slate-500 mt-1">Only fire for a specific urgency level. Useful for payment reminders that escalate over time.</p>
           </div>
         </div>
       </div>

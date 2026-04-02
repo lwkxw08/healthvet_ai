@@ -1,7 +1,7 @@
 """
 Email Template Management Service
 Stores, retrieves, and renders email templates with variable substitution.
-Integrates with SendGrid for delivery when API key is configured.
+Supports multiple email providers: SendGrid, Mailgun, and Resend.
 """
 import json
 import logging
@@ -13,10 +13,41 @@ from app.utils.auth import generate_id
 
 logger = logging.getLogger(__name__)
 
-# SendGrid API key — set via environment variable
+# ── Email Provider Configuration ───────────────────────────────────────────
+# Set EMAIL_PROVIDER to choose: "sendgrid", "mailgun", or "resend"
+# Falls back to auto-detect based on which API key is present.
+EMAIL_PROVIDER = os.environ.get("EMAIL_PROVIDER", "").lower()
+
+# SendGrid
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
-SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL", "noreply@healthvet.ai")
-SENDGRID_FROM_NAME = os.environ.get("SENDGRID_FROM_NAME", "HealthVet AI")
+
+# Mailgun
+MAILGUN_API_KEY = os.environ.get("MAILGUN_API_KEY", "")
+MAILGUN_DOMAIN = os.environ.get("MAILGUN_DOMAIN", "")  # e.g. mg.healthvet.ai
+
+# Resend
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+
+# Shared sender config
+FROM_EMAIL = os.environ.get("EMAIL_FROM_ADDRESS", os.environ.get("SENDGRID_FROM_EMAIL", "noreply@healthvet.ai"))
+FROM_NAME = os.environ.get("EMAIL_FROM_NAME", os.environ.get("SENDGRID_FROM_NAME", "HealthVet AI"))
+
+
+def _detect_provider() -> str:
+    """Auto-detect which provider to use based on available API keys."""
+    if EMAIL_PROVIDER in ("sendgrid", "mailgun", "resend"):
+        return EMAIL_PROVIDER
+    if SENDGRID_API_KEY:
+        return "sendgrid"
+    if MAILGUN_API_KEY and MAILGUN_DOMAIN:
+        return "mailgun"
+    if RESEND_API_KEY:
+        return "resend"
+    return ""
+
+
+def _provider_configured() -> bool:
+    return bool(_detect_provider())
 
 
 # ── Default Templates ────────────────────────────────────────────────────────
@@ -813,33 +844,39 @@ class EmailTemplateService:
                 ),
             )
 
-        # Attempt SendGrid delivery
-        if SENDGRID_API_KEY:
+        # Attempt delivery via configured provider
+        provider = _detect_provider()
+        if provider:
             try:
-                result = EmailTemplateService._send_via_sendgrid(
+                send_fn = {
+                    "sendgrid": EmailTemplateService._send_via_sendgrid,
+                    "mailgun": EmailTemplateService._send_via_mailgun,
+                    "resend": EmailTemplateService._send_via_resend,
+                }[provider]
+                result = send_fn(
                     recipient_email, recipient_name,
                     rendered["subject"], rendered["body_html"], rendered["body_text"],
                 )
                 with get_db() as db:
                     db.execute(
                         """UPDATE email_send_log SET
-                           status='sent', provider_message_id=?, sent_at=?
+                           status='sent', provider=?, provider_message_id=?, sent_at=?
                            WHERE id=?""",
-                        (result.get("message_id", ""), now, log_id),
+                        (provider, result.get("message_id", ""), now, log_id),
                     )
-                logger.info(f"Email sent via SendGrid to {recipient_email}: {rendered['subject']}")
-                return {"status": "sent", "log_id": log_id, "message_id": result.get("message_id")}
+                logger.info(f"Email sent via {provider} to {recipient_email}: {rendered['subject']}")
+                return {"status": "sent", "log_id": log_id, "provider": provider, "message_id": result.get("message_id")}
             except Exception as e:
                 error_msg = str(e)
                 with get_db() as db:
                     db.execute(
-                        "UPDATE email_send_log SET status='failed', error_message=? WHERE id=?",
-                        (error_msg, log_id),
+                        "UPDATE email_send_log SET status='failed', provider=?, error_message=? WHERE id=?",
+                        (provider, error_msg, log_id),
                     )
-                logger.error(f"SendGrid delivery failed: {error_msg}")
-                return {"status": "failed", "log_id": log_id, "error": error_msg}
+                logger.error(f"{provider} delivery failed: {error_msg}")
+                return {"status": "failed", "log_id": log_id, "provider": provider, "error": error_msg}
         else:
-            # No SendGrid key — store as logged only
+            # No provider configured — store as logged only
             with get_db() as db:
                 db.execute(
                     "UPDATE email_send_log SET status='logged', sent_at=? WHERE id=?",
@@ -882,8 +919,8 @@ class EmailTemplateService:
                     "to": [{"email": to_email, "name": to_name}],
                 }],
                 "from": {
-                    "email": SENDGRID_FROM_EMAIL,
-                    "name": SENDGRID_FROM_NAME,
+                    "email": FROM_EMAIL,
+                    "name": FROM_NAME,
                 },
                 "subject": subject,
                 "content": [
@@ -899,6 +936,63 @@ class EmailTemplateService:
             return {"message_id": message_id}
         else:
             raise Exception(f"SendGrid API error {response.status_code}: {response.text}")
+
+    @staticmethod
+    def _send_via_mailgun(
+        to_email: str, to_name: str,
+        subject: str, html_content: str, text_content: str,
+    ) -> dict:
+        """Send email via Mailgun API."""
+        import httpx
+
+        response = httpx.post(
+            f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
+            auth=("api", MAILGUN_API_KEY),
+            data={
+                "from": f"{FROM_NAME} <{FROM_EMAIL}>",
+                "to": [f"{to_name} <{to_email}>"],
+                "subject": subject,
+                "text": text_content or subject,
+                "html": html_content,
+            },
+            timeout=10,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            return {"message_id": data.get("id", "")}
+        else:
+            raise Exception(f"Mailgun API error {response.status_code}: {response.text}")
+
+    @staticmethod
+    def _send_via_resend(
+        to_email: str, to_name: str,
+        subject: str, html_content: str, text_content: str,
+    ) -> dict:
+        """Send email via Resend API."""
+        import httpx
+
+        response = httpx.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": f"{FROM_NAME} <{FROM_EMAIL}>",
+                "to": [to_email],
+                "subject": subject,
+                "html": html_content,
+                "text": text_content or subject,
+            },
+            timeout=10,
+        )
+
+        if response.status_code in (200, 201):
+            data = response.json()
+            return {"message_id": data.get("id", "")}
+        else:
+            raise Exception(f"Resend API error {response.status_code}: {response.text}")
 
     # ── Send Log ──────────────────────────────────────────────────────
 
@@ -928,5 +1022,6 @@ class EmailTemplateService:
                 "sent": dict(sent)["cnt"] if sent else 0,
                 "logged": dict(logged)["cnt"] if logged else 0,
                 "failed": dict(failed)["cnt"] if failed else 0,
-                "sendgrid_configured": bool(SENDGRID_API_KEY),
+                "provider": _detect_provider() or None,
+                "provider_configured": _provider_configured(),
             }
