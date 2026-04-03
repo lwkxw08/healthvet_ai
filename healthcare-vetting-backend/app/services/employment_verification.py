@@ -215,8 +215,9 @@ class EmploymentVerificationService:
                 (generate_id(), ver_id, json.dumps({"verifier_email": verifier_email}), now),
             )
 
-            # Simulate auto-completion (in production, verifier would click the link)
-            EmploymentVerificationService._simulate_verification_response(db, ver_id, token, candidate_id)
+            # In production the verifier uses the Verification Portal (/verify)
+            # to enter their code and submit a structured response.
+            # _simulate_verification_response() is retained for dev/demo seeding only.
 
             row = db.execute(
                 "SELECT * FROM employment_verifications WHERE id=?", (ver_id,)
