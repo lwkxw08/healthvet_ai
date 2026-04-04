@@ -819,6 +819,76 @@ def migrate_db():
         FOREIGN KEY (candidate_id) REFERENCES candidates(id)
     )""")
 
+    # ── 3.4 Audit Trail (tamper-evident hash chain) ──────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS audit_trail (
+        id TEXT PRIMARY KEY,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        actor_type TEXT DEFAULT 'user',
+        details TEXT,
+        ip_address TEXT,
+        prev_hash TEXT,
+        chain_hash TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    # Data access log for GDPR SAR compliance
+    cursor.execute("""CREATE TABLE IF NOT EXISTS data_access_log (
+        id TEXT PRIMARY KEY,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        accessor TEXT NOT NULL,
+        accessor_type TEXT DEFAULT 'user',
+        purpose TEXT,
+        ip_address TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    # ── 3.3 Webhook delivery enhancements ──────────────────────────────────────
+    # Add next_retry_at column to webhook_deliveries if not present
+    try:
+        wd_cols = {row[1] for row in cursor.execute("PRAGMA table_info(webhook_deliveries)").fetchall()}
+        if "next_retry_at" not in wd_cols:
+            cursor.execute("ALTER TABLE webhook_deliveries ADD COLUMN next_retry_at TEXT")
+    except Exception:
+        pass
+
+    # ── 3.5 Background Jobs (enhanced) ─────────────────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS background_jobs (
+        id TEXT PRIMARY KEY,
+        task_name TEXT NOT NULL,
+        args TEXT DEFAULT '[]',
+        kwargs TEXT DEFAULT '{}',
+        status TEXT DEFAULT 'queued',
+        priority INTEGER DEFAULT 5,
+        timeout_seconds INTEGER DEFAULT 180,
+        max_retries INTEGER DEFAULT 3,
+        attempt INTEGER DEFAULT 0,
+        celery_task_id TEXT,
+        result TEXT,
+        error TEXT,
+        scheduled_at TEXT,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    # ── 3.2 Scheduled reports ──────────────────────────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS scheduled_reports (
+        id TEXT PRIMARY KEY,
+        agency_id TEXT NOT NULL,
+        report_type TEXT NOT NULL,
+        frequency TEXT DEFAULT 'weekly',
+        recipients TEXT DEFAULT '[]',
+        last_sent_at TEXT,
+        next_send_at TEXT,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (agency_id) REFERENCES agencies(id)
+    )""")
+
     # Seed default admin user if admin_users table is empty
     admin_count = cursor.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0]
     if admin_count == 0:

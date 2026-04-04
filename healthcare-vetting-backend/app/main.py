@@ -26,6 +26,10 @@ from app.routes import email_rules
 from app.routes import email_config
 from app.routes import verification_portal
 from app.routes import candidate_portal
+from app.routes import analytics
+from app.routes import webhook_management
+from app.routes import audit_trail
+from app.routes import job_monitor
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.agency_scope import AgencyScopeMiddleware
@@ -90,6 +94,10 @@ app.include_router(email_rules.router)
 app.include_router(email_config.router)
 app.include_router(verification_portal.router)
 app.include_router(candidate_portal.router)
+app.include_router(analytics.router)
+app.include_router(webhook_management.router)
+app.include_router(audit_trail.router)
+app.include_router(job_monitor.router)
 
 
 @app.on_event("startup")

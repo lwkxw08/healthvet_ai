@@ -702,6 +702,108 @@ export const emailConfigApi = {
     apiRequest<Record<string, unknown>>("/api/admin/email-config/trust", { method: "PUT", body: data, token }),
 };
 
+// Analytics & Reporting API (3.2)
+export const analyticsApi = {
+  getKpis: (token: string, agencyId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/analytics/kpis/${agencyId}`, { token }),
+  getTimeToClear: (token: string, agencyId?: string) => {
+    const qs = agencyId ? `?agency_id=${agencyId}` : "";
+    return apiRequest<Record<string, unknown>>(`/api/analytics/time-to-clear${qs}`, { token });
+  },
+  getResponseRates: (token: string, agencyId?: string) => {
+    const qs = agencyId ? `?agency_id=${agencyId}` : "";
+    return apiRequest<Record<string, unknown>>(`/api/analytics/response-rates${qs}`, { token });
+  },
+  getExpiryForecast: (token: string, agencyId?: string, daysAhead?: number) => {
+    const qs = new URLSearchParams();
+    if (agencyId) qs.set("agency_id", agencyId);
+    if (daysAhead) qs.set("days_ahead", String(daysAhead));
+    return apiRequest<Record<string, unknown>>(`/api/analytics/expiry-forecast?${qs.toString()}`, { token });
+  },
+  getCheckVolumeTrend: (token: string, agencyId?: string, months?: number) => {
+    const qs = new URLSearchParams();
+    if (agencyId) qs.set("agency_id", agencyId);
+    if (months) qs.set("months", String(months));
+    return apiRequest<Record<string, unknown>[]>(`/api/analytics/check-volume-trend?${qs.toString()}`, { token });
+  },
+  exportComplianceCsv: (token: string, agencyId?: string) => {
+    const qs = agencyId ? `?agency_id=${agencyId}` : "";
+    return apiRequest<{ csv: string }>(`/api/analytics/export/compliance-csv${qs}`, { token });
+  },
+  getScheduledReports: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/analytics/scheduled-reports", { token }),
+  createScheduledReport: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/analytics/scheduled-reports", { method: "POST", body: data, token }),
+  deleteScheduledReport: (token: string, reportId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/analytics/scheduled-reports/${reportId}`, { method: "DELETE", token }),
+  getAdminOverview: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/analytics/admin/overview", { token }),
+};
+
+// Webhook Management API (3.3)
+export const webhookManagementApi = {
+  getDashboard: (token: string, agencyId?: string) => {
+    const qs = agencyId ? `?agency_id=${agencyId}` : "";
+    return apiRequest<Record<string, unknown>>(`/api/webhook-management/dashboard${qs}`, { token });
+  },
+  getFailed: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/webhook-management/failed", { token }),
+  retryDelivery: (token: string, deliveryId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/webhook-management/retry/${deliveryId}`, { method: "POST", token }),
+  replayDelivery: (token: string, deliveryId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/webhook-management/replay/${deliveryId}`, { method: "POST", token }),
+  processRetries: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/webhook-management/process-retries", { method: "POST", token }),
+};
+
+// Audit Trail API (3.4)
+export const auditTrailApi = {
+  getLog: (token: string, params?: Record<string, string>) => {
+    const qs = new URLSearchParams(params || {});
+    return apiRequest<Record<string, unknown>>(`/api/audit-trail/log?${qs.toString()}`, { token });
+  },
+  verifyIntegrity: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/audit-trail/verify-integrity", { token }),
+  getDataAccessLog: (token: string, params?: Record<string, string>) => {
+    const qs = new URLSearchParams(params || {});
+    return apiRequest<Record<string, unknown>>(`/api/audit-trail/data-access-log?${qs.toString()}`, { token });
+  },
+  exportCqc: (token: string, params?: Record<string, string>) => {
+    const qs = new URLSearchParams(params || {});
+    return apiRequest<Record<string, unknown>>(`/api/audit-trail/export/cqc?${qs.toString()}`, { token });
+  },
+  downloadCqcCsv: (token: string, params?: Record<string, string>) => {
+    const qs = new URLSearchParams(params || {});
+    return apiRequest<string>(`/api/audit-trail/export/cqc/download?${qs.toString()}`, { token });
+  },
+  getSarReport: (token: string, candidateEmail: string) =>
+    apiRequest<Record<string, unknown>>(`/api/audit-trail/sar/${encodeURIComponent(candidateEmail)}`, { token }),
+  getRetentionReport: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/audit-trail/retention-report", { token }),
+};
+
+// Job Monitor API (3.5)
+export const jobMonitorApi = {
+  getDashboard: (token: string, params?: Record<string, string>) => {
+    const qs = new URLSearchParams(params || {});
+    return apiRequest<Record<string, unknown>>(`/api/jobs/dashboard?${qs.toString()}`, { token });
+  },
+  getJobStatus: (token: string, jobId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/jobs/status/${jobId}`, { token }),
+  getDeadLetter: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/jobs/dead-letter", { token }),
+  retryDeadLetter: (token: string, jobId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/jobs/dead-letter/${jobId}/retry`, { method: "POST", token }),
+  cancelJob: (token: string, jobId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/jobs/cancel/${jobId}`, { method: "POST", token }),
+  getWorkers: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/jobs/workers", { token }),
+  cleanup: (token: string, days?: number) =>
+    apiRequest<Record<string, unknown>>("/api/jobs/cleanup", { method: "POST", body: days ? { days } : undefined, token }),
+  submitJob: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/jobs/submit", { method: "POST", body: data, token }),
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   getVettingPricing: (token: string) =>

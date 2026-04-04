@@ -6,6 +6,10 @@ import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
 import EmailTemplatesPanel from "./EmailTemplatesPanel";
 import EmailRulesPanel from "./EmailRulesPanel";
 import EmailConfigPanel from "./EmailConfigPanel";
+import AnalyticsDashboard from "./AnalyticsDashboard";
+import WebhookDeliveryDashboard from "./WebhookDeliveryDashboard";
+import AuditReportingPanel from "./AuditReportingPanel";
+import BackgroundJobsMonitor from "./BackgroundJobsMonitor";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
@@ -14,7 +18,7 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type MainTab = "overview" | "candidates" | "agencies" | "compliance" | "user-management" | "audit-logs" | "settings" | "lead-generation";
+type MainTab = "overview" | "candidates" | "agencies" | "compliance" | "user-management" | "audit-logs" | "settings" | "lead-generation" | "operations";
 type SubTab = string;
 
 export default function AdminPanel() {
@@ -49,6 +53,13 @@ export default function AdminPanel() {
       return "user-management";
     }
     if (mainTab === "lead-generation") return "lead-generation";
+    if (mainTab === "operations") {
+      if (subTab === "analytics-dashboard") return "analytics-dashboard";
+      if (subTab === "webhook-dashboard") return "webhook-dashboard";
+      if (subTab === "audit-reporting") return "audit-reporting";
+      if (subTab === "jobs-monitor") return "jobs-monitor";
+      return "analytics-dashboard";
+    }
     return mainTab;
   })();
 
@@ -64,6 +75,7 @@ export default function AdminPanel() {
       "audit-logs": "logs",
       "settings": "pricing",
       "lead-generation": "scrape",
+      "operations": "analytics-dashboard",
     };
     setSubTab(defaults[mt]);
   };
@@ -956,6 +968,7 @@ export default function AdminPanel() {
             { key: "compliance" as MainTab, label: "Compliance", icon: <ShieldAlert size={16} /> },
             { key: "user-management" as MainTab, label: "User Management", icon: <UserPlus size={16} /> },
             { key: "audit-logs" as MainTab, label: "Audit Logs", icon: <History size={16} /> },
+            { key: "operations" as MainTab, label: "Operations", icon: <Play size={16} /> },
             { key: "lead-generation" as MainTab, label: "Lead Generation", icon: <Zap size={16} /> },
             { key: "settings" as MainTab, label: "Settings", icon: <Settings size={16} /> },
           ]).map((item) => (
@@ -1028,6 +1041,18 @@ export default function AdminPanel() {
           </div>
         </div>
       )}
+      {mainTab === "operations" && (
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
+          <div className="flex gap-1">
+            {[{ key: "analytics-dashboard", label: "Analytics & Reporting" }, { key: "webhook-dashboard", label: "Webhook Delivery" }, { key: "audit-reporting", label: "Audit Trail & Compliance" }, { key: "jobs-monitor", label: "Background Jobs" }].map((s) => (
+              <button key={s.key} onClick={() => setSubTab(s.key)}
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <main className="p-6">
         {/* Lead Generation Tab */}
@@ -1044,6 +1069,12 @@ export default function AdminPanel() {
 
         {/* Email Config Sub-tab under Settings */}
         {mainTab === "settings" && subTab === "email-config" && <EmailConfigPanel />}
+
+        {/* Operations Tab — 3.2, 3.3, 3.4, 3.5 */}
+        {mainTab === "operations" && subTab === "analytics-dashboard" && <AnalyticsDashboard />}
+        {mainTab === "operations" && subTab === "webhook-dashboard" && <WebhookDeliveryDashboard />}
+        {mainTab === "operations" && subTab === "audit-reporting" && <AuditReportingPanel />}
+        {mainTab === "operations" && subTab === "jobs-monitor" && <BackgroundJobsMonitor />}
 
         {/* Overview Tab */}
         {tab === "overview" && stats && (
