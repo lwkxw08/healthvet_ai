@@ -10,6 +10,7 @@ import AnalyticsDashboard from "./AnalyticsDashboard";
 import WebhookDeliveryDashboard from "./WebhookDeliveryDashboard";
 import AuditReportingPanel from "./AuditReportingPanel";
 import BackgroundJobsMonitor from "./BackgroundJobsMonitor";
+import PaymentProvidersPanel from "./PaymentProvidersPanel";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
@@ -1020,7 +1021,7 @@ export default function AdminPanel() {
       {mainTab === "settings" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "alerts-config", label: "Alert Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }].map((s) => (
+            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "alerts-config", label: "Alert Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -1069,6 +1070,9 @@ export default function AdminPanel() {
 
         {/* Email Config Sub-tab under Settings */}
         {mainTab === "settings" && subTab === "email-config" && <EmailConfigPanel />}
+
+        {/* Payment Providers Sub-tab under Settings */}
+        {mainTab === "settings" && subTab === "payment-providers" && <PaymentProvidersPanel />}
 
         {/* Operations Tab — 3.2, 3.3, 3.4, 3.5 */}
         {mainTab === "operations" && subTab === "analytics-dashboard" && <AnalyticsDashboard />}

@@ -698,12 +698,12 @@ class BillingService:
 
             return BillingService.get_agency_billing_mode(agency_id)
 
-    # -- Stripe PAYG Checkout --
+    # -- Payment Checkout (routes through configured provider) --
 
     @staticmethod
     def create_checkout_session(agency_id: str, invoice_id: str, success_url: str, cancel_url: str) -> dict:
-        """Create a Stripe checkout session for paying an invoice.
-        In production, this calls Stripe API. Currently simulated with a session ID."""
+        """Create a checkout session using the admin-configured payment provider.
+        Falls back to simulation if no provider is configured."""
         import secrets as _secrets
         now = datetime.now(timezone.utc).isoformat()
 
@@ -716,23 +716,51 @@ class BillingService:
             if invoice["status"] == "paid":
                 raise ValueError("Invoice is already paid")
 
-            # Generate a simulated Stripe checkout session ID
-            # In production: stripe.checkout.Session.create(...)
-            session_id = f"cs_simulated_{_secrets.token_hex(16)}"
+            amount = invoice.get("adjusted_amount") or invoice["sell_amount"]
 
+            # Try to use the configured payment provider
+            try:
+                from app.services.payment_providers import PaymentProviderService
+                result = PaymentProviderService.create_checkout(
+                    agency_id=agency_id,
+                    invoice_id=invoice_id,
+                    amount=float(amount),
+                    payment_type="payg_invoice",
+                    description=invoice.get("description") or "Invoice Payment",
+                    success_url=success_url,
+                    cancel_url=cancel_url,
+                )
+                # Update invoice with provider session info
+                db.execute(
+                    "UPDATE invoices SET stripe_session_id=?, payment_method=? WHERE id=?",
+                    (result.get("payment_id", ""), result.get("provider", "stripe"), invoice_id),
+                )
+                return {
+                    "session_id": result.get("payment_id"),
+                    "invoice_id": invoice_id,
+                    "amount": amount,
+                    "checkout_url": result.get("checkout_url"),
+                    "provider": result.get("provider"),
+                    "status": "created",
+                }
+            except (ValueError, ImportError):
+                # No provider configured — fall back to simulation
+                pass
+
+            # Simulated fallback
+            session_id = f"cs_simulated_{_secrets.token_hex(16)}"
             db.execute(
                 "UPDATE invoices SET stripe_session_id=?, payment_method='stripe' WHERE id=?",
                 (session_id, invoice_id),
             )
-
-            # Simulated checkout URL (in production, Stripe returns the real URL)
             checkout_url = f"{success_url}?session_id={session_id}&invoice_id={invoice_id}"
 
             return {
                 "session_id": session_id,
                 "invoice_id": invoice_id,
-                "amount": invoice.get("adjusted_amount") or invoice["sell_amount"],
+                "amount": amount,
                 "checkout_url": checkout_url,
+                "provider": "simulated",
                 "status": "created",
             }
 
@@ -767,8 +795,8 @@ class BillingService:
 
     @staticmethod
     def pay_invoice_online(invoice_id: str) -> dict:
-        """Agency pays an invoice online (simulated Stripe payment).
-        Used for the 'Pay Now' button in billing history."""
+        """Agency pays an invoice online using the configured payment provider.
+        Falls back to simulation if no provider is configured."""
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
@@ -780,7 +808,32 @@ class BillingService:
             if invoice["status"] == "paid":
                 return {"invoice_id": invoice_id, "status": "already_paid", "message": "Invoice is already paid"}
 
-            # Simulate Stripe payment processing
+            amount = invoice.get("adjusted_amount") or invoice["sell_amount"]
+
+            # Try configured provider first
+            try:
+                from app.services.payment_providers import PaymentProviderService
+                result = PaymentProviderService.create_checkout(
+                    agency_id=invoice["agency_id"],
+                    invoice_id=invoice_id,
+                    amount=float(amount),
+                    payment_type="payg_invoice",
+                    description=invoice.get("description") or "Invoice Payment",
+                    success_url="https://healthvet.ai/payment/success",
+                    cancel_url="https://healthvet.ai/payment/cancel",
+                )
+                return {
+                    "invoice_id": invoice_id,
+                    "status": "checkout_created",
+                    "checkout_url": result.get("checkout_url"),
+                    "provider": result.get("provider"),
+                    "amount": amount,
+                    "message": f"Checkout session created via {result.get('provider', 'provider')}",
+                }
+            except (ValueError, ImportError):
+                pass
+
+            # Simulated fallback
             import secrets as _secrets
             payment_intent = f"pi_simulated_{_secrets.token_hex(8)}"
 
@@ -794,8 +847,9 @@ class BillingService:
                 "status": "paid",
                 "paid_at": now,
                 "payment_intent": payment_intent,
-                "amount": invoice.get("adjusted_amount") or invoice["sell_amount"],
-                "message": "Payment processed successfully",
+                "provider": "simulated",
+                "amount": amount,
+                "message": "Payment processed (simulated — no provider configured)",
             }
 
     # -- Payment Reminders --

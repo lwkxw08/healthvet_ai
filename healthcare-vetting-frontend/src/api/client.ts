@@ -804,6 +804,26 @@ export const jobMonitorApi = {
     apiRequest<Record<string, unknown>>("/api/jobs/submit", { method: "POST", body: data, token }),
 };
 
+// Payment Providers API (1.2)
+export const paymentProvidersApi = {
+  getProviders: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/payment-providers", { token }),
+  connectProvider: (token: string, data: { provider: string; api_key: string; api_secret?: string; webhook_secret?: string; environment?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/admin/payment-providers/connect", { method: "POST", body: data, token }),
+  disconnectProvider: (token: string, provider: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/payment-providers/disconnect/${provider}`, { method: "POST", token }),
+  testProvider: (token: string, provider: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/payment-providers/test/${provider}`, { method: "POST", token }),
+  getRouting: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/payment-providers/routing", { token }),
+  updateRouting: (token: string, data: { payment_type: string; provider: string | null; fallback_provider?: string | null }) =>
+    apiRequest<Record<string, unknown>>("/api/admin/payment-providers/routing", { method: "PUT", body: data, token }),
+  getTransactions: (token: string, agencyId?: string) => {
+    const qs = agencyId ? `?agency_id=${agencyId}` : "";
+    return apiRequest<Record<string, unknown>[]>(`/api/admin/payment-providers/transactions${qs}`, { token });
+  },
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   getVettingPricing: (token: string) =>

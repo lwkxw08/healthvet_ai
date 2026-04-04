@@ -889,6 +889,86 @@ def migrate_db():
         FOREIGN KEY (agency_id) REFERENCES agencies(id)
     )""")
 
+    # ── 1.2 Payment Provider Configuration ─────────────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS payment_provider_config (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        is_enabled INTEGER DEFAULT 0,
+        api_key_set INTEGER DEFAULT 0,
+        api_key_encrypted TEXT,
+        api_secret_encrypted TEXT,
+        webhook_secret TEXT,
+        environment TEXT DEFAULT 'sandbox',
+        account_id TEXT,
+        account_name TEXT,
+        currency TEXT DEFAULT 'GBP',
+        config_json TEXT DEFAULT '{}',
+        last_tested_at TEXT,
+        test_status TEXT,
+        connected_at TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS payment_routing (
+        id TEXT PRIMARY KEY,
+        payment_type TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        provider TEXT,
+        fallback_provider TEXT,
+        is_enabled INTEGER DEFAULT 1,
+        description TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS payment_transactions (
+        id TEXT PRIMARY KEY,
+        agency_id TEXT NOT NULL,
+        invoice_id TEXT,
+        provider TEXT NOT NULL,
+        payment_type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        currency TEXT DEFAULT 'GBP',
+        status TEXT DEFAULT 'pending',
+        provider_payment_id TEXT,
+        provider_customer_id TEXT,
+        provider_session_url TEXT,
+        error_message TEXT,
+        metadata_json TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT,
+        FOREIGN KEY (agency_id) REFERENCES agencies(id)
+    )""")
+
+    # Seed default payment routing if empty
+    routing_count = cursor.execute("SELECT COUNT(*) FROM payment_routing").fetchone()[0]
+    if routing_count == 0:
+        from app.utils.auth import generate_id as _gen_id
+        default_routes = [
+            ("credit_pack_purchase", "Credit Pack Purchases", "Card payments for credit pack top-ups"),
+            ("payg_invoice", "Pay-As-You-Go Invoices", "One-off invoice payments for individual checks"),
+            ("subscription_recurring", "Recurring Subscriptions", "Automatic monthly/annual subscription billing"),
+            ("direct_debit", "Direct Debit Collections", "Recurring direct debit mandate payments"),
+            ("refund", "Refunds", "Refund processing back to original payment method"),
+        ]
+        for ptype, label, desc in default_routes:
+            cursor.execute(
+                """INSERT INTO payment_routing (id, payment_type, label, description)
+                   VALUES (?, ?, ?, ?)""",
+                (_gen_id(), ptype, label, desc),
+            )
+
+    # Seed default provider entries if empty
+    ppc_count = cursor.execute("SELECT COUNT(*) FROM payment_provider_config").fetchone()[0]
+    if ppc_count == 0:
+        from app.utils.auth import generate_id as _gen_id2
+        for provider, name in [("stripe", "Stripe"), ("gocardless", "GoCardless")]:
+            cursor.execute(
+                """INSERT INTO payment_provider_config (id, provider, display_name)
+                   VALUES (?, ?, ?)""",
+                (_gen_id2(), provider, name),
+            )
+
     # Seed default admin user if admin_users table is empty
     admin_count = cursor.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0]
     if admin_count == 0:
