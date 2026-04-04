@@ -69,6 +69,8 @@ export default function CandidatePortal() {
   const [addingEntry, setAddingEntry] = useState(false);
   const [newEntry, setNewEntry] = useState({ employer_name: "", job_title: "", start_date: "", end_date: "", reason_for_leaving: "" });
   const [verifierForm, setVerifierForm] = useState<Record<string, { name: string; email: string; job_title: string }>>({});
+  const [empConfirmPriorNotice, setEmpConfirmPriorNotice] = useState<Record<string, boolean>>({});
+  const [refConfirmPriorNotice, setRefConfirmPriorNotice] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!token || !userId) return;
@@ -1250,12 +1252,13 @@ export default function CandidatePortal() {
 
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <p className="text-slate-300 text-sm mb-2">
-                  Verify your employment history from the past 5 years. Entries are pre-filled from your CV analysis.
-                  For each role, add the contact details of someone who can confirm your job title, dates, and reason for leaving.
+                  Add your employment history from the past 5 years and provide contact details for someone at each employer
+                  who can confirm your role. Once you confirm you have notified your verifier, the system will automatically
+                  send a structured verification request on your behalf.
                 </p>
                 <p className="text-slate-400 text-xs">
-                  Verification requests are sent and managed the same way as references — with domain verification,
-                  fraud detection, and automated reminders.
+                  Your agency will be able to view verification progress but does not need to take any action — the process
+                  is fully automated with domain verification, fraud detection, and auto-reminders.
                 </p>
               </div>
 
@@ -1413,9 +1416,9 @@ export default function CandidatePortal() {
                         {!hasVerification && (
                           <div className="mt-3 p-3 bg-slate-700/30 border border-slate-600/50 rounded-lg">
                             <p className="text-slate-400 text-xs mb-2 font-medium">
-                              Add verifier details — someone from this employer who can confirm your role:
+                              Provide the contact details of someone at this employer who can confirm your role:
                             </p>
-                            <div className="grid grid-cols-3 gap-2 mb-2">
+                            <div className="grid grid-cols-3 gap-2 mb-3">
                               <input type="text" placeholder="Verifier name *" value={vf.name}
                                 onChange={(e) => setVerifierForm({ ...verifierForm, [entryId]: { ...vf, name: e.target.value } })}
                                 className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1426,10 +1429,22 @@ export default function CandidatePortal() {
                                 onChange={(e) => setVerifierForm({ ...verifierForm, [entryId]: { ...vf, job_title: e.target.value } })}
                                 className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
                             </div>
-                            <button onClick={() => sendEmploymentVerification(entryId)} disabled={loading || !vf.name || !vf.email}
+                            <label className="flex items-start gap-2 mb-3 cursor-pointer">
+                              <input type="checkbox" checked={empConfirmPriorNotice[entryId] || false}
+                                onChange={(e) => setEmpConfirmPriorNotice({ ...empConfirmPriorNotice, [entryId]: e.target.checked })}
+                                className="mt-0.5 rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-blue-500" />
+                              <span className="text-xs text-slate-300">
+                                I confirm that I have notified <strong className="text-white">{vf.name || "the verifier"}</strong> that they will receive
+                                a verification request regarding my employment at <strong className="text-white">{entry.employer_name as string}</strong>.
+                              </span>
+                            </label>
+                            <button onClick={() => sendEmploymentVerification(entryId)} disabled={loading || !vf.name || !vf.email || !empConfirmPriorNotice[entryId]}
                               className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-4 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1">
                               <Send size={12} /> {loading ? "Sending..." : "Send Verification Request"}
                             </button>
+                            {!empConfirmPriorNotice[entryId] && vf.name && vf.email && (
+                              <p className="text-amber-400 text-xs mt-1.5">Please confirm you have notified your verifier before sending.</p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1502,26 +1517,43 @@ export default function CandidatePortal() {
           {/* References Tab */}
           {tab === "references" && (
             <div className="space-y-6">
-              <h2 className="text-xl font-bold text-white">Automated References</h2>
+              <h2 className="text-xl font-bold text-white">Personal References</h2>
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <p className="text-slate-300 text-sm mb-4">
-                  Secure reference links sent to employers. Includes AI sentiment analysis,
-                  fraud detection (IP matching, domain verification), and auto-reminders.
+                <p className="text-slate-300 text-sm mb-2">
+                  Provide the details of your referees below. Once you confirm you have notified them, the system
+                  will automatically send a secure reference request on your behalf. Your agency can view the results
+                  but does not need to take any action.
+                </p>
+                <p className="text-slate-400 text-xs mb-4">
+                  Referees will receive a link to a secure portal where they can complete a structured reference form.
+                  Responses are analysed for sentiment and checked for fraud automatically.
                 </p>
                 <div className="grid grid-cols-2 gap-3 mb-3">
-                  <input type="text" placeholder="Referee name" value={refName} onChange={(e) => setRefName(e.target.value)}
+                  <input type="text" placeholder="Referee name *" value={refName} onChange={(e) => setRefName(e.target.value)}
                     className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="email" placeholder="Referee email" value={refEmail} onChange={(e) => setRefEmail(e.target.value)}
+                  <input type="email" placeholder="Referee email *" value={refEmail} onChange={(e) => setRefEmail(e.target.value)}
                     className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   <input type="text" placeholder="Organisation" value={refOrg} onChange={(e) => setRefOrg(e.target.value)}
                     className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   <input type="text" placeholder="Job title" value={refTitle} onChange={(e) => setRefTitle(e.target.value)}
                     className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
-                <button onClick={createReference} disabled={loading || !refName || !refEmail}
+                <label className="flex items-start gap-2 mb-3 cursor-pointer">
+                  <input type="checkbox" checked={refConfirmPriorNotice}
+                    onChange={(e) => setRefConfirmPriorNotice(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-blue-500" />
+                  <span className="text-xs text-slate-300">
+                    I confirm that I have notified <strong className="text-white">{refName || "the referee"}</strong> that they will receive
+                    a reference request on my behalf{refOrg ? ` regarding my time at ${refOrg}` : ""}.
+                  </span>
+                </label>
+                <button onClick={() => { createReference(); setRefConfirmPriorNotice(false); }} disabled={loading || !refName || !refEmail || !refConfirmPriorNotice}
                   className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-6 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
                   <Send size={16} /> {loading ? "Sending..." : "Send Reference Request"}
                 </button>
+                {!refConfirmPriorNotice && refName && refEmail && (
+                  <p className="text-amber-400 text-xs mt-1.5">Please confirm you have notified your referee before sending.</p>
+                )}
               </div>
 
               {references.length > 0 && (
