@@ -293,47 +293,78 @@ export default function AnalyticsDashboard({ agencyId }: AnalyticsDashboardProps
               <option value={180}>180 days</option>
             </select>
           </div>
-          {expiryForecast && (
-            <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {(expiryForecast.summary as Record<string, unknown>[])?.map((s: Record<string, unknown>) => (
-                  <div key={String(s.type)} className="bg-white border rounded-lg p-4">
-                    <div className="text-sm text-gray-500 capitalize">{String(s.type).replace(/_/g, " ")}</div>
-                    <div className={`text-2xl font-bold ${Number(s.count) > 0 ? "text-orange-600" : "text-gray-400"}`}>{String(s.count)}</div>
-                    <div className="text-xs text-gray-400">expiring in {forecastDays} days</div>
-                  </div>
-                ))}
-              </div>
-              {(expiryForecast.forecasts as Record<string, unknown>[])?.length > 0 && (
-                <div className="bg-white border rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="text-left px-3 py-2">Type</th>
-                        <th className="text-left px-3 py-2">Candidate</th>
-                        <th className="text-left px-3 py-2">Expires</th>
-                        <th className="text-left px-3 py-2">Days Left</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {(expiryForecast.forecasts as Record<string, unknown>[])?.map((f: Record<string, unknown>, i: number) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-3 py-2 capitalize">{String(f.type).replace(/_/g, " ")}</td>
-                          <td className="px-3 py-2">{String(f.candidate_id ?? "").slice(0, 8)}</td>
-                          <td className="px-3 py-2">{String(f.expiry_date ?? "")}</td>
-                          <td className="px-3 py-2">
-                            <span className={`font-medium ${Number(f.days_until_expiry) <= 14 ? "text-red-600" : Number(f.days_until_expiry) <= 30 ? "text-orange-600" : "text-green-600"}`}>
-                              {String(f.days_until_expiry)}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+          {expiryForecast && (() => {
+            // summary can be an object {visa: N, dbs: N, ...} or an array
+            const rawSummary = expiryForecast.summary;
+            const summaryEntries: { type: string; count: number }[] = Array.isArray(rawSummary)
+              ? (rawSummary as Record<string, unknown>[]).map(s => ({ type: String(s.type), count: Number(s.count ?? 0) }))
+              : typeof rawSummary === "object" && rawSummary
+                ? Object.entries(rawSummary as Record<string, unknown>)
+                    .filter(([k]) => k !== "total")
+                    .map(([k, v]) => ({ type: k, count: Number(v ?? 0) }))
+                : [];
+
+            // forecasts can be a flat array or an object grouped by type {visa: [...], dbs: [...]}
+            const rawForecasts = expiryForecast.forecasts;
+            const flatForecasts: Record<string, unknown>[] = Array.isArray(rawForecasts)
+              ? rawForecasts
+              : typeof rawForecasts === "object" && rawForecasts
+                ? Object.entries(rawForecasts as Record<string, unknown[]>).flatMap(([type, items]) =>
+                    (items || []).map((item: unknown) => ({ ...(item as Record<string, unknown>), type }))
+                  )
+                : [];
+
+            return (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {summaryEntries.map(s => (
+                    <div key={s.type} className="bg-white border rounded-lg p-4">
+                      <div className="text-sm text-gray-500 capitalize">{s.type.replace(/_/g, " ")}</div>
+                      <div className={`text-2xl font-bold ${s.count > 0 ? "text-orange-600" : "text-gray-400"}`}>{s.count}</div>
+                      <div className="text-xs text-gray-400">expiring in {forecastDays} days</div>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </>
-          )}
+                {flatForecasts.length > 0 && (
+                  <div className="bg-white border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-3 py-2">Type</th>
+                          <th className="text-left px-3 py-2">Candidate</th>
+                          <th className="text-left px-3 py-2">Expires</th>
+                          <th className="text-left px-3 py-2">Days Left</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {flatForecasts.map((f, i) => {
+                          const expiryStr = String(f.expiry ?? f.expiry_date ?? "");
+                          const daysLeft = f.days_until_expiry != null
+                            ? Number(f.days_until_expiry)
+                            : expiryStr ? Math.ceil((new Date(expiryStr).getTime() - Date.now()) / 86400000) : 0;
+                          return (
+                            <tr key={i} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 capitalize">{String(f.type ?? "").replace(/_/g, " ")}</td>
+                              <td className="px-3 py-2">{String(f.name ?? f.candidate_id ?? "").slice(0, 30)}</td>
+                              <td className="px-3 py-2">{expiryStr ? new Date(expiryStr).toLocaleDateString() : ""}</td>
+                              <td className="px-3 py-2">
+                                <span className={`font-medium ${daysLeft <= 14 ? "text-red-600" : daysLeft <= 30 ? "text-orange-600" : "text-green-600"}`}>
+                                  {daysLeft}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {flatForecasts.length === 0 && summaryEntries.every(s => s.count === 0) && (
+                  <div className="text-center py-8 text-gray-400">No upcoming expiries in the next {forecastDays} days</div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

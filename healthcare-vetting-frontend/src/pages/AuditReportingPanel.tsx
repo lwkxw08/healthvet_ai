@@ -160,7 +160,7 @@ export default function AuditReportingPanel() {
 
           {auditLog && (
             <>
-              <div className="text-sm text-gray-500">Showing {String((auditLog.logs as Record<string, unknown>[])?.length ?? 0)} of {String(auditLog.total ?? 0)} entries</div>
+              <div className="text-sm text-gray-500">Showing {String(((auditLog.items ?? auditLog.logs) as Record<string, unknown>[])?.length ?? 0)} of {String(auditLog.total ?? 0)} entries</div>
               <div className="bg-white border rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50">
@@ -174,7 +174,7 @@ export default function AuditReportingPanel() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {((auditLog.logs as Record<string, unknown>[]) || []).map((log: Record<string, unknown>) => (
+                    {(((auditLog.items ?? auditLog.logs) as Record<string, unknown>[]) || []).map((log: Record<string, unknown>) => (
                       <tr key={String(log.id)} className="hover:bg-gray-50">
                         <td className="px-3 py-2 text-xs text-gray-500">{String(log.created_at ?? "")}</td>
                         <td className="px-3 py-2">
@@ -195,7 +195,7 @@ export default function AuditReportingPanel() {
                         <td className="px-3 py-2 font-mono text-xs text-gray-400">{String(log.chain_hash ?? "").slice(0, 12)}...</td>
                       </tr>
                     ))}
-                    {((auditLog.logs as Record<string, unknown>[]) || []).length === 0 && (
+                    {(((auditLog.items ?? auditLog.logs) as Record<string, unknown>[]) || []).length === 0 && (
                       <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">No audit logs found</td></tr>
                     )}
                   </tbody>
@@ -214,6 +214,12 @@ export default function AuditReportingPanel() {
               <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-green-700 mb-2">Audit Chain Intact</h3>
               <p className="text-gray-500">All {String(integrityResult.verified ?? 0)} log entries verified. No tampering detected.</p>
+            </>
+          ) : integrityResult.status === "empty" ? (
+            <>
+              <Shield className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-600 mb-2">Audit Trail Empty</h3>
+              <p className="text-gray-500">No audit log entries have been recorded yet. The chain integrity check will verify entries once audit events are generated.</p>
             </>
           ) : (
             <>
@@ -245,7 +251,7 @@ export default function AuditReportingPanel() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {((dataAccessLog.logs as Record<string, unknown>[]) || []).map((log: Record<string, unknown>) => (
+              {(((dataAccessLog.items ?? dataAccessLog.logs) as Record<string, unknown>[]) || []).map((log: Record<string, unknown>) => (
                 <tr key={String(log.id)} className="hover:bg-gray-50">
                   <td className="px-3 py-2 text-xs text-gray-500">{String(log.created_at ?? "")}</td>
                   <td className="px-3 py-2">
@@ -257,7 +263,7 @@ export default function AuditReportingPanel() {
                   <td className="px-3 py-2 text-xs text-gray-400">{String(log.ip_address ?? "N/A")}</td>
                 </tr>
               ))}
-              {((dataAccessLog.logs as Record<string, unknown>[]) || []).length === 0 && (
+              {(((dataAccessLog.items ?? dataAccessLog.logs) as Record<string, unknown>[]) || []).length === 0 && (
                 <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">No data access logs found</td></tr>
               )}
             </tbody>

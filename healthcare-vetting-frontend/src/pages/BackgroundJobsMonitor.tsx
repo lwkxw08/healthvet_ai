@@ -93,7 +93,7 @@ export default function BackgroundJobsMonitor() {
     finally { setCleaningUp(false); }
   };
 
-  const summary = jobDashboard?.summary as Record<string, unknown> | undefined;
+  const summary = (jobDashboard?.stats ?? jobDashboard?.summary) as Record<string, unknown> | undefined;
 
   const statusColors: Record<string, string> = {
     queued: "bg-gray-100 text-gray-700",
