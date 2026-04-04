@@ -33,6 +33,9 @@ class Candidate(Base):
     status = Column(String, default="pending")
     compliance_score = Column(Float, default=0.0)
     compliance_status = Column(String, default="incomplete")
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(String)
+    last_login_at = Column(String)
     created_at = Column(String)
     updated_at = Column(String)
 
@@ -51,6 +54,9 @@ class Agency(Base):
     discount_percent = Column(Float, default=0)
     billing_mode = Column(String, default="manual_invoicing")
     stripe_customer_id = Column(String)
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(String)
+    last_login_at = Column(String)
     created_at = Column(String)
 
 
@@ -570,3 +576,85 @@ class ActiveSession(Base):
     created_at = Column(String, nullable=False)
     last_active_at = Column(String, nullable=False)
     expires_at = Column(String, nullable=False)
+
+
+# ── 1.4 Auth & Security Hardening ─────────────────────────────────────────
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    id = Column(String, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    display_name = Column(String, nullable=False)
+    role = Column(String, default="admin")
+    is_active = Column(Integer, default=1)
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(String)
+    last_login_at = Column(String)
+    created_at = Column(String)
+    updated_at = Column(String)
+
+
+class LoginAttempt(Base):
+    __tablename__ = "login_attempts"
+
+    id = Column(String, primary_key=True)
+    email = Column(String, nullable=False)
+    user_type = Column(String, nullable=False)
+    ip_address = Column(String)
+    success = Column(Integer, nullable=False)
+    created_at = Column(String)
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False)
+    user_type = Column(String, nullable=False)
+    token_hash = Column(String, unique=True, nullable=False)
+    expires_at = Column(String, nullable=False)
+    used_at = Column(String)
+    created_at = Column(String)
+
+
+class TokenBlacklist(Base):
+    __tablename__ = "token_blacklist"
+
+    id = Column(String, primary_key=True)
+    token_jti = Column(String, unique=True, nullable=False)
+    user_id = Column(String, nullable=False)
+    expires_at = Column(String, nullable=False)
+    revoked_at = Column(String)
+
+
+# ── 2.3 Candidate Pre-Notification ────────────────────────────────────────
+
+class CandidatePreNotification(Base):
+    __tablename__ = "candidate_pre_notifications"
+
+    id = Column(String, primary_key=True)
+    candidate_id = Column(String, ForeignKey("candidates.id"), nullable=False)
+    verification_type = Column(String, nullable=False)
+    verifier_name = Column(String, nullable=False)
+    verifier_email = Column(String, nullable=False)
+    verifier_organisation = Column(String)
+    status = Column(String, default="pending")
+    sent_at = Column(String)
+    candidate_confirmed_at = Column(String)
+    verification_request_id = Column(String)
+    created_at = Column(String)
+
+
+class CandidateDocument(Base):
+    __tablename__ = "candidate_documents"
+
+    id = Column(String, primary_key=True)
+    candidate_id = Column(String, ForeignKey("candidates.id"), nullable=False)
+    document_type = Column(String, nullable=False)
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_size = Column(Integer)
+    description = Column(Text)
+    uploaded_at = Column(String)

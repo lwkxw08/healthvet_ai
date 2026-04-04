@@ -732,6 +732,107 @@ def migrate_db():
     except Exception:
         cursor.execute("ALTER TABLE references_ ADD COLUMN verification_code TEXT")
 
+    # ── 1.4 Auth & Security Hardening ──────────────────────────────────────────
+    # Create admin_users table (replaces hardcoded admin login)
+    cursor.execute("""CREATE TABLE IF NOT EXISTS admin_users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        role TEXT DEFAULT 'admin',
+        is_active INTEGER DEFAULT 1,
+        failed_login_attempts INTEGER DEFAULT 0,
+        locked_until TEXT,
+        last_login_at TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT
+    )""")
+
+    # Create login_attempts table for account lockout tracking
+    cursor.execute("""CREATE TABLE IF NOT EXISTS login_attempts (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        user_type TEXT NOT NULL,
+        ip_address TEXT,
+        success INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    # Create password_reset_tokens table
+    cursor.execute("""CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_type TEXT NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    # Create token_blacklist table for revoked JWT tokens
+    cursor.execute("""CREATE TABLE IF NOT EXISTS token_blacklist (
+        id TEXT PRIMARY KEY,
+        token_jti TEXT UNIQUE NOT NULL,
+        user_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    # Add failed_login_attempts and locked_until to agencies
+    try:
+        existing_ag3_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agencies)").fetchall()}
+        if "failed_login_attempts" not in existing_ag3_cols:
+            cursor.execute("ALTER TABLE agencies ADD COLUMN failed_login_attempts INTEGER DEFAULT 0")
+        if "locked_until" not in existing_ag3_cols:
+            cursor.execute("ALTER TABLE agencies ADD COLUMN locked_until TEXT")
+        if "last_login_at" not in existing_ag3_cols:
+            cursor.execute("ALTER TABLE agencies ADD COLUMN last_login_at TEXT")
+    except Exception:
+        pass
+
+    # Add failed_login_attempts and locked_until to candidates
+    try:
+        existing_cand_cols = {row[1] for row in cursor.execute("PRAGMA table_info(candidates)").fetchall()}
+        if "failed_login_attempts" not in existing_cand_cols:
+            cursor.execute("ALTER TABLE candidates ADD COLUMN failed_login_attempts INTEGER DEFAULT 0")
+        if "locked_until" not in existing_cand_cols:
+            cursor.execute("ALTER TABLE candidates ADD COLUMN locked_until TEXT")
+        if "last_login_at" not in existing_cand_cols:
+            cursor.execute("ALTER TABLE candidates ADD COLUMN last_login_at TEXT")
+    except Exception:
+        pass
+
+    # ── 2.3 Candidate Pre-Notification ─────────────────────────────────────────
+    # Create candidate_pre_notifications table
+    cursor.execute("""CREATE TABLE IF NOT EXISTS candidate_pre_notifications (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        verification_type TEXT NOT NULL,
+        verifier_name TEXT NOT NULL,
+        verifier_email TEXT NOT NULL,
+        verifier_organisation TEXT,
+        status TEXT DEFAULT 'pending',
+        sent_at TEXT,
+        candidate_confirmed_at TEXT,
+        verification_request_id TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+    )""")
+
+    # Seed default admin user if admin_users table is empty
+    admin_count = cursor.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0]
+    if admin_count == 0:
+        import os
+        from app.utils.auth import generate_id, hash_password
+        admin_email = os.environ.get("ADMIN_EMAIL", "admin@healthvet.ai")
+        admin_pw = os.environ.get("ADMIN_PASSWORD", "changeme")
+        cursor.execute(
+            """INSERT INTO admin_users (id, email, password_hash, display_name, role)
+               VALUES (?, ?, ?, ?, ?)""",
+            (generate_id(), admin_email, hash_password(admin_pw),
+             "System Administrator", "super_admin"),
+        )
+
     conn.commit()
     conn.close()
 

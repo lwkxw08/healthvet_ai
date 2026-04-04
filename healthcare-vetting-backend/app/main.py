@@ -25,8 +25,10 @@ from app.routes import email_templates
 from app.routes import email_rules
 from app.routes import email_config
 from app.routes import verification_portal
+from app.routes import candidate_portal
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
+from app.middleware.agency_scope import AgencyScopeMiddleware
 from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
 
 app = FastAPI(
@@ -37,6 +39,9 @@ app = FastAPI(
 
 # ── Security Headers Middleware ──────────────────────────────────────────────
 app.add_middleware(SecurityHeadersMiddleware)
+
+# ── Agency Scope / Multi-Tenancy Middleware ──────────────────────────────────
+app.add_middleware(AgencyScopeMiddleware)
 
 # ── Audit / Request-ID Middleware ────────────────────────────────────────────
 app.add_middleware(AuditMiddleware)
@@ -84,6 +89,7 @@ app.include_router(email_templates.router)
 app.include_router(email_rules.router)
 app.include_router(email_config.router)
 app.include_router(verification_portal.router)
+app.include_router(candidate_portal.router)
 
 
 @app.on_event("startup")

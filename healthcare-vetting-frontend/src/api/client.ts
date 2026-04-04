@@ -60,6 +60,30 @@ export const authApi = {
     apiRequest<{ access_token: string; user_type: string; user_id: string }>("/api/auth/agencies/login", { method: "POST", body: { email, password } }),
   loginAdmin: (email: string, password: string) =>
     apiRequest<{ access_token: string; user_type: string; user_id: string }>("/api/auth/admin/login", { method: "POST", body: { email, password } }),
+  logout: (token: string) =>
+    apiRequest<{ message: string }>("/api/auth/logout", { method: "POST", token }),
+  requestPasswordReset: (email: string, userType: string) =>
+    apiRequest<{ message: string; _demo_token?: string; _demo_reset_url?: string }>("/api/auth/password-reset/request", { method: "POST", body: { email, user_type: userType } }),
+  confirmPasswordReset: (token: string, newPassword: string) =>
+    apiRequest<{ message: string }>("/api/auth/password-reset/confirm", { method: "POST", body: { token, new_password: newPassword } }),
+  createPreNotification: (token: string, data: { candidate_id: string; verification_type: string; verifier_name: string; verifier_email: string; verifier_organisation?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/auth/pre-notifications", { method: "POST", body: data, token }),
+  getReadyPreNotifications: (token: string) =>
+    apiRequest<{ notifications: Record<string, unknown>[] }>("/api/auth/pre-notifications/ready", { token }),
+};
+
+// Candidate Portal API
+export const candidatePortalApi = {
+  getDashboard: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/candidates/portal/dashboard", { token }),
+  getTimeline: (token: string) =>
+    apiRequest<{ timeline: Record<string, unknown>[] }>("/api/candidates/portal/timeline", { token }),
+  getDocuments: (token: string) =>
+    apiRequest<{ documents: Record<string, unknown>[] }>("/api/candidates/portal/documents", { token }),
+  deleteDocument: (token: string, docId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/candidates/portal/documents/${docId}`, { method: "DELETE", token }),
+  confirmNotification: (token: string, notificationId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/candidates/portal/notifications/${notificationId}/confirm`, { method: "POST", token }),
 };
 
 // Candidates API
