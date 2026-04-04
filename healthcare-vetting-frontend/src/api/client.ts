@@ -1,18 +1,25 @@
 // Build a clean base URL that strips any embedded credentials from the origin.
 // This is needed when the app is served via a tunnel URL like https://user:pass@domain.com
 // because fetch() rejects URLs with embedded credentials.
-function getBaseUrl(): string {
-  const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl) return envUrl;
+function parseUrl(raw: string): { base: string; basicAuth: string | null } {
   try {
-    const url = new URL(window.location.href);
-    return `${url.protocol}//${url.host}`;
+    const u = new URL(raw);
+    const auth = u.username && u.password
+      ? btoa(`${decodeURIComponent(u.username)}:${decodeURIComponent(u.password)}`)
+      : null;
+    return { base: `${u.protocol}//${u.host}`, basicAuth: auth };
   } catch {
-    return "";
+    return { base: raw, basicAuth: null };
   }
 }
 
-const API_URL = getBaseUrl();
+function init(): { base: string; basicAuth: string | null } {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) return parseUrl(envUrl);
+  return parseUrl(window.location.href);
+}
+
+const { base: API_URL, basicAuth: TUNNEL_AUTH } = init();
 
 interface RequestOptions {
   method?: string;
@@ -25,6 +32,11 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
+
+  // When behind a tunnel with Basic Auth, add the credentials header
+  if (TUNNEL_AUTH) {
+    headers["Authorization"] = `Basic ${TUNNEL_AUTH}`;
+  }
 
   if (token) {
     // Send JWT via X-Auth-Token to avoid conflicts with tunnel Basic Auth
