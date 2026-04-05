@@ -4,10 +4,11 @@ import { candidatesApi, checksApi, complianceApi, monitoringApi, agencyInvitesAp
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Upload,
   FileText, UserCheck, Fingerprint, Search, Send, LogOut, RefreshCw, ChevronRight,
-  Camera, ScanFace, Loader2, ArrowRight, ArrowLeft, Eye, Briefcase, Plus, Trash2, Edit3, Building2, GraduationCap,
+  Camera, ScanFace, Loader2, ArrowRight, ArrowLeft, Eye, Briefcase, Plus, Trash2, Edit3, Building2, GraduationCap, FolderOpen,
 } from "lucide-react";
+import DocumentUploadPanel from "./DocumentUploadPanel";
 
-type Tab = "overview" | "identity" | "rtw" | "dbs" | "cv" | "employment" | "registration" | "references" | "training";
+type Tab = "overview" | "identity" | "rtw" | "dbs" | "cv" | "employment" | "registration" | "references" | "training" | "documents";
 
 export default function CandidatePortal() {
   const { token, userId, logout } = useAuth();
@@ -437,6 +438,7 @@ export default function CandidatePortal() {
     { key: "registration", label: "Registration", icon: <CheckCircle size={18} /> },
     { key: "references", label: "References", icon: <Send size={18} /> },
     { key: "training", label: "Training", icon: <GraduationCap size={18} /> },
+    { key: "documents", label: "Documents", icon: <FolderOpen size={18} /> },
   ];
 
   const complianceScore = compliance ? (compliance.score as number) : 0;
@@ -1683,6 +1685,17 @@ export default function CandidatePortal() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Documents Tab */}
+          {tab === "documents" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2"><FolderOpen size={22} className="text-blue-400" /> My Documents</h2>
+              </div>
+              <p className="text-slate-400 text-sm">Upload and manage your supporting documents. Files are securely stored and automatically categorised.</p>
+              <DocumentUploadPanel candidateId={userId || undefined} viewMode="candidate" />
             </div>
           )}
         </main>

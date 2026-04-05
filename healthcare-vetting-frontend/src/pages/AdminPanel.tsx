@@ -11,6 +11,7 @@ import WebhookDeliveryDashboard from "./WebhookDeliveryDashboard";
 import AuditReportingPanel from "./AuditReportingPanel";
 import BackgroundJobsMonitor from "./BackgroundJobsMonitor";
 import PaymentProvidersPanel from "./PaymentProvidersPanel";
+import AIInsightsPanel from "./AIInsightsPanel";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
@@ -1045,7 +1046,7 @@ export default function AdminPanel() {
       {mainTab === "operations" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "analytics-dashboard", label: "Analytics & Reporting" }, { key: "webhook-dashboard", label: "Webhook Delivery" }, { key: "audit-reporting", label: "Audit Trail & Compliance" }, { key: "jobs-monitor", label: "Background Jobs" }].map((s) => (
+            {[{ key: "analytics-dashboard", label: "Analytics & Reporting" }, { key: "webhook-dashboard", label: "Webhook Delivery" }, { key: "audit-reporting", label: "Audit Trail & Compliance" }, { key: "jobs-monitor", label: "Background Jobs" }, { key: "ai-insights", label: "AI Insights" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -1079,6 +1080,7 @@ export default function AdminPanel() {
         {mainTab === "operations" && subTab === "webhook-dashboard" && <WebhookDeliveryDashboard />}
         {mainTab === "operations" && subTab === "audit-reporting" && <AuditReportingPanel />}
         {mainTab === "operations" && subTab === "jobs-monitor" && <BackgroundJobsMonitor />}
+        {mainTab === "operations" && subTab === "ai-insights" && <AIInsightsPanel />}
 
         {/* Overview Tab */}
         {tab === "overview" && stats && (

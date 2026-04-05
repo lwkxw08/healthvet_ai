@@ -836,6 +836,80 @@ export const paymentProvidersApi = {
   },
 };
 
+// Document Upload helper (multipart/form-data — cannot use apiRequest which is JSON-only)
+async function uploadFile(endpoint: string, file: File, fields: Record<string, string>, token?: string): Promise<Record<string, unknown>> {
+  const headers: Record<string, string> = {};
+  if (TUNNEL_AUTH) headers["Authorization"] = `Basic ${TUNNEL_AUTH}`;
+  if (token) headers["X-Auth-Token"] = token;
+
+  const form = new FormData();
+  form.append("file", file);
+  for (const [k, v] of Object.entries(fields)) {
+    if (v) form.append(k, v);
+  }
+
+  const response = await fetch(`${API_URL}${endpoint}`, { method: "POST", headers, body: form });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: "Upload failed" }));
+    throw new Error(error.detail || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+// Documents API
+export const documentsApi = {
+  upload: (token: string, file: File, category?: string, candidateId?: string) => {
+    const qs = new URLSearchParams();
+    if (category) qs.set("category", category);
+    if (candidateId) qs.set("candidate_id", candidateId);
+    return uploadFile(`/api/documents/upload?${qs.toString()}`, file, {}, token);
+  },
+  list: (token: string, candidateId?: string, category?: string) => {
+    const qs = new URLSearchParams();
+    if (candidateId) qs.set("candidate_id", candidateId);
+    if (category) qs.set("category", category);
+    return apiRequest<{ documents: Record<string, unknown>[] }>(`/api/documents?${qs.toString()}`, { token });
+  },
+  download: (token: string, docId: string) =>
+    apiRequest<Blob>(`/api/documents/${docId}`, { token }),
+  getSignedUrl: (token: string, docId: string) =>
+    apiRequest<{ signed_url: string; expires_in: number }>(`/api/documents/${docId}/signed-url`, { token }),
+  delete: (token: string, docId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/documents/${docId}`, { method: "DELETE", token }),
+  runRetentionCleanup: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/documents/retention-cleanup", { method: "POST", token }),
+};
+
+// AI Insights API
+export const aiInsightsApi = {
+  getStatus: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/ai/status", { token }),
+  runCvGapAnalysis: (token: string, data: { candidate_id: string; cv_text: string; cv_analysis_id?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/ai/cv-gap-analysis", { method: "POST", body: data, token }),
+  getCvGapAnalyses: (token: string, candidateId: string) =>
+    apiRequest<{ analyses: Record<string, unknown>[] }>(`/api/ai/cv-gap-analysis/${candidateId}`, { token }),
+  runReferenceSentiment: (token: string, data: { reference_id: string; reference_data: Record<string, unknown> }) =>
+    apiRequest<Record<string, unknown>>("/api/ai/reference-sentiment", { method: "POST", body: data, token }),
+  getReferenceSentiments: (token: string, params?: { candidate_id?: string; reference_id?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.candidate_id) qs.set("candidate_id", params.candidate_id);
+    if (params?.reference_id) qs.set("reference_id", params.reference_id);
+    return apiRequest<{ analyses: Record<string, unknown>[] }>(`/api/ai/reference-sentiment?${qs.toString()}`, { token });
+  },
+  runAnomalyScan: (token: string, agencyId?: string) => {
+    const qs = agencyId ? `?agency_id=${agencyId}` : "";
+    return apiRequest<Record<string, unknown>>(`/api/ai/anomaly-scan${qs}`, { method: "POST", token });
+  },
+  getAnomalyHistory: (token: string, agencyId?: string) => {
+    const qs = agencyId ? `?agency_id=${agencyId}` : "";
+    return apiRequest<{ scans: Record<string, unknown>[] }>(`/api/ai/anomaly-history${qs}`, { token });
+  },
+  getSmartScheduling: (token: string, agencyId?: string) => {
+    const qs = agencyId ? `?agency_id=${agencyId}` : "";
+    return apiRequest<Record<string, unknown>>(`/api/ai/smart-scheduling${qs}`, { token });
+  },
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   getVettingPricing: (token: string) =>

@@ -31,6 +31,8 @@ from app.routes import webhook_management
 from app.routes import audit_trail
 from app.routes import job_monitor
 from app.routes import payment_providers
+from app.routes import ai_insights
+from app.routes import documents
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.agency_scope import AgencyScopeMiddleware
@@ -100,6 +102,8 @@ app.include_router(webhook_management.router)
 app.include_router(audit_trail.router)
 app.include_router(job_monitor.router)
 app.include_router(payment_providers.router)
+app.include_router(ai_insights.router)
+app.include_router(documents.router)
 
 
 @app.on_event("startup")
