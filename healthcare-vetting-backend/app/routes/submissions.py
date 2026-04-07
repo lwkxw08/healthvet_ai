@@ -292,21 +292,28 @@ async def validate_submission(submission_id: str, current_user: dict = Depends(g
             data = sec["data"]
 
             # Section-specific validation
+            # Skip field-level validation for sections handled by TrustID in manual mode
+            is_trustid_manual = data.get("trustid_manual", False)
+
             if section_name == "personal":
                 for req in ["first_name", "last_name"]:
                     if not data.get(req):
                         errors.append({"section": "personal", "message": f"{req.replace('_', ' ').title()} is required"})
             elif section_name == "identity":
-                if not data.get("document_type"):
-                    errors.append({"section": "identity", "message": "Document type is required"})
-                if not data.get("document_file_name"):
-                    errors.append({"section": "identity", "message": "Identity document upload is required"})
-                if not data.get("selfie_file_name"):
-                    errors.append({"section": "identity", "message": "Selfie photo is required"})
+                if not is_trustid_manual:
+                    if not data.get("document_type"):
+                        errors.append({"section": "identity", "message": "Document type is required"})
+                    if not data.get("document_file_name"):
+                        errors.append({"section": "identity", "message": "Identity document upload is required"})
+                    if not data.get("selfie_file_name"):
+                        errors.append({"section": "identity", "message": "Selfie photo is required"})
             elif section_name == "rtw":
-                method = data.get("method", "uk_citizen")
-                if method == "share_code" and not data.get("share_code"):
-                    errors.append({"section": "rtw", "message": "Share code is required for non-UK citizens"})
+                if not is_trustid_manual:
+                    method = data.get("method", "uk_citizen")
+                    if method == "share_code" and not data.get("share_code"):
+                        errors.append({"section": "rtw", "message": "Share code is required for non-UK citizens"})
+            elif section_name == "dbs":
+                pass  # DBS has no required fields in either mode
             elif section_name == "references":
                 refs = data.get("referees", [])
                 if len(refs) < 2:

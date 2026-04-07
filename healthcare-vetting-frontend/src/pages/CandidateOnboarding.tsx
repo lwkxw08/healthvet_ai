@@ -231,8 +231,16 @@ export default function CandidateOnboarding() {
 
   const goNext = async () => {
     const sec = activeSections[currentStep];
-    if (sec && sectionData[sec.key]) {
-      await saveSection(sec.key, sectionData[sec.key], true);
+    if (sec) {
+      const data = sectionData[sec.key] || {};
+      // For TrustID manual-mode sections, mark with a flag so backend knows to skip field validation
+      const isTrustidManual = (
+        (sec.key === "identity" && isManualMode("identity_verification")) ||
+        (sec.key === "rtw" && isManualMode("right_to_work")) ||
+        (sec.key === "dbs" && isManualMode("dbs_check"))
+      );
+      const saveData = isTrustidManual ? { ...data, trustid_manual: true } : data;
+      await saveSection(sec.key, saveData, true);
     }
     setCurrentStep(prev => Math.min(prev + 1, activeConsentStep));
   };
@@ -774,7 +782,23 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
         return (
           <>
             <p className="text-slate-400 text-sm mb-4">Add your training certificates (mandatory training, CPD, specialist certifications).</p>
-            <CertificateEntries certificates={(data.certificates as Record<string, unknown>[]) || []} onChange={(certs) => onUpdate("certificates", certs)} />
+            <div className="mb-4">
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-slate-600 bg-slate-700/30 hover:bg-slate-700/50 transition-all">
+                <input
+                  type="checkbox"
+                  checked={data.no_certificates === true}
+                  onChange={e => {
+                    onUpdate("no_certificates", e.target.checked);
+                    if (e.target.checked) onUpdate("certificates", []);
+                  }}
+                  className="w-5 h-5 accent-blue-500"
+                />
+                <span className="text-sm text-slate-300">I have no training certificates to supply at this time</span>
+              </label>
+            </div>
+            {!data.no_certificates && (
+              <CertificateEntries certificates={(data.certificates as Record<string, unknown>[]) || []} onChange={(certs) => onUpdate("certificates", certs)} />
+            )}
           </>
         );
 
