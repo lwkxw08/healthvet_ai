@@ -712,6 +712,10 @@ export const emailConfigApi = {
     apiRequest<Record<string, string>>("/api/admin/email-config/trust", { token }),
   updateTrust: (token: string, data: Record<string, string>) =>
     apiRequest<Record<string, unknown>>("/api/admin/email-config/trust", { method: "PUT", body: data, token }),
+  getAI: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-config/ai", { token }),
+  updateAI: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/email-config/ai", { method: "PUT", body: data, token }),
 };
 
 // Analytics & Reporting API (3.2)

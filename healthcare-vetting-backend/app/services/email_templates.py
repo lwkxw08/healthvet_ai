@@ -1189,16 +1189,20 @@ class EmailTemplateService:
     @staticmethod
     def get_email_stats() -> dict:
         """Get email delivery statistics."""
+        reload_email_config()  # ensure DB config is loaded
         with get_db() as db:
             total = db.execute("SELECT COUNT(*) as cnt FROM email_send_log").fetchone()
             sent = db.execute("SELECT COUNT(*) as cnt FROM email_send_log WHERE status='sent'").fetchone()
             logged = db.execute("SELECT COUNT(*) as cnt FROM email_send_log WHERE status='logged'").fetchone()
             failed = db.execute("SELECT COUNT(*) as cnt FROM email_send_log WHERE status='failed'").fetchone()
+            provider = _detect_provider()
+            configured = bool(provider)
             return {
                 "total": dict(total)["cnt"] if total else 0,
                 "sent": dict(sent)["cnt"] if sent else 0,
                 "logged": dict(logged)["cnt"] if logged else 0,
                 "failed": dict(failed)["cnt"] if failed else 0,
-                "provider": _detect_provider() or None,
-                "provider_configured": _provider_configured(),
+                "provider": provider or None,
+                "provider_configured": configured,
+                "sendgrid_configured": configured,
             }

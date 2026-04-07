@@ -321,7 +321,7 @@ export default function EmailTemplatesPanel() {
             Manage email templates for verification requests, compliance alerts, billing, and onboarding.
             {stats && !(stats as Record<string, unknown>).sendgrid_configured && (
               <span className="text-amber-400 ml-2">
-                <AlertTriangle size={12} className="inline mb-0.5" /> SendGrid not configured — emails are logged only
+                <AlertTriangle size={12} className="inline mb-0.5" /> Email provider not configured — emails are logged only
               </span>
             )}
           </p>
@@ -691,24 +691,18 @@ export default function EmailTemplatesPanel() {
         </div>
       )}
 
-      {/* SendGrid Configuration Notice */}
+      {/* Email Provider Configuration Notice */}
       {stats && !(stats as Record<string, unknown>).sendgrid_configured && (
         <div className="bg-amber-400/5 border border-amber-400/20 rounded-xl p-5">
           <div className="flex items-start gap-3">
             <Settings className="text-amber-400 flex-shrink-0 mt-0.5" size={18} />
             <div>
-              <h4 className="text-amber-300 font-semibold text-sm">SendGrid Not Configured</h4>
+              <h4 className="text-amber-300 font-semibold text-sm">Email Provider Not Configured</h4>
               <p className="text-slate-400 text-xs mt-1">
-                Emails are currently being logged but not delivered. To enable real email delivery, set the following environment variables on the server:
+                Emails are currently being logged but not delivered. To enable real email delivery, go to <strong className="text-amber-300">Settings &rarr; Email Provider</strong> and configure your email provider API key (SendGrid, Mailgun, or Resend).
               </p>
-              <div className="bg-slate-900/50 rounded-lg px-4 py-3 mt-3 font-mono text-xs text-slate-300 space-y-1">
-                <p><span className="text-amber-400">SENDGRID_API_KEY</span>=your_sendgrid_api_key</p>
-                <p><span className="text-amber-400">SENDGRID_FROM_EMAIL</span>=noreply@healthvet.ai</p>
-                <p><span className="text-amber-400">SENDGRID_FROM_NAME</span>=HealthVet AI</p>
-              </div>
               <p className="text-slate-500 text-xs mt-2">
-                Sign up at <a href="https://signup.sendgrid.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">sendgrid.com</a> (free tier: 100 emails/day).
-                Once configured, all template emails will be delivered via SendGrid automatically.
+                Once configured, all template emails will be delivered automatically via your chosen provider.
               </p>
             </div>
           </div>

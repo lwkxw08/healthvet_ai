@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { emailConfigApi } from "../api/client";
-import { Shield, Save, RefreshCw, CheckCircle, AlertTriangle, Mail, Key, Globe, FileText } from "lucide-react";
+import { Shield, Save, RefreshCw, CheckCircle, AlertTriangle, Mail, Key, Globe, FileText, Cpu } from "lucide-react";
 
 type Provider = "" | "sendgrid" | "mailgun" | "resend";
 
@@ -57,6 +57,11 @@ export default function EmailConfigPanel() {
   const [trustVerifyUrl, setTrustVerifyUrl] = useState("");
   const [savingTrust, setSavingTrust] = useState(false);
 
+  // AI / OpenAI state
+  const [openaiKey, setOpenaiKey] = useState("");
+  const [openaiKeySet, setOpenaiKeySet] = useState(false);
+  const [savingAI, setSavingAI] = useState(false);
+
   const loadConfig = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -79,6 +84,13 @@ export default function EmailConfigPanel() {
       setTrustEmail(trust.verification_email || "");
       setTrustPrivacyUrl(trust.privacy_url || "");
       setTrustVerifyUrl(trust.verification_url || "");
+
+      // Load AI config
+      try {
+        const ai = await emailConfigApi.getAI(token);
+        setOpenaiKey((ai.openai_api_key as string) || "");
+        setOpenaiKeySet(!!ai.openai_api_key_set);
+      } catch { /* AI config endpoint may not exist yet */ }
     } catch {
       setMessage({ type: "error", text: "Failed to load email configuration" });
     } finally {
@@ -473,6 +485,65 @@ export default function EmailConfigPanel() {
             />
             <p className="text-[10px] text-slate-600 mt-1">Where verifiers go to enter their code</p>
           </div>
+        </div>
+      </div>
+
+      {/* OpenAI / AI Configuration */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <Cpu size={16} className="text-violet-400" />
+              AI Configuration (OpenAI)
+            </h3>
+            <p className="text-[10px] text-slate-500 mt-1">Powers CV gap analysis, reference sentiment analysis, anomaly detection, and smart scheduling.</p>
+          </div>
+          <button onClick={async () => {
+            if (!token) return;
+            setSavingAI(true);
+            setMessage(null);
+            try {
+              await emailConfigApi.updateAI(token, {
+                openai_api_key: openaiKey.startsWith("*") ? "" : openaiKey,
+              });
+              setMessage({ type: "success", text: "AI configuration saved successfully" });
+              // Reload to get masked key
+              try {
+                const ai = await emailConfigApi.getAI(token);
+                setOpenaiKey((ai.openai_api_key as string) || "");
+                setOpenaiKeySet(!!ai.openai_api_key_set);
+              } catch { /* ignore */ }
+            } catch {
+              setMessage({ type: "error", text: "Failed to save AI configuration" });
+            } finally {
+              setSavingAI(false);
+            }
+          }} disabled={savingAI}
+            className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs rounded-lg font-medium transition-colors disabled:opacity-50">
+            {savingAI ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+            Save AI Settings
+          </button>
+        </div>
+        <div>
+          <label className={labelCls}>OpenAI API Key</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={openaiKey}
+              onChange={(e) => setOpenaiKey(e.target.value)}
+              placeholder={openaiKeySet ? "••••••••(key is set — enter new value to change)" : "sk-xxxxxxxx..."}
+              className={inputCls}
+            />
+            {openaiKeySet && (
+              <span className="text-[10px] text-green-400 bg-green-500/10 px-2 py-1 rounded-full whitespace-nowrap">Configured</span>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-600 mt-1">
+            Get your API key from{" "}
+            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+              OpenAI Dashboard → API Keys
+            </a>. Uses GPT-4o-mini by default.
+          </p>
         </div>
       </div>
 
