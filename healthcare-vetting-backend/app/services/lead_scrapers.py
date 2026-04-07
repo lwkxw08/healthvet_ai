@@ -2,7 +2,7 @@
 Lead Generation Scrapers
 Multi-source scraping for recruitment agency leads.
 Sources: AgencyCentral (all industries), Indeed, CQC API, NHS Jobs.
-Two-stage: directory scrape + agency website follow-through for contacts.
+Uses pure HTTP requests approach - no Selenium/Chrome dependency required.
 """
 import json
 import re
@@ -10,7 +10,6 @@ import time
 import random
 import logging
 import traceback
-from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -19,7 +18,6 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-# Industry mapping for AgencyCentral URL slugs
 AGENCY_CENTRAL_INDUSTRIES = {
     "health": "Health Care",
     "socialcare": "Social Care",
@@ -47,43 +45,18 @@ AGENCY_CENTRAL_INDUSTRIES = {
 }
 
 
-def _get_headless_driver():
-    """Create a headless Chrome/Selenium driver. Returns None if Chrome/Selenium unavailable."""
-    try:
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        from selenium.webdriver.chrome.service import Service
-
-        options = Options()
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-        driver = webdriver.Chrome(options=options)
-        driver.set_page_load_timeout(30)
-        driver.implicitly_wait(5)
-        return driver
-    except Exception as e:
-        logger.warning(f"Chrome/Selenium not available: {e}. Falling back to requests-only scraping.")
-        return None
-
-
 def _random_delay(min_s=1.0, max_s=3.0):
     """Random delay to avoid rate limiting."""
     time.sleep(random.uniform(min_s, max_s))
 
 
-def _extract_emails(text: str) -> list:
+def _extract_emails(text):
     """Extract email addresses from text."""
     pattern = r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}'
     return list(set(re.findall(pattern, text)))
 
 
-def _extract_phones(text: str) -> list:
+def _extract_phones(text):
     """Extract UK phone numbers from text."""
     patterns = [
         r'(?:\+44|0)\s*\d[\d\s\-]{8,12}\d',
@@ -99,33 +72,35 @@ def _extract_phones(text: str) -> list:
     return list(phones)
 
 
-# ── AgencyCentral Scraper ──────────────────────────────────────────
+_AC_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
 
 _AC_API_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": _AC_UA,
     "Referer": "https://www.agencycentral.co.uk/",
     "Accept": "application/json",
 }
 
 
-def _extract_slug_from_profile_url(profile_url: str) -> str:
+def _extract_slug_from_profile_url(profile_url):
     """Extract the agency slug from an AgencyCentral profile URL."""
-    # URL format: /recruitment-agency/{name-slug}/{tag}
     parts = profile_url.rstrip("/").split("/")
     if len(parts) >= 2:
-        return parts[-1]  # e.g. 'uk_opencareservicesltd'
+        return parts[-1]
     return ""
 
 
-def _fetch_agency_api_data(slug: str) -> dict:
-    """Fetch agency data from AgencyCentral's internal API."""
+def _fetch_agency_api_data(slug):
+    """Fetch agency data from AgencyCentral internal API."""
     if not slug:
         return {}
     try:
         resp = http_requests.get(
             f"https://www.agencycentral.co.uk/api/agency/{slug}",
-            headers=_AC_API_HEADERS,
-            timeout=15,
+            headers=_AC_API_HEADERS, timeout=15,
         )
         if resp.status_code == 200:
             return resp.json().get("data", {}).get("agency", {})
@@ -134,399 +109,115 @@ def _fetch_agency_api_data(slug: str) -> dict:
     return {}
 
 
-def _enrich_lead_from_profile(driver, lead: dict) -> None:
-    """
-    Stage 1.5: Visit the AgencyCentral profile page and extract contact
-    details from the window.stores JavaScript object which contains
-    branch-level email, phone, address, and social link data.
-    """
-    profile_url = lead.get("source_url", "")
-    if not profile_url:
-        return
-
+def _discover_agency_urls_from_sitemap():
+    """Fetch all agency profile URLs from AgencyCentral sitemap."""
     try:
-        driver.get(profile_url)
-        _random_delay(1.5, 3.0)
-
-        # Extract data from window.stores — AgencyCentral embeds full
-        # agency + branch data in a JS object on every profile page.
-        stores_data = driver.execute_script('''
-            var s = window.stores || {};
-            var agency = s.agency ? s.agency.agency : null;
-            var branches = s.agency ? s.agency.branches : [];
-            var hq = branches && branches.length > 0 ? branches[0] : null;
-            return { agency: agency, branch: hq };
-        ''')
-
-        branch = stores_data.get("branch") if stores_data else None
-        agency_data = stores_data.get("agency") if stores_data else None
-
-        if branch:
-            # Email: EmployerEmail or mailToEmployerEmail
-            if not lead.get("email"):
-                email = (branch.get("EmployerEmail") or
-                         branch.get("mailToEmployerEmail") or
-                         branch.get("Email") or "")
-                if email and "@" in email:
-                    lead["email"] = email.strip()
-                    logger.info(f"Found email from stores: {email}")
-
-            # Phone: EmployerTelephone
-            if not lead.get("phone"):
-                phone = (branch.get("EmployerTelephone") or
-                         branch.get("Telephone") or
-                         branch.get("AssistedContactTelephone") or "")
-                if phone:
-                    # Take first number if multiple separated by /
-                    phone = phone.split("/")[0].strip()
-                    phone_clean = re.sub(r'[\s\-()]', '', phone)
-                    if len(phone_clean) >= 10:
-                        lead["phone"] = phone_clean
-                        logger.info(f"Found phone from stores: {phone_clean}")
-
-            # Location: from branch address
-            if not lead.get("location"):
-                location = branch.get("Location") or branch.get("Town") or ""
-                county = branch.get("County") or ""
-                postcode = branch.get("PostCode") or ""
-                parts = [p for p in [location, county, postcode] if p]
-                if parts:
-                    lead["location"] = ", ".join(parts)
-
-            # Full address in extra
-            full_addr = branch.get("FullPostalAddress") or branch.get("FormattedAddress") or ""
-            if full_addr:
-                lead.setdefault("extra", {})
-                if isinstance(lead["extra"], str):
-                    try:
-                        lead["extra"] = json.loads(lead["extra"])
-                    except (json.JSONDecodeError, TypeError):
-                        lead["extra"] = {}
-                lead["extra"]["address"] = full_addr.replace("\n", ", ")
-
-            # Social links from branch
-            social = lead.get("social_links", {})
-            if isinstance(social, str):
-                try:
-                    social = json.loads(social)
-                except (json.JSONDecodeError, TypeError):
-                    social = {}
-            fb = branch.get("social_facebook") or ""
-            if fb:
-                social["facebook"] = f"https://facebook.com/{fb}" if not fb.startswith("http") else fb
-            if social:
-                lead["social_links"] = social
-
-        if agency_data:
-            # Description from agency data (richer than listing)
-            if not lead.get("description"):
-                desc = agency_data.get("BriefDescription") or agency_data.get("Description") or ""
-                if desc:
-                    lead["description"] = desc[:500]
-
-            # Social links from agency level
-            social = lead.get("social_links", {})
-            if isinstance(social, str):
-                try:
-                    social = json.loads(social)
-                except (json.JSONDecodeError, TypeError):
-                    social = {}
-            fb = agency_data.get("social_facebook") or ""
-            if fb and "facebook" not in social:
-                social["facebook"] = f"https://facebook.com/{fb}" if not fb.startswith("http") else fb
-            if social:
-                lead["social_links"] = social
-
-        # Try to get website via "Visit Website" button click
-        if not lead.get("website"):
-            try:
-                clicked = driver.execute_script('''
-                    var btns = document.querySelectorAll('button');
-                    for (var i = 0; i < btns.length; i++) {
-                        if (btns[i].textContent.trim().includes('Visit Website')) {
-                            btns[i].click();
-                            return true;
-                        }
-                    }
-                    return false;
-                ''')
-                if clicked:
-                    _random_delay(2.0, 3.5)
-                    handles = driver.window_handles
-                    if len(handles) > 1:
-                        driver.switch_to.window(handles[-1])
-                        _random_delay(1.5, 2.5)
-                        current_url = driver.current_url
-
-                        # Handle interstitial "Skip this step" page
-                        if "agencycentral" in current_url:
-                            try:
-                                skip_clicked = driver.execute_script('''
-                                    var links = document.querySelectorAll('a');
-                                    for (var i = 0; i < links.length; i++) {
-                                        var txt = links[i].textContent.trim().toLowerCase();
-                                        if (txt.includes('skip this step') || txt.includes('skip')) {
-                                            links[i].click();
-                                            return true;
-                                        }
-                                    }
-                                    return false;
-                                ''')
-                                if skip_clicked:
-                                    _random_delay(2.0, 3.5)
-                                    final_handles = driver.window_handles
-                                    if len(final_handles) > len(handles):
-                                        driver.switch_to.window(final_handles[-1])
-                                        _random_delay(1.0, 2.0)
-                                    final_url = driver.current_url
-                                    if final_url and "agencycentral" not in final_url and final_url.startswith("http"):
-                                        lead["website"] = final_url
-                                        logger.info(f"Found website via Skip: {final_url}")
-                                else:
-                                    # Try outbound link on interstitial
-                                    isoup = BeautifulSoup(driver.page_source, "html.parser")
-                                    for a_tag in isoup.select("a[href]"):
-                                        href = a_tag.get("href", "")
-                                        if href.startswith("http") and "agencycentral" not in href:
-                                            lead["website"] = href
-                                            logger.info(f"Found website via interstitial: {href}")
-                                            break
-                            except Exception as skip_err:
-                                logger.debug(f"Error handling interstitial: {skip_err}")
-                        elif current_url and current_url.startswith("http"):
-                            lead["website"] = current_url
-                            logger.info(f"Found website via direct tab: {current_url}")
-
-                        # Close extra tabs
-                        for h in driver.window_handles[1:]:
-                            try:
-                                driver.switch_to.window(h)
-                                driver.close()
-                            except Exception:
-                                pass
-                        driver.switch_to.window(driver.window_handles[0])
-            except Exception as e:
-                logger.debug(f"Error getting website via button: {e}")
-
+        resp = http_requests.get(
+            "https://www.agencycentral.co.uk/sitemap.xml",
+            headers={"User-Agent": _AC_UA},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        urls = re.findall(
+            r'<loc>(https://www\.agencycentral\.co\.uk/recruitment-agency/[^<]+)</loc>',
+            resp.text,
+        )
+        logger.info(f"Sitemap: found {len(urls)} agency profile URLs")
+        return urls
     except Exception as e:
-        logger.warning(f"Error enriching from profile {profile_url}: {e}")
+        logger.warning(f"Failed to fetch sitemap: {e}")
+        return []
 
 
-def scrape_agency_central(industry_slug: str, max_pages: int = 3, follow_websites: bool = True) -> list:
+def _extract_profile_data(profile_url):
     """
-    Scrape AgencyCentral directory for a given industry.
-    Stage 1: Extract listings from directory pages.
-    Stage 1.5: Enrich each lead via AgencyCentral API + profile page button clicks.
-    Stage 2: Follow through to agency's own website for full contact info.
-    Falls back to requests-only mode if Selenium/Chrome is unavailable.
+    Fetch an AgencyCentral profile page and extract agency + branch data
+    from the embedded window.stores JSON object.
     """
-    leads = []
-    base_url = f"https://www.agencycentral.co.uk/agencysearch/{industry_slug}/agencysearch.htm"
-    industry_name = AGENCY_CENTRAL_INDUSTRIES.get(industry_slug, industry_slug.title())
-
-    driver = _get_headless_driver()  # May return None if Chrome unavailable
-    use_requests_only = driver is None
-
     try:
-        # ── Stage 1: Scrape directory listings ──
-        for page in range(1, max_pages + 1):
-            url = base_url if page == 1 else f"{base_url}?page={page}"
-            logger.info(f"[Stage 1] Scraping AgencyCentral page {page}: {url}")
-
-            try:
-                if use_requests_only:
-                    resp = http_requests.get(url, headers=_AC_API_HEADERS, timeout=20)
-                    resp.raise_for_status()
-                    page_html = resp.text
-                else:
-                    driver.get(url)
-                    _random_delay(1.5, 3.0)
-                    page_html = driver.page_source
-            except Exception as e:
-                logger.warning(f"Failed to load page {page}: {e}")
-                break
-
-            soup = BeautifulSoup(page_html, "html.parser")
-
-            # Find agency listings: <li> elements that contain an <h3> with
-            # a link to /recruitment-agency/...
-            agency_links = soup.select('h3 a[href*="/recruitment-agency/"]')
-            if not agency_links:
-                logger.info(f"No more listings on page {page}")
-                break
-
-            for link in agency_links:
-                try:
-                    # Walk up to the containing <li>
-                    li = link
-                    while li and li.name != "li":
-                        li = li.parent
-                    if not li:
-                        li = link.parent  # fallback
-
-                    lead = _parse_agency_central_listing(li, industry_name, industry_slug)
-                    if lead:
-                        leads.append(lead)
-                except Exception as e:
-                    logger.warning(f"Error parsing listing: {e}")
-                    continue
-
-            # Check if there's a next page
-            next_link = soup.select_one(f'a[href*="page={page + 1}"]')
-            if not next_link:
-                break
-
-        logger.info(f"[Stage 1] Found {len(leads)} agencies from listings")
-
-        # ── Stage 1.5: Enrich via API + profile page ──
-        for i, lead in enumerate(leads):
-            slug = _extract_slug_from_profile_url(lead.get("source_url", ""))
-            if slug:
-                # Fetch enriched data from AgencyCentral API
-                api_data = _fetch_agency_api_data(slug)
-                if api_data:
-                    if not lead.get("description") and api_data.get("BriefDescription"):
-                        lead["description"] = api_data["BriefDescription"][:500]
-                    if not lead.get("description") and api_data.get("Description"):
-                        lead["description"] = api_data["Description"][:500]
-                _random_delay(0.3, 0.8)
-
-            # Visit profile page to click buttons and get contact details (requires Selenium)
-            if not use_requests_only:
-                logger.info(f"[Stage 1.5] Enriching {i+1}/{len(leads)}: {lead.get('name')}")
-                _enrich_lead_from_profile(driver, lead)
-                _random_delay(1.0, 2.0)
-
-        # ── Stage 2: Follow through to agency's own website ──
-        if follow_websites and not use_requests_only:
-            enriched_count = 0
-            for lead in leads:
-                if lead.get("website") and (not lead.get("email") or not lead.get("phone")):
-                    try:
-                        logger.info(f"[Stage 2] Scraping website: {lead['website']}")
-                        contacts = _scrape_agency_website(driver, lead["website"])
-                        if contacts.get("emails") and not lead.get("email"):
-                            lead["email"] = contacts["emails"][0]
-                            lead["all_emails"] = contacts["emails"]
-                        if contacts.get("phones") and not lead.get("phone"):
-                            lead["phone"] = contacts["phones"][0]
-                            lead["all_phones"] = contacts["phones"]
-                        if contacts.get("social_links"):
-                            lead.setdefault("social_links", {}).update(contacts["social_links"])
-                        enriched_count += 1
-                    except Exception as e:
-                        logger.warning(f"Failed to scrape website {lead['website']}: {e}")
-                    _random_delay(2.0, 4.0)
-            logger.info(f"[Stage 2] Enriched {enriched_count} agencies from their websites")
-
+        resp = http_requests.get(
+            profile_url,
+            headers={"User-Agent": _AC_UA},
+            timeout=20,
+        )
+        if resp.status_code != 200:
+            return None
+        stores_match = re.search(
+            r'window\.stores\s*=\s*(\{.*?\});\s*</script>',
+            resp.text, re.DOTALL,
+        )
+        if not stores_match:
+            return None
+        stores = json.loads(stores_match.group(1))
+        agency_store = stores.get("agency", {})
+        return {
+            "agency": agency_store.get("agency", {}),
+            "branches": agency_store.get("branches", []),
+        }
     except Exception as e:
-        logger.error(f"AgencyCentral scraper error: {e}\n{traceback.format_exc()}")
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
-    return leads
-
-
-def _parse_agency_central_listing(li, industry_name: str, industry_slug: str) -> Optional[dict]:
-    """Parse a single AgencyCentral listing <li> element."""
-    name_el = li.select_one("h3")
-    if not name_el:
+        logger.debug(f"Failed to extract profile from {profile_url}: {e}")
         return None
-    name = name_el.get_text(strip=True)
+
+
+def _build_lead_from_profile(profile_url, profile_data, industry_name, industry_slug):
+    """Build a fully-enriched lead dict from AgencyCentral profile data."""
+    agency = profile_data.get("agency", {})
+    branches = profile_data.get("branches", [])
+    branch = branches[0] if branches else {}
+
+    name = agency.get("Name", "")
     if not name:
         return None
 
-    # Profile link
-    link_el = name_el.select_one("a")
-    profile_url = ""
-    if link_el and link_el.get("href"):
-        href = link_el["href"]
-        if not href.startswith("http"):
-            href = "https://www.agencycentral.co.uk" + href
-        profile_url = href
+    desc = (agency.get("BriefDescription") or agency.get("Description") or "")[:500]
 
-    # Description — get the <p> or <span> text block
-    desc = ""
-    desc_el = li.select_one("p.text-base span, p.text-base")
-    if desc_el:
-        desc = desc_el.get_text(strip=True)[:500]
-    if not desc:
-        texts = li.find_all(string=True, recursive=True)
-        text_content = " ".join(t.strip() for t in texts if t.strip())
-        desc_parts = []
-        for child in li.children:
-            if hasattr(child, 'name'):
-                if child.name in ('h3', 'svg', 'button', 'ul'):
-                    continue
-                t = child.get_text(strip=True)
-                if t and len(t) > 20:
-                    desc_parts.append(t)
-            elif isinstance(child, str) and child.strip() and len(child.strip()) > 20:
-                desc_parts.append(child.strip())
-        desc = " ".join(desc_parts)[:500] if desc_parts else ""
-
-    text_content = " ".join(t.strip() for t in li.find_all(string=True, recursive=True) if t.strip())
-
-    # Verified
-    verified = bool("Verified" in text_content)
-
-    # Has Visit Website button
-    has_website_btn = bool(li.find("button", string=re.compile(r"Visit Website", re.I)))
-
-    # Employment types
-    emp_types = ""
-    for text in li.find_all(string=True, recursive=True):
-        t = text.strip()
-        if "Permanent" in t or "Temporary" in t or "Contract" in t:
-            emp_types = t[:100]
-            break
-
-    # Office location
-    location = ""
-    loc_matches = re.findall(r'(?:Office Locations?|Office)\s*(.+?)(?:Geographical|Employment|Salaries|Listed|$)', text_content, re.DOTALL)
-    if loc_matches:
-        location = loc_matches[0].strip()[:200]
-    if not location:
-        postcode = re.search(r'[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}', text_content)
-        if postcode:
-            idx = text_content.index(postcode.group())
-            start = max(0, idx - 100)
-            location = text_content[start:idx + len(postcode.group())].strip()[-200:]
-
-    # Coverage
-    coverage = ""
-    cov_matches = re.findall(r'Geographical Coverage\s*(.+?)(?:Salaries|Listed|$)', text_content, re.DOTALL)
-    if cov_matches:
-        coverage = cov_matches[0].strip()[:200]
-
-    # Salary range
-    salary_range = ""
-    sal_matches = re.findall(r'Salaries?\s+(?:from\s+)?(.+?)(?:Listed|$)', text_content, re.DOTALL)
-    if sal_matches:
-        salary_range = sal_matches[0].strip()[:100]
-
-    # Listed since
-    listed_since = ""
-    ls_matches = re.findall(r'Listed since:\s*(.+?)$', text_content)
-    if ls_matches:
-        listed_since = ls_matches[0].strip()
-
-    # Try to extract email from mailto links
-    email = ""
+    email = (
+        branch.get("EmployerEmail")
+        or branch.get("mailToEmployerEmail")
+        or branch.get("Email")
+        or ""
+    )
+    phone_raw = (
+        branch.get("EmployerTelephone")
+        or branch.get("Telephone")
+        or branch.get("AssistedContactTelephone")
+        or ""
+    )
     phone = ""
-    mailto = li.select_one('a[href^="mailto:"]')
-    if mailto:
-        email = mailto["href"].replace("mailto:", "").strip()
-    emails_in_text = _extract_emails(text_content)
-    if emails_in_text and not email:
-        email = emails_in_text[0]
-    phones_in_text = _extract_phones(text_content)
-    if phones_in_text and not phone:
-        phone = phones_in_text[0]
+    if phone_raw:
+        phone = phone_raw.split("/")[0].strip()
+        phone_clean = re.sub(r'[\s\-()]', '', phone)
+        phone = phone_clean if len(phone_clean) >= 10 else phone_raw.strip()
+
+    location_parts = [
+        p for p in [
+            branch.get("Location") or branch.get("Town") or "",
+            branch.get("County") or "",
+            branch.get("PostCode") or "",
+        ] if p
+    ]
+    location = ", ".join(location_parts)
+    full_address = (
+        branch.get("FullPostalAddress")
+        or branch.get("FormattedAddress")
+        or ""
+    ).replace("\n", ", ")
+
+    emp_types = agency.get("RecruitmentTypesCovered", "")
+
+    social_links = {}
+    fb = branch.get("social_facebook") or agency.get("social_facebook") or ""
+    if fb:
+        social_links["facebook"] = (
+            f"https://facebook.com/{fb}" if not fb.startswith("http") else fb
+        )
+    tw = branch.get("social_twitter") or agency.get("social_twitter") or ""
+    if tw:
+        social_links["twitter"] = (
+            f"https://twitter.com/{tw}" if not tw.startswith("http") else tw
+        )
+
+    recruited_for = agency.get("WhatRecruitedFor", "")
 
     return {
         "name": name,
@@ -535,327 +226,345 @@ def _parse_agency_central_listing(li, industry_name: str, industry_slug: str) ->
         "industry_slug": industry_slug,
         "source": "agencycentral",
         "source_url": profile_url,
-        "website": "",  # populated in stage 1.5 via profile page
-        "email": email,
+        "website": "",
+        "email": email.strip() if email else "",
         "phone": phone,
         "location": location,
-        "coverage": coverage,
+        "coverage": "",
         "employment_types": emp_types,
-        "salary_range": salary_range,
-        "listed_since": listed_since,
-        "verified": verified,
-        "has_website": has_website_btn,
+        "salary_range": "",
+        "listed_since": "",
+        "verified": False,
+        "has_website": bool(
+            agency.get("CandWebsite") or agency.get("EmpWebsite")
+        ),
+        "social_links": social_links,
+        "extra": {
+            "address": full_address,
+            "recruited_for": recruited_for,
+            "industries": agency.get("industries", ""),
+            "last_activity": agency.get("last_activity_text", ""),
+        },
     }
 
 
-def _scrape_agency_website(driver, url: str) -> dict:
-    """Stage 2: Scrape an agency's own website for contact information."""
+def _scrape_agency_website_requests(url):
+    """Scrape an agency website for contact info using requests only."""
     result = {"emails": [], "phones": [], "social_links": {}}
-
-    if not url or not url.startswith("http"):
-        return result
-
     try:
-        driver.get(url)
-        _random_delay(2.0, 4.0)
-        page_source = driver.page_source
-        soup = BeautifulSoup(page_source, "html.parser")
+        resp = http_requests.get(
+            url, headers={"User-Agent": _AC_UA},
+            timeout=15, allow_redirects=True,
+        )
+        if resp.status_code != 200:
+            return result
+        soup = BeautifulSoup(resp.text, "html.parser")
         page_text = soup.get_text()
-
-        # Extract from homepage
-        result["emails"].extend(_extract_emails(page_text))
-        result["phones"].extend(_extract_phones(page_text))
-
-        # Check mailto links
-        for a in soup.select('a[href^="mailto:"]'):
-            email = a["href"].replace("mailto:", "").split("?")[0].strip()
-            if email and "@" in email:
-                result["emails"].append(email)
-
-        # Check tel links
-        for a in soup.select('a[href^="tel:"]'):
-            phone = a["href"].replace("tel:", "").strip()
-            if phone:
-                result["phones"].append(re.sub(r'[\s\-()]', '', phone))
-
-        # Social media links
-        for a in soup.select("a[href]"):
-            href = a.get("href", "")
+        result["emails"] = _extract_emails(page_text)
+        result["phones"] = _extract_phones(page_text)
+        for a_tag in soup.select("a[href]"):
+            href = a_tag.get("href", "")
             if "linkedin.com" in href:
                 result["social_links"]["linkedin"] = href
             elif "twitter.com" in href or "x.com" in href:
                 result["social_links"]["twitter"] = href
             elif "facebook.com" in href:
                 result["social_links"]["facebook"] = href
-
-        # Try contact page
-        contact_links = []
-        for a in soup.select("a[href]"):
-            href = a.get("href", "").lower()
-            text = a.get_text(strip=True).lower()
-            if any(k in href for k in ["/contact", "/about", "/get-in-touch"]) or \
-               any(k in text for k in ["contact", "get in touch"]):
-                full_url = href
-                if not full_url.startswith("http"):
-                    if full_url.startswith("/"):
-                        from urllib.parse import urlparse
-                        parsed = urlparse(url)
-                        full_url = f"{parsed.scheme}://{parsed.netloc}{full_url}"
-                    else:
-                        full_url = url.rstrip("/") + "/" + full_url
-                contact_links.append(full_url)
-
-        # Visit up to 2 contact pages
-        for clink in contact_links[:2]:
+        contact_link = None
+        for a_tag in soup.select("a[href]"):
+            text = a_tag.get_text(strip=True).lower()
+            href = a_tag.get("href", "")
+            if any(kw in text for kw in ["contact", "get in touch"]):
+                if not href.startswith("http"):
+                    parsed = urlparse(url)
+                    href = f"{parsed.scheme}://{parsed.netloc}{href}"
+                contact_link = href
+                break
+        if contact_link:
             try:
-                driver.get(clink)
-                _random_delay(1.5, 3.0)
-                csoup = BeautifulSoup(driver.page_source, "html.parser")
-                ctext = csoup.get_text()
-                result["emails"].extend(_extract_emails(ctext))
-                result["phones"].extend(_extract_phones(ctext))
-                for a in csoup.select('a[href^="mailto:"]'):
-                    email = a["href"].replace("mailto:", "").split("?")[0].strip()
-                    if email and "@" in email:
-                        result["emails"].append(email)
-                for a in csoup.select('a[href^="tel:"]'):
-                    phone = a["href"].replace("tel:", "").strip()
-                    if phone:
-                        result["phones"].append(re.sub(r'[\s\-()]', '', phone))
+                cr = http_requests.get(
+                    contact_link, headers={"User-Agent": _AC_UA}, timeout=15,
+                )
+                if cr.status_code == 200:
+                    cs = BeautifulSoup(cr.text, "html.parser")
+                    ct = cs.get_text()
+                    result["emails"] = list(dict.fromkeys(
+                        result["emails"] + _extract_emails(ct)
+                    ))
+                    result["phones"] = list(dict.fromkeys(
+                        result["phones"] + _extract_phones(ct)
+                    ))
             except Exception:
-                continue
-
+                pass
     except Exception as e:
-        logger.warning(f"Error scraping agency website {url}: {e}")
-
-    # De-duplicate and filter junk
-    result["emails"] = list(set(e.lower() for e in result["emails"]
-                               if "@" in e and "." in e
-                               and not e.endswith(".png") and not e.endswith(".jpg")
-                               and "example.com" not in e and "sentry" not in e))
-    result["phones"] = list(set(result["phones"]))
+        logger.debug(f"Error scraping website {url}: {e}")
     return result
 
 
-# ── Indeed Scraper ──────────────────────────────────────────────────
-
-def scrape_indeed(search_term: str = "healthcare recruitment agency", location: str = "United Kingdom", max_pages: int = 2) -> list:
+def scrape_agency_central(industry_slug, max_pages=3, follow_websites=True):
     """
-    Scrape Indeed for recruitment agency job postings to identify agencies.
-    Extracts company names and job details as leads.
-    Falls back to requests-only mode if Selenium/Chrome is unavailable.
+    Scrape AgencyCentral for agencies in a given industry.
+    Uses sitemap + profile page extraction (no Selenium/Chrome needed).
+    max_pages controls how many agencies to fetch (~20 per page equivalent).
     """
     leads = []
-    driver = _get_headless_driver()  # May return None
-    use_requests_only = driver is None
+    industry_name = AGENCY_CENTRAL_INDUSTRIES.get(
+        industry_slug, industry_slug.title()
+    )
+    max_leads = max_pages * 20
 
     try:
-        base_url = "https://uk.indeed.com/jobs"
+        profile_urls = _discover_agency_urls_from_sitemap()
+        if not profile_urls:
+            logger.warning("No agency URLs found in sitemap")
+            return leads
 
+        logger.info(
+            f"[Stage 1] Processing up to {len(profile_urls)} profiles "
+            f"(target: {max_leads} for '{industry_name}')"
+        )
+
+        processed = 0
+        for url in profile_urls:
+            if len(leads) >= max_leads:
+                break
+            processed += 1
+            logger.info(f"[Stage 2] Profile {processed}/{len(profile_urls)}: {url}")
+            profile_data = _extract_profile_data(url)
+            if not profile_data:
+                continue
+            agency_industries = (
+                profile_data.get("agency", {}).get("industries", "") or ""
+            ).lower()
+            industry_match = (
+                industry_name.lower() in agency_industries
+                or industry_slug.lower() in agency_industries
+            )
+            if not industry_match:
+                continue
+            lead = _build_lead_from_profile(
+                url, profile_data, industry_name, industry_slug
+            )
+            if lead:
+                leads.append(lead)
+                logger.info(
+                    f"  -> Added: {lead['name']} "
+                    f"(email={bool(lead.get('email'))}, "
+                    f"phone={bool(lead.get('phone'))})"
+                )
+            _random_delay(0.5, 1.5)
+
+        logger.info(
+            f"[Done] Found {len(leads)} {industry_name} agencies "
+            f"(processed {processed} profiles)"
+        )
+
+        if follow_websites:
+            enriched = 0
+            for lead in leads:
+                needs_enrichment = (
+                    (not lead.get("email") or not lead.get("phone"))
+                    and lead.get("has_website")
+                )
+                if needs_enrichment:
+                    slug = _extract_slug_from_profile_url(
+                        lead.get("source_url", "")
+                    )
+                    if slug:
+                        ac_url = (
+                            "https://www.agencycentral.co.uk"
+                            f"/recruitment-agency/{slug}"
+                        )
+                        contacts = _scrape_agency_website_requests(ac_url)
+                        if contacts.get("emails") and not lead.get("email"):
+                            lead["email"] = contacts["emails"][0]
+                        if contacts.get("phones") and not lead.get("phone"):
+                            lead["phone"] = contacts["phones"][0]
+                        if contacts.get("social_links"):
+                            lead.setdefault("social_links", {}).update(
+                                contacts["social_links"]
+                            )
+                        enriched += 1
+                        _random_delay(1.0, 2.0)
+            if enriched:
+                logger.info(f"[Stage 3] Enriched {enriched} from websites")
+
+    except Exception as e:
+        logger.error(
+            f"AgencyCentral scraper error: {e}\n{traceback.format_exc()}"
+        )
+
+    return leads
+
+
+def scrape_indeed(
+    search_term="healthcare recruitment agency",
+    location="United Kingdom",
+    max_pages=2,
+):
+    """Scrape Indeed for recruitment agency job postings. Requests-only."""
+    leads = []
+    try:
+        base_url = "https://uk.indeed.com/jobs"
         for page in range(max_pages):
             start = page * 10
-            params = f"?q={search_term.replace(' ', '+')}&l={location.replace(' ', '+')}&start={start}"
-            url = base_url + params
+            url = (
+                f"{base_url}?q={search_term.replace(' ', '+')}"
+                f"&l={location.replace(' ', '+')}&start={start}"
+            )
             logger.info(f"Scraping Indeed page {page + 1}: {url}")
-
             try:
-                if use_requests_only:
-                    resp = http_requests.get(url, headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    }, timeout=20)
-                    resp.raise_for_status()
-                    page_html = resp.text
-                else:
-                    driver.get(url)
-                    _random_delay(2.0, 4.0)
-                    page_html = driver.page_source
+                resp = http_requests.get(
+                    url, headers={"User-Agent": _AC_UA}, timeout=20,
+                )
+                resp.raise_for_status()
+                page_html = resp.text
             except Exception as e:
                 logger.warning(f"Failed to load Indeed page {page + 1}: {e}")
                 break
-
             soup = BeautifulSoup(page_html, "html.parser")
-
-            # Indeed job cards
-            job_cards = soup.select('div.job_seen_beacon, div.jobsearch-ResultsList > div, td.resultContent')
+            job_cards = soup.select(
+                "div.job_seen_beacon, "
+                "div.jobsearch-ResultsList > div, "
+                "td.resultContent"
+            )
             if not job_cards:
-                # Try alternative selectors
-                job_cards = soup.select('[data-jk], .result, .tapItem')
-
+                job_cards = soup.select("[data-jk], .result, .tapItem")
             if not job_cards:
-                logger.info(f"No job cards found on Indeed page {page + 1}")
+                logger.info(f"No job cards on Indeed page {page + 1}")
                 break
-
             seen_companies = set()
             for card in job_cards:
                 try:
-                    # Company name
-                    company_el = card.select_one('[data-testid="company-name"], .companyName, .company')
+                    company_el = card.select_one(
+                        '[data-testid="company-name"], .companyName, .company'
+                    )
                     if not company_el:
                         continue
                     company = company_el.get_text(strip=True)
                     if not company or company in seen_companies:
                         continue
                     seen_companies.add(company)
-
-                    # Job title
-                    title_el = card.select_one('[data-testid="jobTitle"], .jobTitle, .title a, h2 a')
+                    title_el = card.select_one(
+                        '[data-testid="jobTitle"], .jobTitle, .title a, h2 a'
+                    )
                     title = title_el.get_text(strip=True) if title_el else ""
-
-                    # Location
-                    loc_el = card.select_one('[data-testid="text-location"], .companyLocation, .location')
+                    loc_el = card.select_one(
+                        '[data-testid="text-location"], '
+                        ".companyLocation, .location"
+                    )
                     loc = loc_el.get_text(strip=True) if loc_el else ""
-
-                    # Salary
-                    sal_el = card.select_one('.salary-snippet, .estimated-salary, [data-testid="attribute_snippet_testid"]')
+                    sal_el = card.select_one(".salary-snippet, .estimated-salary")
                     salary = sal_el.get_text(strip=True) if sal_el else ""
-
-                    # Description snippet
-                    desc_el = card.select_one('.job-snippet, .heading6, [data-testid="job-snippet"]')
+                    desc_el = card.select_one(".job-snippet, .heading6")
                     desc = desc_el.get_text(strip=True) if desc_el else ""
-
-                    # Job link
-                    link_el = card.select_one('a[href*="/rc/clk"], a[href*="/viewjob"], h2 a, .title a')
+                    link_el = card.select_one(
+                        'a[href*="/rc/clk"], a[href*="/viewjob"], h2 a'
+                    )
                     job_url = ""
                     if link_el and link_el.get("href"):
                         href = link_el["href"]
                         if not href.startswith("http"):
                             href = "https://uk.indeed.com" + href
                         job_url = href
-
                     leads.append({
                         "name": company,
-                        "description": f"{title} - {desc}"[:500] if title else desc[:500],
+                        "description": (
+                            f"{title} - {desc}"[:500] if title else desc[:500]
+                        ),
                         "industry": search_term,
                         "industry_slug": search_term.lower().replace(" ", "_"),
                         "source": "indeed",
                         "source_url": job_url,
-                        "website": "",
-                        "email": "",
-                        "phone": "",
-                        "location": loc,
-                        "coverage": "",
-                        "employment_types": "",
-                        "salary_range": salary,
-                        "listed_since": "",
-                        "verified": False,
+                        "website": "", "email": "", "phone": "",
+                        "location": loc, "coverage": "",
+                        "employment_types": "", "salary_range": salary,
+                        "listed_since": "", "verified": False,
                     })
                 except Exception as e:
                     logger.warning(f"Error parsing Indeed card: {e}")
                     continue
-
             _random_delay(2.0, 5.0)
-
     except Exception as e:
         logger.error(f"Indeed scraper error: {e}\n{traceback.format_exc()}")
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
     return leads
 
 
-# ── CQC API ─────────────────────────────────────────────────────────
-
-def scrape_cqc_api(search_type: str = "care_homes", location: str = "", max_results: int = 100) -> list:
-    """
-    Query the CQC public API for healthcare providers.
-    Free API, no authentication required.
-    """
-    import requests as req
-
+def scrape_cqc_api(search_type="care_homes", location="", max_results=100):
+    """Query the CQC public API for healthcare providers."""
     leads = []
     base_url = "https://api.cqc.org.uk/public/v1"
-
     try:
-        # Search providers
-        params = {
-            "perPage": min(max_results, 500),
-            "page": 1,
-        }
-
-        # Determine type filters
+        params = {"perPage": min(max_results, 500), "page": 1}
         if search_type == "care_homes":
             params["careHome"] = "Y"
         elif search_type == "domiciliary":
             params["serviceType"] = "Homecare agencies"
-
         url = f"{base_url}/providers"
         logger.info(f"Querying CQC API: {url} with params {params}")
-
-        resp = req.get(url, params=params, timeout=30, headers={
-            "User-Agent": "HealthVetAI/1.0 (compliance platform)",
-        })
+        cqc_ua = "HealthVetAI/1.0 (compliance platform)"
+        resp = http_requests.get(
+            url, params=params, timeout=30,
+            headers={"User-Agent": cqc_ua},
+        )
         resp.raise_for_status()
         data = resp.json()
-
         providers = data.get("providers", [])
         logger.info(f"CQC API returned {len(providers)} providers")
-
         for prov in providers[:max_results]:
             provider_id = prov.get("providerId", "")
             name = prov.get("providerName", "")
             if not name:
                 continue
-
-            # Get detailed info
             detail = {}
             try:
-                detail_resp = req.get(f"{base_url}/providers/{provider_id}", timeout=15, headers={
-                    "User-Agent": "HealthVetAI/1.0 (compliance platform)",
-                })
+                detail_resp = http_requests.get(
+                    f"{base_url}/providers/{provider_id}",
+                    timeout=15, headers={"User-Agent": cqc_ua},
+                )
                 if detail_resp.status_code == 200:
                     detail = detail_resp.json()
-                _random_delay(0.3, 0.8)  # Rate limit respect
+                _random_delay(0.3, 0.8)
             except Exception:
                 pass
-
-            # Parse details
             address_parts = []
-            for k in ["postalAddressLine1", "postalAddressLine2", "postalAddressTownCity", "postalAddressCounty", "postalCode"]:
+            for k in [
+                "postalAddressLine1", "postalAddressLine2",
+                "postalAddressTownCity", "postalAddressCounty", "postalCode",
+            ]:
                 val = detail.get(k) or prov.get(k, "")
                 if val:
                     address_parts.append(val)
             location_str = ", ".join(address_parts)
-
             phone = detail.get("mainPhoneNumber") or ""
             website = detail.get("website") or ""
-            email = ""
-
-            # CQC rating
             rating = ""
             if detail.get("currentRatings"):
                 overall = detail["currentRatings"].get("overall", {})
                 rating = overall.get("rating", "")
-
-            # Inspection info
             last_inspection = detail.get("lastInspection", {})
-            inspection_date = last_inspection.get("date", "") if isinstance(last_inspection, dict) else ""
-
-            # Services
+            inspection_date = (
+                last_inspection.get("date", "")
+                if isinstance(last_inspection, dict) else ""
+            )
             services = []
             for svc in detail.get("regulatedActivities", []):
                 if isinstance(svc, dict):
                     services.append(svc.get("name", ""))
-
             leads.append({
                 "name": name,
-                "description": f"CQC registered provider. Rating: {rating}. Services: {', '.join(services[:3])}"[:500],
+                "description": (
+                    f"CQC registered provider. Rating: {rating}. "
+                    f"Services: {', '.join(services[:3])}"
+                )[:500],
                 "industry": "Health Care",
                 "industry_slug": "health",
                 "source": "cqc",
                 "source_url": f"https://www.cqc.org.uk/provider/{provider_id}",
-                "website": website,
-                "email": email,
-                "phone": phone,
-                "location": location_str,
-                "coverage": "",
-                "employment_types": "",
-                "salary_range": "",
-                "listed_since": "",
-                "verified": True,
+                "website": website, "email": "", "phone": phone,
+                "location": location_str, "coverage": "",
+                "employment_types": "", "salary_range": "",
+                "listed_since": "", "verified": True,
                 "extra": {
                     "cqc_provider_id": provider_id,
                     "cqc_rating": rating,
@@ -863,92 +572,71 @@ def scrape_cqc_api(search_type: str = "care_homes", location: str = "", max_resu
                     "regulated_activities": services[:5],
                 },
             })
-
     except Exception as e:
         logger.error(f"CQC API error: {e}\n{traceback.format_exc()}")
-
     return leads
 
 
-# ── NHS Jobs Scraper ─────────────────────────────────────────────────
-
-def scrape_nhs_jobs(search_term: str = "recruitment", max_pages: int = 2) -> list:
-    """
-    Scrape NHS Jobs for healthcare recruitment agencies.
-    Extracts employers posting jobs to identify potential leads.
-    Falls back to requests-only mode if Selenium/Chrome is unavailable.
-    """
+def scrape_nhs_jobs(search_term="recruitment", max_pages=2):
+    """Scrape NHS Jobs for healthcare recruitment agencies. Requests-only."""
     leads = []
-    driver = _get_headless_driver()  # May return None
-    use_requests_only = driver is None
-
     try:
         base_url = "https://www.jobs.nhs.uk/candidate/search/results"
-
         for page in range(1, max_pages + 1):
-            url = f"{base_url}?keyword={search_term.replace(' ', '+')}&page={page}"
+            url = (
+                f"{base_url}?keyword={search_term.replace(' ', '+')}"
+                f"&page={page}"
+            )
             logger.info(f"Scraping NHS Jobs page {page}: {url}")
-
             try:
-                if use_requests_only:
-                    resp = http_requests.get(url, headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    }, timeout=20)
-                    resp.raise_for_status()
-                    page_html = resp.text
-                else:
-                    driver.get(url)
-                    _random_delay(2.0, 4.0)
-                    page_html = driver.page_source
+                resp = http_requests.get(
+                    url, headers={"User-Agent": _AC_UA}, timeout=20,
+                )
+                resp.raise_for_status()
+                page_html = resp.text
             except Exception as e:
                 logger.warning(f"Failed to load NHS Jobs page {page}: {e}")
                 break
-
             soup = BeautifulSoup(page_html, "html.parser")
-            page_text = soup.get_text()
-
-            # NHS Jobs uses various card structures
-            job_cards = soup.select('[data-test="search-result"], .nhsuk-list-panel, .vacancy-card, li.nhsuk-list-panel__item')
+            job_cards = soup.select(
+                '[data-test="search-result"], '
+                ".nhsuk-list-panel, .vacancy-card"
+            )
             if not job_cards:
-                # Try broader selectors
-                job_cards = soup.select('.search-result, article, .result-item')
-
+                job_cards = soup.select(".search-result, article, .result-item")
             if not job_cards:
                 logger.info(f"No results on NHS Jobs page {page}")
                 break
-
             seen_employers = set()
             for card in job_cards:
                 try:
-                    card_text = card.get_text(strip=True)
-
-                    # Employer name
-                    employer_el = card.select_one('.nhsuk-body-s, .employer, [data-test="search-result-employer"]')
+                    employer_el = card.select_one(
+                        '.nhsuk-body-s, .employer, '
+                        '[data-test="search-result-employer"]'
+                    )
                     if not employer_el:
-                        # Try to find org name in text
-                        employer_el = card.select_one('p, span')
-                    employer = employer_el.get_text(strip=True) if employer_el else ""
+                        employer_el = card.select_one("p, span")
+                    employer = (
+                        employer_el.get_text(strip=True) if employer_el else ""
+                    )
                     if not employer or employer in seen_employers:
                         continue
                     seen_employers.add(employer)
-
-                    # Job title
-                    title_el = card.select_one('a, h2, h3, [data-test="search-result-job-title"]')
+                    title_el = card.select_one(
+                        'a, h2, h3, [data-test="search-result-job-title"]'
+                    )
                     title = title_el.get_text(strip=True) if title_el else ""
-
-                    # Location
-                    loc_el = card.select_one('[data-test="search-result-location"], .location')
+                    loc_el = card.select_one(
+                        '[data-test="search-result-location"], .location'
+                    )
                     loc = loc_el.get_text(strip=True) if loc_el else ""
-
-                    # Link
-                    link_el = card.select_one('a[href]')
+                    link_el = card.select_one("a[href]")
                     job_url = ""
                     if link_el and link_el.get("href"):
                         href = link_el["href"]
                         if not href.startswith("http"):
                             href = "https://www.jobs.nhs.uk" + href
                         job_url = href
-
                     leads.append({
                         "name": employer,
                         "description": f"NHS employer posting: {title}"[:500],
@@ -956,37 +644,21 @@ def scrape_nhs_jobs(search_term: str = "recruitment", max_pages: int = 2) -> lis
                         "industry_slug": "health",
                         "source": "nhs_jobs",
                         "source_url": job_url,
-                        "website": "",
-                        "email": "",
-                        "phone": "",
-                        "location": loc,
-                        "coverage": "",
-                        "employment_types": "",
-                        "salary_range": "",
-                        "listed_since": "",
-                        "verified": True,
+                        "website": "", "email": "", "phone": "",
+                        "location": loc, "coverage": "",
+                        "employment_types": "", "salary_range": "",
+                        "listed_since": "", "verified": True,
                     })
                 except Exception as e:
                     logger.warning(f"Error parsing NHS Jobs card: {e}")
                     continue
-
             _random_delay(2.0, 5.0)
-
     except Exception as e:
         logger.error(f"NHS Jobs scraper error: {e}\n{traceback.format_exc()}")
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
     return leads
 
 
-# ── Master Scrape Runner ─────────────────────────────────────────────
-
-def run_scrape_job(source: str, config: dict) -> list:
+def run_scrape_job(source, config):
     """Run a scrape job for the specified source and config."""
     if source == "agencycentral":
         return scrape_agency_central(
