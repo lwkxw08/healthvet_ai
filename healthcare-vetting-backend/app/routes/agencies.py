@@ -1,12 +1,16 @@
 """Agency management and invite routes."""
+import logging
 import secrets
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_db
 from app.utils.auth import get_current_user, generate_id
 from app.schemas.agencies import InviteCreate, InviteResponse
+from app.services.email_templates import EmailTemplateService, reload_email_config
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agencies", tags=["Agencies"])
 
@@ -35,7 +39,7 @@ async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/invites")
-async def create_invite(data: InviteCreate, current_user: dict = Depends(get_current_user)):
+async def create_invite(data: InviteCreate, request: Request, current_user: dict = Depends(get_current_user)):
     """Agency creates an invite for a candidate email.
     Routes payment based on agency billing_mode:
     - manual_invoicing: creates pending invoice (no Stripe)
@@ -160,6 +164,25 @@ async def create_invite(data: InviteCreate, current_user: dict = Depends(get_cur
                 )
             payment_info["status"] = "invoice_created"
             payment_info["invoice_id"] = inv_id
+
+    # Send candidate invite email
+    try:
+        reload_email_config()
+        base_url = str(request.base_url).rstrip("/")
+        invite_link = f"{base_url}/?invite={invite_code}"
+        email_result = EmailTemplateService.send_email(
+            template_key="candidate_invite",
+            recipient_email=data.candidate_email,
+            recipient_name=data.candidate_email.split("@")[0],
+            variables={
+                "candidate_name": data.candidate_email.split("@")[0].title(),
+                "agency_name": agency_name,
+                "invite_link": invite_link,
+            },
+        )
+        logger.info(f"Invite email to {data.candidate_email}: {email_result.get('status')}")
+    except Exception as e:
+        logger.error(f"Failed to send invite email to {data.candidate_email}: {e}")
 
     return {
         "id": invite_id,
