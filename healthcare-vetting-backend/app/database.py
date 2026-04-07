@@ -1030,7 +1030,7 @@ def migrate_db():
         import os
         from app.utils.auth import generate_id, hash_password
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@healthvet.ai")
-        admin_pw = os.environ.get("ADMIN_PASSWORD", "changeme")
+        admin_pw = os.environ.get("ADMIN_PASSWORD", "Password123!")
         cursor.execute(
             """INSERT INTO admin_users (id, email, password_hash, display_name, role)
                VALUES (?, ?, ?, ?, ?)""",

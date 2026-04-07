@@ -59,7 +59,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # ── CORS — environment-configurable, locked down for production ──────────────
-_default_origins = "http://localhost:5173,http://localhost:3000"
+_default_origins = "http://localhost:5173,http://localhost:3000,https://automated-healthcare-compliance-app-dnop8bs4.devinapps.com"
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",")
 
 app.add_middleware(
