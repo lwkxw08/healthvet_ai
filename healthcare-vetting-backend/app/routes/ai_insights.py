@@ -123,8 +123,8 @@ async def get_smart_schedule(
 @router.get("/status")
 async def ai_status(current_user: dict = Depends(get_current_user)):
     """Check AI feature availability (which providers are configured)."""
-    import os
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    from app.routes.email_config import get_openai_api_key
+    openai_key = get_openai_api_key()
     return {
         "openai_configured": bool(openai_key),
         "openai_model": "gpt-4o-mini" if openai_key else None,

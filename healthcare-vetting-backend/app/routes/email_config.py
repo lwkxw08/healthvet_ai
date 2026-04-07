@@ -28,6 +28,11 @@ EMAIL_SETTING_KEYS = [
     "email_from_name",
 ]
 
+# AI / OpenAI settings keys
+AI_SETTING_KEYS = [
+    "openai_api_key",
+]
+
 # Trust signal settings (displayed in verification email footers)
 TRUST_SETTING_KEYS = [
     "trust_company_reg_info",
@@ -47,6 +52,10 @@ class EmailConfigUpdate(BaseModel):
     resend_api_key: Optional[str] = ""
     email_from_address: Optional[str] = ""
     email_from_name: Optional[str] = ""
+
+
+class AIConfigUpdate(BaseModel):
+    openai_api_key: Optional[str] = ""
 
 
 class TrustSettingsUpdate(BaseModel):
@@ -91,6 +100,19 @@ def get_email_config_from_db() -> dict:
         # Table might not exist yet during startup
         pass
     return result
+
+
+def get_openai_api_key() -> str:
+    """Return the OpenAI API key — DB first, then env-var fallback."""
+    try:
+        with get_db() as db:
+            val = _get_setting(db, "openai_api_key")
+            if val:
+                return val
+    except Exception:
+        pass
+    import os
+    return os.environ.get("OPENAI_API_KEY", "")
 
 
 def mask_api_key(key: str) -> str:
@@ -166,6 +188,40 @@ async def update_trust_settings(data: TrustSettingsUpdate, admin=Depends(get_cur
                 _set_setting(db, f"trust_{key}", value)
     logger.info(f"Trust settings updated by admin {admin.get('email', 'unknown')}")
     return {"status": "ok", "message": "Trust settings updated"}
+
+
+# --------------- AI Config endpoints ---------------
+
+@router.get("/ai")
+async def get_ai_config(admin=Depends(get_current_admin)):
+    """Get current AI provider configuration (API keys are masked)."""
+    with get_db() as db:
+        config = {}
+        for key in AI_SETTING_KEYS:
+            val = _get_setting(db, key)
+            if "api_key" in key and val:
+                config[key] = mask_api_key(val)
+                config[f"{key}_set"] = True
+            else:
+                config[key] = val
+                if "api_key" in key:
+                    config[f"{key}_set"] = False
+    return config
+
+
+@router.put("/ai")
+async def update_ai_config(data: AIConfigUpdate, admin=Depends(get_current_admin)):
+    """Update AI provider configuration (OpenAI key)."""
+    with get_db() as db:
+        updates = data.dict()
+        for key, value in updates.items():
+            if value is None:
+                value = ""
+            if "api_key" in key and value and value.startswith("*"):
+                continue
+            _set_setting(db, key, value)
+    logger.info(f"AI configuration updated by admin {admin.get('email', 'unknown')}")
+    return {"status": "ok", "message": "AI configuration updated"}
 
 
 @router.post("/test")

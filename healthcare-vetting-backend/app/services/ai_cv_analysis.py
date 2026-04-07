@@ -11,7 +11,8 @@ from app.utils.auth import generate_id
 
 def _get_openai_client():
     """Return an OpenAI client if the API key is configured, else None."""
-    api_key = os.environ.get("OPENAI_API_KEY", "")
+    from app.routes.email_config import get_openai_api_key
+    api_key = get_openai_api_key()
     if not api_key:
         return None
     try:
