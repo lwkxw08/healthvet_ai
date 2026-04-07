@@ -48,24 +48,28 @@ AGENCY_CENTRAL_INDUSTRIES = {
 
 
 def _get_headless_driver():
-    """Create a headless Chrome/Selenium driver."""
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.chrome.service import Service
+    """Create a headless Chrome/Selenium driver. Returns None if Chrome/Selenium unavailable."""
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
 
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        options = Options()
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(30)
-    driver.implicitly_wait(5)
-    return driver
+        driver = webdriver.Chrome(options=options)
+        driver.set_page_load_timeout(30)
+        driver.implicitly_wait(5)
+        return driver
+    except Exception as e:
+        logger.warning(f"Chrome/Selenium not available: {e}. Falling back to requests-only scraping.")
+        return None
 
 
 def _random_delay(min_s=1.0, max_s=3.0):
@@ -314,28 +318,35 @@ def scrape_agency_central(industry_slug: str, max_pages: int = 3, follow_website
     Stage 1: Extract listings from directory pages.
     Stage 1.5: Enrich each lead via AgencyCentral API + profile page button clicks.
     Stage 2: Follow through to agency's own website for full contact info.
+    Falls back to requests-only mode if Selenium/Chrome is unavailable.
     """
     leads = []
     base_url = f"https://www.agencycentral.co.uk/agencysearch/{industry_slug}/agencysearch.htm"
     industry_name = AGENCY_CENTRAL_INDUSTRIES.get(industry_slug, industry_slug.title())
 
-    driver = None
-    try:
-        driver = _get_headless_driver()
+    driver = _get_headless_driver()  # May return None if Chrome unavailable
+    use_requests_only = driver is None
 
+    try:
         # ── Stage 1: Scrape directory listings ──
         for page in range(1, max_pages + 1):
             url = base_url if page == 1 else f"{base_url}?page={page}"
             logger.info(f"[Stage 1] Scraping AgencyCentral page {page}: {url}")
 
             try:
-                driver.get(url)
-                _random_delay(1.5, 3.0)
+                if use_requests_only:
+                    resp = http_requests.get(url, headers=_AC_API_HEADERS, timeout=20)
+                    resp.raise_for_status()
+                    page_html = resp.text
+                else:
+                    driver.get(url)
+                    _random_delay(1.5, 3.0)
+                    page_html = driver.page_source
             except Exception as e:
                 logger.warning(f"Failed to load page {page}: {e}")
                 break
 
-            soup = BeautifulSoup(driver.page_source, "html.parser")
+            soup = BeautifulSoup(page_html, "html.parser")
 
             # Find agency listings: <li> elements that contain an <h3> with
             # a link to /recruitment-agency/...
@@ -380,13 +391,14 @@ def scrape_agency_central(industry_slug: str, max_pages: int = 3, follow_website
                         lead["description"] = api_data["Description"][:500]
                 _random_delay(0.3, 0.8)
 
-            # Visit profile page to click buttons and get contact details
-            logger.info(f"[Stage 1.5] Enriching {i+1}/{len(leads)}: {lead.get('name')}")
-            _enrich_lead_from_profile(driver, lead)
-            _random_delay(1.0, 2.0)
+            # Visit profile page to click buttons and get contact details (requires Selenium)
+            if not use_requests_only:
+                logger.info(f"[Stage 1.5] Enriching {i+1}/{len(leads)}: {lead.get('name')}")
+                _enrich_lead_from_profile(driver, lead)
+                _random_delay(1.0, 2.0)
 
         # ── Stage 2: Follow through to agency's own website ──
-        if follow_websites:
+        if follow_websites and not use_requests_only:
             enriched_count = 0
             for lead in leads:
                 if lead.get("website") and (not lead.get("email") or not lead.get("phone")):
@@ -631,12 +643,13 @@ def scrape_indeed(search_term: str = "healthcare recruitment agency", location: 
     """
     Scrape Indeed for recruitment agency job postings to identify agencies.
     Extracts company names and job details as leads.
+    Falls back to requests-only mode if Selenium/Chrome is unavailable.
     """
     leads = []
-    driver = None
+    driver = _get_headless_driver()  # May return None
+    use_requests_only = driver is None
 
     try:
-        driver = _get_headless_driver()
         base_url = "https://uk.indeed.com/jobs"
 
         for page in range(max_pages):
@@ -646,13 +659,21 @@ def scrape_indeed(search_term: str = "healthcare recruitment agency", location: 
             logger.info(f"Scraping Indeed page {page + 1}: {url}")
 
             try:
-                driver.get(url)
-                _random_delay(2.0, 4.0)
+                if use_requests_only:
+                    resp = http_requests.get(url, headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    }, timeout=20)
+                    resp.raise_for_status()
+                    page_html = resp.text
+                else:
+                    driver.get(url)
+                    _random_delay(2.0, 4.0)
+                    page_html = driver.page_source
             except Exception as e:
                 logger.warning(f"Failed to load Indeed page {page + 1}: {e}")
                 break
 
-            soup = BeautifulSoup(driver.page_source, "html.parser")
+            soup = BeautifulSoup(page_html, "html.parser")
 
             # Indeed job cards
             job_cards = soup.select('div.job_seen_beacon, div.jobsearch-ResultsList > div, td.resultContent')
@@ -855,12 +876,13 @@ def scrape_nhs_jobs(search_term: str = "recruitment", max_pages: int = 2) -> lis
     """
     Scrape NHS Jobs for healthcare recruitment agencies.
     Extracts employers posting jobs to identify potential leads.
+    Falls back to requests-only mode if Selenium/Chrome is unavailable.
     """
     leads = []
-    driver = None
+    driver = _get_headless_driver()  # May return None
+    use_requests_only = driver is None
 
     try:
-        driver = _get_headless_driver()
         base_url = "https://www.jobs.nhs.uk/candidate/search/results"
 
         for page in range(1, max_pages + 1):
@@ -868,13 +890,21 @@ def scrape_nhs_jobs(search_term: str = "recruitment", max_pages: int = 2) -> lis
             logger.info(f"Scraping NHS Jobs page {page}: {url}")
 
             try:
-                driver.get(url)
-                _random_delay(2.0, 4.0)
+                if use_requests_only:
+                    resp = http_requests.get(url, headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    }, timeout=20)
+                    resp.raise_for_status()
+                    page_html = resp.text
+                else:
+                    driver.get(url)
+                    _random_delay(2.0, 4.0)
+                    page_html = driver.page_source
             except Exception as e:
                 logger.warning(f"Failed to load NHS Jobs page {page}: {e}")
                 break
 
-            soup = BeautifulSoup(driver.page_source, "html.parser")
+            soup = BeautifulSoup(page_html, "html.parser")
             page_text = soup.get_text()
 
             # NHS Jobs uses various card structures
