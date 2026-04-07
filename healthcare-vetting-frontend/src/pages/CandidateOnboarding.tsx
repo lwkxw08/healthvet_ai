@@ -458,7 +458,7 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
 
         <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6 mb-6 text-center">
           <h3 className="text-md font-semibold text-white mb-3">Compliance Score</h3>
-          <div className={`text-5xl font-bold ${overallColor}`}>{complianceScore}%</div>
+          <div className={`text-5xl font-bold ${overallColor}`}>{Number(complianceScore).toFixed(1)}%</div>
           <div className={`inline-block mt-3 px-4 py-1 rounded-full border text-sm font-semibold capitalize ${overallBg}`}>
             {complianceStatus}
           </div>

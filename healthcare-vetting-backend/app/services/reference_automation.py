@@ -3,11 +3,14 @@ Automated Reference Service
 Sends structured reference requests, tracks responses, detects fraud.
 """
 import json
+import logging
 import random
 import secrets
 from datetime import datetime, timedelta, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
+
+logger = logging.getLogger(__name__)
 
 
 class ReferenceAutomationService:
@@ -70,7 +73,20 @@ class ReferenceAutomationService:
             )
 
             row = db.execute("SELECT * FROM references_ WHERE id=?", (ref_id,)).fetchone()
-            return dict(row)
+
+        # Send the actual reference request email
+        try:
+            ReferenceAutomationService._send_reference_email(
+                referee_email=referee_email,
+                referee_name=referee_name,
+                candidate_id=candidate_id,
+                token=token,
+                verification_code=verification_code,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send reference request email to {referee_email}: {e}")
+
+        return dict(row)
 
     @staticmethod
     def submit_reference(token: str, responses: dict, ip_address: str = None) -> dict:
@@ -180,6 +196,20 @@ class ReferenceAutomationService:
                     ),
                 )
 
+            # Send the actual reminder email
+            try:
+                ReferenceAutomationService._send_reminder_email(
+                    referee_email=ref_dict.get("referee_email", ""),
+                    referee_name=ref_dict.get("referee_name", ""),
+                    candidate_id=ref_dict["candidate_id"],
+                    token=ref_dict.get("token", ""),
+                    verification_code=ref_dict.get("verification_code", ""),
+                    reminder_number=new_count,
+                    original_sent_date=ref_dict.get("sent_at", ""),
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send reference reminder email: {e}")
+
             return {"ref_id": ref_id, "reminders_sent": new_count, "escalated": new_count >= 3}
 
     @staticmethod
@@ -250,6 +280,108 @@ class ReferenceAutomationService:
             })
 
         return flags
+
+    @staticmethod
+    def _send_reference_email(
+        referee_email: str,
+        referee_name: str,
+        candidate_id: str,
+        token: str,
+        verification_code: str,
+    ):
+        """Send the reference request email to the referee."""
+        from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+
+        # Look up candidate and agency names
+        with get_db() as db:
+            cand = db.execute(
+                "SELECT first_name, last_name FROM candidates WHERE id=?", (candidate_id,)
+            ).fetchone()
+            candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
+
+            agency_link = db.execute(
+                "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1", (candidate_id,)
+            ).fetchone()
+            agency_name = "HealthVet AI"
+            if agency_link:
+                agency = db.execute(
+                    "SELECT name FROM agencies WHERE id=?", (dict(agency_link)["agency_id"],)
+                ).fetchone()
+                if agency:
+                    agency_name = dict(agency)["name"]
+
+        base_url = "https://app-wwjesgoe.fly.dev"
+        reference_link = f"{base_url}/verify?token={token}&type=reference"
+
+        variables = {
+            "candidate_name": candidate_name,
+            "referee_name": referee_name,
+            "agency_name": agency_name,
+            "verification_code": verification_code,
+            "reference_link": reference_link,
+            **get_trust_signal_variables(),
+        }
+
+        EmailTemplateService.send_email(
+            template_key="reference_request",
+            recipient_email=referee_email,
+            recipient_name=referee_name,
+            variables=variables,
+        )
+        logger.info(f"Reference request email sent to {referee_email} for candidate {candidate_id}")
+
+    @staticmethod
+    def _send_reminder_email(
+        referee_email: str,
+        referee_name: str,
+        candidate_id: str,
+        token: str,
+        verification_code: str,
+        reminder_number: int,
+        original_sent_date: str,
+    ):
+        """Send a reminder email to the referee."""
+        from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+
+        with get_db() as db:
+            cand = db.execute(
+                "SELECT first_name, last_name FROM candidates WHERE id=?", (candidate_id,)
+            ).fetchone()
+            candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
+
+            agency_link = db.execute(
+                "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1", (candidate_id,)
+            ).fetchone()
+            agency_name = "HealthVet AI"
+            if agency_link:
+                agency = db.execute(
+                    "SELECT name FROM agencies WHERE id=?", (dict(agency_link)["agency_id"],)
+                ).fetchone()
+                if agency:
+                    agency_name = dict(agency)["name"]
+
+        base_url = "https://app-wwjesgoe.fly.dev"
+        action_link = f"{base_url}/verify?token={token}&type=reference"
+
+        variables = {
+            "recipient_name": referee_name,
+            "request_type": "Professional Reference",
+            "candidate_name": candidate_name,
+            "agency_name": agency_name,
+            "original_sent_date": original_sent_date[:10] if original_sent_date else "",
+            "reminder_number": str(reminder_number),
+            "verification_code": verification_code,
+            "action_link": action_link,
+            **get_trust_signal_variables(),
+        }
+
+        EmailTemplateService.send_email(
+            template_key="verification_reminder",
+            recipient_email=referee_email,
+            recipient_name=referee_name,
+            variables=variables,
+        )
+        logger.info(f"Reference reminder #{reminder_number} sent to {referee_email} for candidate {candidate_id}")
 
     @staticmethod
     def get_reference(ref_id: str) -> dict:

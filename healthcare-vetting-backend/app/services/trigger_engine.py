@@ -14,6 +14,10 @@ from app.services.registration_checks import RegistrationCheckService
 from app.services.reference_automation import ReferenceAutomationService
 from app.services.employment_verification import EmploymentVerificationService
 from app.services.compliance_engine import ComplianceEngine
+from app.services.trustid_checks import TrustIDService
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 class TriggerEngine:
@@ -53,14 +57,74 @@ class TriggerEngine:
         # Fire checks for each section
         results = {}
 
-        if "identity" in sections and "identity" in section_data:
-            results["identity"] = TriggerEngine._run_identity(candidate_id, section_data["identity"])
+        # Check TrustID manual mode for identity/rtw/dbs
+        # When in manual mode, create TrustID pending_admin records instead of running simulated checks
+        identity_manual = TrustIDService.get_submission_mode("identity_verification") == "manual"
+        rtw_manual = TrustIDService.get_submission_mode("right_to_work") == "manual"
+        dbs_manual = TrustIDService.get_submission_mode("dbs_check") == "manual"
 
-        if "rtw" in sections and "rtw" in section_data:
-            results["rtw"] = TriggerEngine._run_rtw(candidate_id, section_data["rtw"])
+        trustid_check_types = []
+
+        if "identity" in sections:
+            if identity_manual:
+                trustid_check_types.append("identity_verification")
+                results["identity"] = "pending_trustid_manual"
+            elif "identity" in section_data:
+                results["identity"] = TriggerEngine._run_identity(candidate_id, section_data["identity"])
+
+        if "rtw" in sections:
+            if rtw_manual:
+                trustid_check_types.append("right_to_work")
+                results["rtw"] = "pending_trustid_manual"
+            elif "rtw" in section_data:
+                results["rtw"] = TriggerEngine._run_rtw(candidate_id, section_data["rtw"])
 
         if "dbs" in sections:
-            results["dbs"] = TriggerEngine._run_dbs(candidate_id, section_data.get("dbs", {}))
+            if dbs_manual:
+                trustid_check_types.append("dbs_check")
+                results["dbs"] = "pending_trustid_manual"
+            else:
+                results["dbs"] = TriggerEngine._run_dbs(candidate_id, section_data.get("dbs", {}))
+
+        # Create TrustID check records for manual-mode sections
+        if trustid_check_types:
+            try:
+                # Get candidate info for TrustID records
+                with get_db() as db:
+                    cand = db.execute(
+                        "SELECT first_name, last_name, email, date_of_birth FROM candidates WHERE id=?",
+                        (candidate_id,),
+                    ).fetchone()
+                    cand_data = dict(cand) if cand else {}
+
+                candidate_name = f"{cand_data.get('first_name', '')} {cand_data.get('last_name', '')}".strip()
+                candidate_email = cand_data.get("email", "")
+                candidate_dob = cand_data.get("date_of_birth", "")
+
+                for check_type in trustid_check_types:
+                    TrustIDService.create_check(
+                        candidate_id=candidate_id,
+                        check_type=check_type,
+                        submitted_by="trigger_engine",
+                        candidate_name=candidate_name or None,
+                        candidate_email=candidate_email or None,
+                        candidate_dob=candidate_dob or None,
+                    )
+                logger.info(f"Created TrustID pending_admin records for {trustid_check_types} (candidate {candidate_id})")
+
+                # Send TrustID submission confirmation email to candidate
+                if candidate_email:
+                    try:
+                        from app.services.email_service import EmailService
+                        EmailService.send_trustid_submission_confirmation(
+                            candidate_email=candidate_email,
+                            candidate_name=candidate_name or "Candidate",
+                            check_types=trustid_check_types,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to send TrustID confirmation email: {e}")
+            except Exception as e:
+                logger.error(f"Failed to create TrustID check records: {e}")
 
         if "cv" in sections and "cv" in section_data:
             results["cv"] = TriggerEngine._run_cv(candidate_id, section_data["cv"])

@@ -197,7 +197,7 @@ export default function AnalyticsDashboard({ agencyId }: AnalyticsDashboardProps
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="bg-white border rounded-lg p-4">
               <div className="text-sm text-gray-500 mb-1">Compliance Rate</div>
-              <div className="text-3xl font-bold text-blue-600">{String(kpis.compliance_rate ?? 0)}%</div>
+              <div className="text-3xl font-bold text-blue-600">{Number(kpis.compliance_rate ?? 0).toFixed(1)}%</div>
               <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
                 <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Number(kpis.compliance_rate ?? 0)}%` }} />
               </div>

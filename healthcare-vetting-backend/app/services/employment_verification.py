@@ -6,11 +6,14 @@ Works the same way as references but specifically confirms job titles,
 dates of employment, and reasons for leaving.
 """
 import json
+import logging
 import random
 import secrets
 from datetime import datetime, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
+
+logger = logging.getLogger(__name__)
 
 
 class EmploymentVerificationService:
@@ -222,7 +225,21 @@ class EmploymentVerificationService:
             row = db.execute(
                 "SELECT * FROM employment_verifications WHERE id=?", (ver_id,)
             ).fetchone()
-            return dict(row)
+
+        # Send the actual verification request email
+        try:
+            EmploymentVerificationService._send_verification_email(
+                verifier_email=verifier_email,
+                verifier_name=verifier_name,
+                candidate_id=candidate_id,
+                employment_id=employment_id,
+                token=token,
+                verification_code=verification_code,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send employment verification email to {verifier_email}: {e}")
+
+        return dict(row)
 
     @staticmethod
     def _simulate_verification_response(db, ver_id: str, token: str, candidate_id: str):
@@ -348,7 +365,133 @@ class EmploymentVerificationService:
                     ),
                 )
 
+            # Send the actual reminder email
+            try:
+                EmploymentVerificationService._send_reminder_email(
+                    verifier_email=ver_dict.get("verifier_email", ""),
+                    verifier_name=ver_dict.get("verifier_name", ""),
+                    candidate_id=ver_dict["candidate_id"],
+                    token=ver_dict.get("token", ""),
+                    verification_code=ver_dict.get("verification_code", ""),
+                    reminder_number=new_count,
+                    original_sent_date=ver_dict.get("sent_at", ""),
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send employment verification reminder email: {e}")
+
             return {"verification_id": verification_id, "reminders_sent": new_count, "escalated": new_count >= 3}
+
+    @staticmethod
+    def _send_verification_email(
+        verifier_email: str,
+        verifier_name: str,
+        candidate_id: str,
+        employment_id: str,
+        token: str,
+        verification_code: str,
+    ):
+        """Send the employment verification request email to the verifier."""
+        from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+
+        with get_db() as db:
+            cand = db.execute(
+                "SELECT first_name, last_name FROM candidates WHERE id=?", (candidate_id,)
+            ).fetchone()
+            candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
+
+            emp = db.execute(
+                "SELECT employer_name, job_title, start_date, end_date FROM employment_history WHERE id=?",
+                (employment_id,)
+            ).fetchone()
+            emp_data = dict(emp) if emp else {}
+
+            agency_link = db.execute(
+                "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1", (candidate_id,)
+            ).fetchone()
+            agency_name = "HealthVet AI"
+            if agency_link:
+                agency = db.execute(
+                    "SELECT name FROM agencies WHERE id=?", (dict(agency_link)["agency_id"],)
+                ).fetchone()
+                if agency:
+                    agency_name = dict(agency)["name"]
+
+        base_url = "https://app-wwjesgoe.fly.dev"
+        verification_link = f"{base_url}/verify?token={token}&type=employment"
+
+        variables = {
+            "candidate_name": candidate_name,
+            "verifier_name": verifier_name,
+            "agency_name": agency_name,
+            "employer_name": emp_data.get("employer_name", ""),
+            "job_title": emp_data.get("job_title", ""),
+            "start_date": emp_data.get("start_date", ""),
+            "end_date": emp_data.get("end_date", "Present"),
+            "verification_code": verification_code,
+            "verification_link": verification_link,
+            **get_trust_signal_variables(),
+        }
+
+        EmailTemplateService.send_email(
+            template_key="employment_verification_request",
+            recipient_email=verifier_email,
+            recipient_name=verifier_name,
+            variables=variables,
+        )
+        logger.info(f"Employment verification email sent to {verifier_email} for candidate {candidate_id}")
+
+    @staticmethod
+    def _send_reminder_email(
+        verifier_email: str,
+        verifier_name: str,
+        candidate_id: str,
+        token: str,
+        verification_code: str,
+        reminder_number: int,
+        original_sent_date: str,
+    ):
+        """Send a reminder email to the employment verifier."""
+        from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+
+        with get_db() as db:
+            cand = db.execute(
+                "SELECT first_name, last_name FROM candidates WHERE id=?", (candidate_id,)
+            ).fetchone()
+            candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
+
+            agency_link = db.execute(
+                "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1", (candidate_id,)
+            ).fetchone()
+            agency_name = "HealthVet AI"
+            if agency_link:
+                agency = db.execute(
+                    "SELECT name FROM agencies WHERE id=?", (dict(agency_link)["agency_id"],)
+                ).fetchone()
+                if agency:
+                    agency_name = dict(agency)["name"]
+
+        base_url = "https://app-wwjesgoe.fly.dev"
+        action_link = f"{base_url}/verify?token={token}&type=employment"
+
+        variables = {
+            "recipient_name": verifier_name,
+            "request_type": "Employment Verification",
+            "candidate_name": candidate_name,
+            "agency_name": agency_name,
+            "original_sent_date": original_sent_date[:10] if original_sent_date else "",
+            "reminder_number": str(reminder_number),
+            "verification_code": verification_code,
+            "action_link": action_link,
+            **get_trust_signal_variables(),
+        }
+
+        EmailTemplateService.send_email(
+            template_key="verification_reminder",
+            recipient_email=verifier_email,
+            recipient_name=verifier_name,
+            variables=variables,
+        )
+        logger.info(f"Employment verification reminder #{reminder_number} sent to {verifier_email} for candidate {candidate_id}")
 
     @staticmethod
     def get_verifications_for_candidate(candidate_id: str) -> list:

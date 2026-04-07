@@ -537,9 +537,9 @@ export default function CandidatePortal() {
           {/* Compliance Score Card */}
           <div className="mt-6 p-4 bg-slate-700/50 rounded-xl border border-slate-600">
             <p className="text-xs text-slate-400 mb-2">Compliance Score</p>
-            <div className="text-3xl font-bold text-white mb-2">{complianceScore}%</div>
+            <div className="text-3xl font-bold text-white mb-2">{Number(complianceScore).toFixed(1)}%</div>
             <div className="w-full bg-slate-600 rounded-full h-2">
-              <div className="h-2 rounded-full transition-all" style={{ width: `${complianceScore}%`, backgroundColor: complianceScore >= 95 ? "#22c55e" : complianceScore >= 60 ? "#f59e0b" : "#ef4444" }} />
+              <div className="h-2 rounded-full transition-all" style={{ width: `${Number(complianceScore)}%`, backgroundColor: complianceScore >= 95 ? "#22c55e" : complianceScore >= 60 ? "#f59e0b" : "#ef4444" }} />
             </div>
             {compliance && <StatusBadge status={compliance.overall_status as string} />}
           </div>
@@ -1884,7 +1884,7 @@ export default function CandidatePortal() {
                     </div>
                     <div className="p-4 bg-slate-700/50 rounded-lg text-center">
                       <p className="text-slate-400 text-xs mb-1">Compliance Rate</p>
-                      <p className="text-2xl font-bold text-blue-400">{trainingCompliance.compliance_rate as number}%</p>
+                      <p className="text-2xl font-bold text-blue-400">{Number(trainingCompliance.compliance_rate ?? 0).toFixed(1)}%</p>
                     </div>
                   </div>
                   {(trainingCompliance.missing_mandatory as string[])?.length > 0 && (

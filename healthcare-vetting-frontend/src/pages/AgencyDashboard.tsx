@@ -816,7 +816,7 @@ export default function AgencyDashboard() {
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
                 <p className="text-slate-400 text-xs mb-1">Compliance Rate</p>
-                <p className="text-3xl font-bold text-green-400">{stats.compliance_rate as number}%</p>
+                <p className="text-3xl font-bold text-green-400">{Number(stats.compliance_rate ?? 0).toFixed(1)}%</p>
               </div>
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
                 <p className="text-slate-400 text-xs mb-1">Active Alerts</p>
@@ -1083,8 +1083,8 @@ export default function AgencyDashboard() {
                           <td className="px-4 py-3 text-sm text-white">{c.first_name as string} {c.last_name as string}</td>
                           <td className="px-4 py-3 text-sm text-slate-300">{(c.profession as string) || "N/A"}</td>
                           <td className="px-4 py-3 text-sm text-slate-300">{(c.registration_body as string) || "N/A"} {(c.registration_number as string) || ""}</td>
-                          <td className="px-4 py-3 text-sm font-medium text-white">{c.compliance_score as number}%</td>
-                          <td className="px-4 py-3"><RagBadge candidate={c} /></td>
+                                                    <td className="px-4 py-3 text-sm font-medium text-white">{Number(c.compliance_score ?? 0).toFixed(1)}%</td>
+                                                    <td className="px-4 py-3"><RagBadge candidate={c} /></td>
                           <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold border ${getShiftBadge(c).color}`}>{getShiftBadge(c).label}</span></td>
                           <td className="px-4 py-3"><StatusBadge status={c.compliance_status as string} /></td>
                           <td className="px-4 py-3">
@@ -1323,7 +1323,7 @@ export default function AgencyDashboard() {
                         <td className="px-4 py-3 text-sm text-white">{String(c.first_name)} {String(c.last_name)}</td>
                         <td className="px-4 py-3 text-sm text-slate-300">{String(c.profession || "N/A")}</td>
                         <td className="px-4 py-3"><StatusBadge status={String(c.compliance_status || "incomplete")} /></td>
-                        <td className="px-4 py-3 text-sm font-medium text-white">{String(c.compliance_score || 0)}%</td>
+                        <td className="px-4 py-3 text-sm font-medium text-white">{Number(c.compliance_score || 0).toFixed(1)}%</td>
                         <td className="px-4 py-3">
                           <button onClick={() => downloadCandidateAudit(cId)} disabled={downloadingSingleAudit === cId}
                             className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
@@ -1583,7 +1583,7 @@ export default function AgencyDashboard() {
                 <div><span className="text-slate-400">Phone:</span> <span className="text-white">{(selectedCandidate.phone as string) || "N/A"}</span></div>
                 <div><span className="text-slate-400">Profession:</span> <span className="text-white">{(selectedCandidate.profession as string) || "N/A"}</span></div>
                 <div><span className="text-slate-400">Registration:</span> <span className="text-white">{selectedCandidate.registration_body as string} {selectedCandidate.registration_number as string}</span></div>
-                <div><span className="text-slate-400">Score:</span> <span className="text-white font-bold">{selectedCandidate.compliance_score as number}%</span></div>
+                <div><span className="text-slate-400">Score:</span> <span className="text-white font-bold">{Number(selectedCandidate.compliance_score ?? 0).toFixed(1)}%</span></div>
                 <div><span className="text-slate-400">Joined:</span> <span className="text-white">{(selectedCandidate.created_at as string)?.split("T")[0]}</span></div>
               </div>
             </div>

@@ -117,7 +117,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
             "first_name": candidate.get("first_name", ""),
             "last_name": candidate.get("last_name", ""),
         },
-        "compliance_score": round((completed / total) * 100) if total else 0,
+        "compliance_score": round((completed / total) * 100, 1) if total else 0,
         "summary": {"total": total, "completed": completed, "in_progress": in_progress, "not_started": total - completed - in_progress},
         "checks": checks,
         "documents": doc_list,

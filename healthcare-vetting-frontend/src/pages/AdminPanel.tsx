@@ -1317,7 +1317,7 @@ export default function AdminPanel() {
                 { label: "Total Candidates", value: stats.total_candidates, icon: <Users className="text-blue-400" size={20} /> },
                 { label: "Compliant", value: stats.compliant, icon: <CheckCircle className="text-green-400" size={20} /> },
                 { label: "Active Alerts", value: stats.active_alerts, icon: <AlertTriangle className="text-amber-400" size={20} /> },
-                { label: "Compliance Rate", value: `${stats.compliance_rate}%`, icon: <BarChart3 className="text-purple-400" size={20} /> },
+                { label: "Compliance Rate", value: `${Number(stats.compliance_rate ?? 0).toFixed(1)}%`, icon: <BarChart3 className="text-purple-400" size={20} /> },
               ].map((stat) => (
                 <div key={stat.label} className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
                   <div className="flex items-center justify-between mb-2"><p className="text-slate-400 text-xs">{stat.label}</p>{stat.icon}</div>
@@ -1433,7 +1433,7 @@ export default function AdminPanel() {
                       <td className="px-4 py-3 text-sm text-slate-300">{c.email as string}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">{(c.profession as string) || "N/A"}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">{c.registration_body as string} {c.registration_number as string}</td>
-                      <td className="px-4 py-3"><span className={`text-sm font-bold ${(c.compliance_score as number) >= 95 ? "text-green-400" : (c.compliance_score as number) >= 60 ? "text-amber-400" : "text-red-400"}`}>{c.compliance_score as number}%</span></td>
+                      <td className="px-4 py-3"><span className={`text-sm font-bold ${(c.compliance_score as number) >= 95 ? "text-green-400" : (c.compliance_score as number) >= 60 ? "text-amber-400" : "text-red-400"}`}>{Number(c.compliance_score ?? 0).toFixed(1)}%</span></td>
                       <td className="px-4 py-3"><StatusBadge status={c.compliance_status as string} /></td>
                       <td className="px-4 py-3"><div className="flex gap-2">
                         <button onClick={() => viewCandidate(c)} className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1"><Eye size={12} /> View</button>
@@ -2328,7 +2328,7 @@ export default function AdminPanel() {
                     <td className="px-4 py-3 text-sm text-white">{String(c.first_name)} {String(c.last_name)}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{String(c.email)}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{String(c.profession || "N/A")}</td>
-                    <td className="px-4 py-3 text-sm text-white font-medium">{String(c.compliance_score || 0)}%</td>
+                    <td className="px-4 py-3 text-sm text-white font-medium">{Number(c.compliance_score || 0).toFixed(1)}%</td>
                     <td className="px-4 py-3"><StatusBadge status={String(c.compliance_status || "incomplete")} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -2851,7 +2851,7 @@ export default function AdminPanel() {
                   <div><span className="text-slate-400">Phone:</span> <span className="text-white">{(selectedCandidate.phone as string) || "N/A"}</span></div>
                   <div><span className="text-slate-400">Profession:</span> <span className="text-white">{(selectedCandidate.profession as string) || "N/A"}</span></div>
                   <div><span className="text-slate-400">Registration:</span> <span className="text-white">{selectedCandidate.registration_body as string} {selectedCandidate.registration_number as string}</span></div>
-                  <div><span className="text-slate-400">Score:</span> <span className="text-white font-bold">{selectedCandidate.compliance_score as number}%</span></div>
+                  <div><span className="text-slate-400">Score:</span> <span className="text-white font-bold">{Number(selectedCandidate.compliance_score ?? 0).toFixed(1)}%</span></div>
                 </div>
               </div>
               {candidateCompliance && (

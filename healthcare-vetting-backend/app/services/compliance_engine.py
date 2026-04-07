@@ -370,6 +370,9 @@ class ComplianceEngine:
             if total_weight > 0 and total_weight != 100:
                 score = (score / total_weight) * 100
 
+            # Round score to 1 decimal place
+            score = round(score, 1)
+
             # Determine overall status using template threshold
             required_checks = [k for k, v in rules.items() if v.get("required", False)]
             all_required_pass = all(checks.get(c, False) for c in required_checks)
