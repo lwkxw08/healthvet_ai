@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { documentsApi } from "../api/client";
 import {
-  Upload, FileText, Image, Trash2, Download, Eye, RefreshCw,
+  Upload, FileText, Image, Trash2, Eye, RefreshCw,
   File, AlertTriangle, CheckCircle, Shield, Clock,
 } from "lucide-react";
 

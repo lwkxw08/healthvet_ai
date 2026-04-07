@@ -251,9 +251,9 @@ export default function AIInsightsPanel() {
                 </div>
               </div>
 
-              {cvResult.summary && (
+              {cvResult.summary ? (
                 <div className="bg-gray-900 rounded p-3 text-sm text-gray-300">{String(cvResult.summary)}</div>
-              )}
+              ) : null}
 
               {/* Gaps */}
               {Array.isArray(cvResult.gaps) && (cvResult.gaps as Record<string, unknown>[]).length > 0 && (
@@ -264,8 +264,8 @@ export default function AIInsightsPanel() {
                       <div key={i} className="bg-red-900/20 border border-red-800/30 rounded p-3 flex items-center justify-between">
                         <div>
                           <span className="text-sm">{String(g.from)} → {String(g.to)}</span>
-                          <span className="text-xs text-gray-400 ml-2">({g.gap_months} months)</span>
-                          {g.possible_explanation && <p className="text-xs text-gray-400 mt-1">{String(g.possible_explanation)}</p>}
+                          <span className="text-xs text-gray-400 ml-2">({String(g.gap_months)} months)</span>
+                          {g.possible_explanation ? <p className="text-xs text-gray-400 mt-1">{String(g.possible_explanation)}</p> : null}
                         </div>
                         <SeverityBadge severity={String(g.severity)} />
                       </div>
@@ -282,7 +282,7 @@ export default function AIInsightsPanel() {
                     {(cvResult.overlaps as Record<string, unknown>[]).map((o, i) => (
                       <div key={i} className="bg-yellow-900/20 border border-yellow-800/30 rounded p-3 text-sm">
                         {String(o.period_1 || o.period_1_end)} ↔ {String(o.period_2 || o.period_2_start)}
-                        <span className="text-xs text-gray-400 ml-2">({o.overlap_months} months overlap)</span>
+                        <span className="text-xs text-gray-400 ml-2">({String(o.overlap_months)} months overlap)</span>
                       </div>
                     ))}
                   </div>
@@ -405,7 +405,7 @@ export default function AIInsightsPanel() {
               <div className="bg-gray-900 rounded p-3">
                 <div className="flex items-center justify-between text-sm mb-1">
                   <span className="text-gray-400">Sentiment Score</span>
-                  <span className="font-bold">{(Number(refResult.sentiment_score) * 100).toFixed(0)}%</span>
+                  <span className="font-bold">{(Number(refResult.sentiment_score) * 100).toFixed(0) + "%"}</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-3">
                   <div
@@ -420,9 +420,9 @@ export default function AIInsightsPanel() {
                 </div>
               </div>
 
-              {refResult.summary && (
+              {refResult.summary ? (
                 <div className="bg-gray-900 rounded p-3 text-sm text-gray-300">{String(refResult.summary)}</div>
-              )}
+              ) : null}
 
               {/* Concerns */}
               {Array.isArray(refResult.concerns) && (refResult.concerns as Record<string, unknown>[]).length > 0 && (
@@ -537,16 +537,16 @@ export default function AIInsightsPanel() {
                             <div className="flex items-center gap-3">
                               <SeverityBadge severity={String(a.severity)} />
                               <span className="text-sm font-medium capitalize">{String(a.type || "").replace(/_/g, " ")}</span>
-                              {a.candidate_name && <span className="text-xs text-gray-400">— {String(a.candidate_name)}</span>}
+                              {a.candidate_name ? <span className="text-xs text-gray-400">{"— " + String(a.candidate_name)}</span> : null}
                             </div>
                             {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                           </button>
                           {isExpanded && (
                             <div className="px-3 pb-3 text-sm text-gray-300 border-t border-gray-700 pt-2">
                               <p>{String(a.detail)}</p>
-                              {a.verifier_email && <p className="text-xs text-gray-400 mt-1">Verifier: {String(a.verifier_email)}</p>}
-                              {a.ip_address && <p className="text-xs text-gray-400">IP: {String(a.ip_address)}</p>}
-                              {a.employer_name && <p className="text-xs text-gray-400">Employer: {String(a.employer_name)}</p>}
+                              {a.verifier_email ? <p className="text-xs text-gray-400 mt-1">{"Verifier: " + String(a.verifier_email)}</p> : null}
+                              {a.ip_address ? <p className="text-xs text-gray-400">{"IP: " + String(a.ip_address)}</p> : null}
+                              {a.employer_name ? <p className="text-xs text-gray-400">{"Employer: " + String(a.employer_name)}</p> : null}
                             </div>
                           )}
                         </div>
