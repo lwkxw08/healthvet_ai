@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, checksApi, complianceApi, monitoringApi, agencyInvitesApi, trainingApi } from "../api/client";
+import { candidatesApi, checksApi, complianceApi, monitoringApi, agencyInvitesApi, trainingApi, trustidApi } from "../api/client";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Upload,
   FileText, UserCheck, Fingerprint, Search, Send, LogOut, RefreshCw, ChevronRight,
@@ -61,6 +61,12 @@ export default function CandidatePortal() {
   // Agency affiliation
   const [myAgencies, setMyAgencies] = useState<Record<string, unknown>[]>([]);
   const [pendingInvites, setPendingInvites] = useState<Record<string, unknown>[]>([]);
+
+  // TrustID state
+  const [trustidConfig, setTrustidConfig] = useState<Record<string, Record<string, unknown>>>({});
+  const [trustidChecks, setTrustidChecks] = useState<Record<string, unknown>[]>([]);
+  const [trustidSubmitted, setTrustidSubmitted] = useState(false);
+  const [submittingTrustid, setSubmittingTrustid] = useState(false);
 
   // Employment history states
   const [employmentEntries, setEmploymentEntries] = useState<Record<string, unknown>[]>([]);
@@ -148,7 +154,47 @@ export default function CandidatePortal() {
     }
   }, [token, userId]);
 
+  // Load TrustID config and checks
+  const loadTrustidData = useCallback(async () => {
+    if (!token || !userId) return;
+    try {
+      const [config, checks] = await Promise.all([
+        trustidApi.getConfig(token),
+        trustidApi.getCandidateChecks(token, userId).catch(() => []),
+      ]);
+      setTrustidConfig(config);
+      setTrustidChecks(checks);
+    } catch { /* ignore */ }
+  }, [token, userId]);
+
   useEffect(() => { loadCheckData(); }, [loadCheckData]);
+  useEffect(() => { loadTrustidData(); }, [loadTrustidData]);
+
+  // Check if a specific check type is in manual mode
+  const isManualMode = (checkType: string) => {
+    const cfg = trustidConfig[checkType];
+    if (!cfg) return true; // Default to manual
+    return cfg.submission_mode === "manual";
+  };
+
+  // Submit all TrustID checks at once
+  const submitTrustidChecks = async () => {
+    if (!token || !userId || !profile) return;
+    setSubmittingTrustid(true);
+    try {
+      await trustidApi.submitChecks(token, {
+        candidate_id: userId,
+        candidate_name: `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || undefined,
+        candidate_email: profile.email as string || undefined,
+        candidate_dob: profile.date_of_birth as string || undefined,
+      });
+      setTrustidSubmitted(true);
+      showMessage("TrustID checks submitted successfully! You will be contacted within 24 hours.");
+      await loadTrustidData();
+    } catch (err) {
+      showMessage(`Error: ${err instanceof Error ? err.message : "Failed to submit TrustID checks"}`);
+    } finally { setSubmittingTrustid(false); }
+  };
 
   const showMessage = (msg: string) => {
     setMessage(msg);
@@ -405,6 +451,9 @@ export default function CandidatePortal() {
       completed: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       compliant: "bg-green-500/20 text-green-400 border-green-500/30",
       pending: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+      pending_admin: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+      awaiting_candidate: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+      submitted_to_trustid: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       processing: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       sent: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       in_progress: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
@@ -454,7 +503,7 @@ export default function CandidatePortal() {
         </div>
         <div className="flex items-center gap-4">
           {profile && <span className="text-slate-300 text-sm">{profile.first_name as string} {profile.last_name as string}</span>}
-          <button onClick={() => { loadData(); loadCheckData(); }} className="text-slate-400 hover:text-white">
+          <button onClick={() => { loadData(); loadCheckData(); loadTrustidData(); }} className="text-slate-400 hover:text-white">
             <RefreshCw size={18} />
           </button>
           <button onClick={logout} className="text-slate-400 hover:text-red-400 flex items-center gap-1 text-sm">
@@ -607,6 +656,86 @@ export default function CandidatePortal() {
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-white">Identity Verification</h2>
 
+              {/* Manual mode: TrustID partner notice */}
+              {isManualMode("identity_verification") ? (
+                <div className="space-y-6">
+                  {/* TrustID partner info banner */}
+                  <div className="bg-blue-500/10 rounded-xl border border-blue-500/30 p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-blue-600/20 rounded-lg p-3">
+                        <Shield className="text-blue-400" size={28} />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-white mb-2">Identity Verification via TrustID</h3>
+                        <p className="text-slate-300 text-sm mb-3">
+                          Your identity verification will be carried out by our trusted partner <strong className="text-blue-300">TrustID</strong>,
+                          a DIATF-certified identity service provider. TrustID will verify your identity documents, perform facial matching,
+                          and confirm your right to work status.
+                        </p>
+                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-3">
+                          <p className="text-amber-300 text-sm flex items-start gap-2">
+                            <Clock size={16} className="mt-0.5 shrink-0" />
+                            <span>
+                              <strong>What happens next:</strong> You will receive a request from TrustID within <strong>24 hours</strong> to
+                              complete your ID verification, DBS check, and Right to Work check. Please check your email and follow their instructions.
+                            </span>
+                          </p>
+                        </div>
+                        <p className="text-slate-400 text-xs">
+                          No document upload or selfie is required here — TrustID will guide you through their secure verification process directly.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TrustID check status for this candidate */}
+                  {trustidChecks.filter(c => c.check_type === "identity_verification").length > 0 ? (
+                    <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                      <h3 className="text-md font-semibold text-white mb-3">TrustID Verification Status</h3>
+                      {trustidChecks.filter(c => c.check_type === "identity_verification").map((check) => (
+                        <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                          <div className="flex items-center justify-between">
+                            <StatusBadge status={check.status as string} />
+                            <span className="text-xs text-slate-500">{(check.created_at as string)?.split("T")[0]}</span>
+                          </div>
+                          {Boolean(check.result) && (
+                            <div className="mt-2 text-sm">
+                              <span className="text-slate-400">Result: </span>
+                              <span className={`font-medium ${check.result === "pass" ? "text-green-400" : check.result === "fail" ? "text-red-400" : "text-amber-400"}`}>
+                                {String(check.result).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : !trustidSubmitted ? (
+                    <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6 text-center">
+                      <p className="text-slate-400 text-sm mb-4">
+                        Your identity verification has not been submitted yet. Click below to submit your details for TrustID verification.
+                      </p>
+                      <button onClick={submitTrustidChecks} disabled={submittingTrustid}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-6 py-2.5 rounded-lg text-sm font-medium inline-flex items-center gap-2">
+                        <Fingerprint size={16} /> {submittingTrustid ? "Submitting..." : "Submit for TrustID Verification"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-green-500/10 rounded-xl border border-green-500/30 p-6 text-center">
+                      <CheckCircle className="mx-auto text-green-400 mb-3" size={40} />
+                      <h3 className="text-lg font-semibold text-white mb-2">Submission Confirmed</h3>
+                      <p className="text-slate-300 text-sm mb-3">
+                        Your details have been submitted. TrustID will contact you within <strong className="text-green-300">24 hours</strong> to
+                        complete your identity verification, DBS check, and Right to Work check.
+                      </p>
+                      <p className="text-slate-400 text-xs">
+                        Please check your email inbox (and spam folder) for a message from TrustID.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+              <>
+              {/* API mode: Original Onfido-style wizard */}
               {/* Step progress indicator */}
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4">
                 <div className="flex items-center justify-between mb-1">
@@ -639,7 +768,7 @@ export default function CandidatePortal() {
                   })}
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  Powered by Onfido API &middot; Document authenticity + facial matching + liveness detection &middot; ~£2 per check
+                  Powered by TrustID API &middot; Document authenticity + facial matching + liveness detection
                 </p>
               </div>
 
@@ -957,6 +1086,8 @@ export default function CandidatePortal() {
                   })}
                 </div>
               )}
+              </>
+              )}
             </div>
           )}
 
@@ -965,6 +1096,76 @@ export default function CandidatePortal() {
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-white">Right to Work Verification</h2>
 
+              {/* Manual mode: TrustID partner notice */}
+              {isManualMode("right_to_work") ? (
+                <div className="space-y-6">
+                  <div className="bg-blue-500/10 rounded-xl border border-blue-500/30 p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-blue-600/20 rounded-lg p-3">
+                        <UserCheck className="text-blue-400" size={28} />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-white mb-2">Right to Work via TrustID</h3>
+                        <p className="text-slate-300 text-sm mb-3">
+                          Your right to work verification will be carried out by our trusted partner <strong className="text-blue-300">TrustID</strong>.
+                          TrustID will verify your eligibility to work in the UK as part of their comprehensive identity checking service.
+                        </p>
+                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-3">
+                          <p className="text-amber-300 text-sm flex items-start gap-2">
+                            <Clock size={16} className="mt-0.5 shrink-0" />
+                            <span>
+                              <strong>What happens next:</strong> TrustID will contact you within <strong>24 hours</strong> to verify your
+                              right to work. No share code or document upload is needed here.
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {trustidChecks.filter(c => c.check_type === "right_to_work").length > 0 ? (
+                    <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                      <h3 className="text-md font-semibold text-white mb-3">TrustID RTW Status</h3>
+                      {trustidChecks.filter(c => c.check_type === "right_to_work").map((check) => (
+                        <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                          <div className="flex items-center justify-between">
+                            <StatusBadge status={check.status as string} />
+                            <span className="text-xs text-slate-500">{(check.created_at as string)?.split("T")[0]}</span>
+                          </div>
+                          {Boolean(check.result) && (
+                            <div className="mt-2 text-sm">
+                              <span className="text-slate-400">Result: </span>
+                              <span className={`font-medium ${check.result === "pass" ? "text-green-400" : check.result === "fail" ? "text-red-400" : "text-amber-400"}`}>
+                                {String(check.result).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : !trustidSubmitted ? (
+                    <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6 text-center">
+                      <p className="text-slate-400 text-sm mb-4">
+                        Right to Work verification has not been submitted yet. Submit your details from the Identity tab to begin the TrustID process for all three checks.
+                      </p>
+                      <button onClick={() => setTab("identity")}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium inline-flex items-center gap-2">
+                        <Fingerprint size={16} /> Go to Identity Tab
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-green-500/10 rounded-xl border border-green-500/30 p-6 text-center">
+                      <CheckCircle className="mx-auto text-green-400 mb-3" size={40} />
+                      <h3 className="text-lg font-semibold text-white mb-2">Submitted to TrustID</h3>
+                      <p className="text-slate-300 text-sm">
+                        TrustID will contact you within <strong className="text-green-300">24 hours</strong> to complete your Right to Work verification.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+              <>
+              {/* API mode: Original RTW form */}
               {/* Method Selector */}
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <p className="text-slate-300 text-sm mb-4">
@@ -1116,6 +1317,8 @@ export default function CandidatePortal() {
                   ))}
                 </div>
               )}
+              </>
+              )}
             </div>
           )}
 
@@ -1123,6 +1326,77 @@ export default function CandidatePortal() {
           {tab === "dbs" && (
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-white">Enhanced DBS Check</h2>
+
+              {/* Manual mode: TrustID partner notice */}
+              {isManualMode("dbs_check") ? (
+                <div className="space-y-6">
+                  <div className="bg-blue-500/10 rounded-xl border border-blue-500/30 p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-blue-600/20 rounded-lg p-3">
+                        <Search className="text-blue-400" size={28} />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-white mb-2">DBS Check via TrustID</h3>
+                        <p className="text-slate-300 text-sm mb-3">
+                          Your enhanced DBS check will be carried out by our trusted partner <strong className="text-blue-300">TrustID</strong>.
+                          TrustID will manage the full DBS application and certificate process on your behalf.
+                        </p>
+                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-3">
+                          <p className="text-amber-300 text-sm flex items-start gap-2">
+                            <Clock size={16} className="mt-0.5 shrink-0" />
+                            <span>
+                              <strong>What happens next:</strong> TrustID will contact you within <strong>24 hours</strong> to begin
+                              your DBS check application. No separate DBS submission is needed here.
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {trustidChecks.filter(c => c.check_type === "dbs_check").length > 0 ? (
+                    <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                      <h3 className="text-md font-semibold text-white mb-3">TrustID DBS Status</h3>
+                      {trustidChecks.filter(c => c.check_type === "dbs_check").map((check) => (
+                        <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                          <div className="flex items-center justify-between">
+                            <StatusBadge status={check.status as string} />
+                            <span className="text-xs text-slate-500">{(check.created_at as string)?.split("T")[0]}</span>
+                          </div>
+                          {Boolean(check.result) && (
+                            <div className="mt-2 text-sm">
+                              <span className="text-slate-400">Result: </span>
+                              <span className={`font-medium ${check.result === "pass" ? "text-green-400" : check.result === "fail" ? "text-red-400" : "text-amber-400"}`}>
+                                {String(check.result).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : !trustidSubmitted ? (
+                    <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6 text-center">
+                      <p className="text-slate-400 text-sm mb-4">
+                        DBS check has not been submitted yet. Submit your details from the Identity tab to begin the TrustID process for all three checks.
+                      </p>
+                      <button onClick={() => setTab("identity")}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium inline-flex items-center gap-2">
+                        <Fingerprint size={16} /> Go to Identity Tab
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-green-500/10 rounded-xl border border-green-500/30 p-6 text-center">
+                      <CheckCircle className="mx-auto text-green-400 mb-3" size={40} />
+                      <h3 className="text-lg font-semibold text-white mb-2">Submitted to TrustID</h3>
+                      <p className="text-slate-300 text-sm">
+                        TrustID will contact you within <strong className="text-green-300">24 hours</strong> to begin your Enhanced DBS Check application.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+              <>
+              {/* API mode: Original DBS form */}
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <p className="text-slate-300 text-sm mb-4">
                   Automated enhanced DBS submission via uCheck API. ID validated, submitted electronically,
@@ -1156,6 +1430,8 @@ export default function CandidatePortal() {
                     </div>
                   ))}
                 </div>
+              )}
+              </>
               )}
             </div>
           )}

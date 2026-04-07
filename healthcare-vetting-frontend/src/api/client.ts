@@ -910,6 +910,28 @@ export const aiInsightsApi = {
   },
 };
 
+// TrustID API
+export const trustidApi = {
+  getConfig: (token: string) =>
+    apiRequest<Record<string, Record<string, unknown>>>("/api/trustid/config", { token }),
+  updateConfig: (token: string, data: { check_type: string; submission_mode?: string; api_key?: string; api_secret?: string; environment?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/trustid/config", { method: "PUT", body: data, token }),
+  submitChecks: (token: string, data: { candidate_id: string; candidate_name?: string; candidate_email?: string; candidate_dob?: string }) =>
+    apiRequest<{ checks: Record<string, unknown>[]; message: string }>("/api/trustid/submit-checks", { method: "POST", body: data, token }),
+  getCandidateChecks: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>[]>(`/api/trustid/checks/${candidateId}`, { token }),
+  getAdminTasks: (token: string, status?: string) => {
+    const qs = status ? `?status=${status}` : "";
+    return apiRequest<Record<string, unknown>[]>(`/api/trustid/admin/tasks${qs}`, { token });
+  },
+  getTaskSummary: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/trustid/admin/summary", { token }),
+  adminMarkSubmitted: (token: string, data: { check_id: string; trustid_reference?: string; notes?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/trustid/admin/mark-submitted", { method: "POST", body: data, token }),
+  adminRecordResult: (token: string, data: { check_id: string; result: string; trustid_reference?: string; report_document_id?: string; completed_date?: string; notes?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/trustid/admin/record-result", { method: "POST", body: data, token }),
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   getVettingPricing: (token: string) =>

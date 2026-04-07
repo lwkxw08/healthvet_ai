@@ -292,6 +292,61 @@ class EmailService:
         )
 
     @staticmethod
+    def send_trustid_submission_confirmation(
+        candidate_email: str, candidate_name: str, check_types: list[str] | None = None,
+    ):
+        """Send confirmation to candidate that TrustID checks have been submitted.
+        Informs them to expect contact from TrustID within 24 hours."""
+        check_labels = {
+            "identity_verification": "Identity Verification",
+            "dbs_check": "Enhanced DBS Check",
+            "right_to_work": "Right to Work Verification",
+        }
+        if not check_types:
+            check_types = list(check_labels.keys())
+
+        checks_html = "".join(
+            f'<li style="margin:4px 0;">{check_labels.get(ct, ct)}</li>' for ct in check_types
+        )
+        checks_text = "\n".join(f"  - {check_labels.get(ct, ct)}" for ct in check_types)
+
+        variables = {
+            "candidate_name": candidate_name or "Candidate",
+            "checks_html": f"<ul>{checks_html}</ul>",
+            "checks_text": checks_text,
+            "partner_name": "TrustID",
+            "contact_window": "24 hours",
+        }
+
+        fallback_subject = "HealthVet AI - Your Verification Checks Have Been Submitted"
+        fallback_body = (
+            f"Dear {candidate_name or 'Candidate'},\n\n"
+            "Thank you for completing your submission on HealthVet AI.\n\n"
+            "The following checks will now be carried out by our trusted partner, TrustID:\n\n"
+            f"{checks_text}\n\n"
+            "WHAT HAPPENS NEXT:\n"
+            "TrustID will contact you within 24 hours to complete the verification process. "
+            "They will guide you through their secure identity verification, DBS application, "
+            "and right to work checks.\n\n"
+            "Please keep an eye on your email (including spam/junk folders) for correspondence "
+            "from TrustID.\n\n"
+            "If you have not been contacted within 24 hours, please reach out to your agency "
+            "or contact us at support@healthvet.ai.\n\n"
+            "Best regards,\n"
+            "HealthVet AI Compliance Team"
+        )
+
+        resolved_key = EmailService._resolve_template_key(
+            "trustid_checks_submitted", "trustid_submission_confirmation",
+            recipient_type="candidate",
+        )
+        EmailService._send_via_template(
+            resolved_key, candidate_email, candidate_name or "Candidate",
+            variables, fallback_subject, fallback_body,
+            "trustid_submission", None,
+        )
+
+    @staticmethod
     def get_notifications(recipient_email: str = None, notification_type: str = None,
                           limit: int = 50) -> list:
         """Get stored notifications."""

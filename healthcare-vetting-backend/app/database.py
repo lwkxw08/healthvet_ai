@@ -969,6 +969,61 @@ def migrate_db():
                 (_gen_id2(), provider, name),
             )
 
+    # ── TrustID Check Tables ──────────────────────────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS trustid_config (
+        id TEXT PRIMARY KEY,
+        check_type TEXT UNIQUE NOT NULL,
+        label TEXT NOT NULL,
+        submission_mode TEXT DEFAULT 'manual',
+        api_key TEXT,
+        api_secret TEXT,
+        environment TEXT DEFAULT 'production',
+        updated_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS trustid_checks (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        check_type TEXT NOT NULL,
+        submission_mode TEXT DEFAULT 'manual',
+        status TEXT DEFAULT 'pending_admin',
+        result TEXT,
+        candidate_name TEXT,
+        candidate_email TEXT,
+        candidate_dob TEXT,
+        trustid_reference TEXT,
+        report_document_id TEXT,
+        submitted_by TEXT,
+        admin_submitted_by TEXT,
+        admin_submitted_at TEXT,
+        admin_completed_by TEXT,
+        admin_notes TEXT,
+        notes TEXT,
+        raw_response TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT,
+        FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+    )""")
+
+    # Seed default TrustID config if empty
+    try:
+        tid_count = cursor.execute("SELECT COUNT(*) FROM trustid_config").fetchone()[0]
+    except Exception:
+        tid_count = 0
+    if tid_count == 0:
+        from app.utils.auth import generate_id as _tid_gen
+        for ct, label in [
+            ("identity_verification", "Identity Verification"),
+            ("dbs_check", "DBS Check"),
+            ("right_to_work", "Right to Work"),
+        ]:
+            cursor.execute(
+                """INSERT INTO trustid_config (id, check_type, label, submission_mode)
+                   VALUES (?, ?, ?, 'manual')""",
+                (_tid_gen(), ct, label),
+            )
+
     # Seed default admin user if admin_users table is empty
     admin_count = cursor.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0]
     if admin_count == 0:
@@ -1709,6 +1764,44 @@ def init_db():
             updated_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
             UNIQUE(industry_template_id, check_type)
+        );
+
+        -- TrustID Configuration (manual/api mode per check type)
+        CREATE TABLE IF NOT EXISTS trustid_config (
+            id TEXT PRIMARY KEY,
+            check_type TEXT UNIQUE NOT NULL,
+            label TEXT NOT NULL,
+            submission_mode TEXT DEFAULT 'manual',
+            api_key TEXT,
+            api_secret TEXT,
+            environment TEXT DEFAULT 'production',
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- TrustID Checks (individual check submissions)
+        CREATE TABLE IF NOT EXISTS trustid_checks (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            check_type TEXT NOT NULL,
+            submission_mode TEXT DEFAULT 'manual',
+            status TEXT DEFAULT 'pending_admin',
+            result TEXT,
+            candidate_name TEXT,
+            candidate_email TEXT,
+            candidate_dob TEXT,
+            trustid_reference TEXT,
+            report_document_id TEXT,
+            submitted_by TEXT,
+            admin_submitted_by TEXT,
+            admin_submitted_at TEXT,
+            admin_completed_by TEXT,
+            admin_notes TEXT,
+            notes TEXT,
+            raw_response TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
     """)
 

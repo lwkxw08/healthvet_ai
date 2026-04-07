@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi } from "../api/client";
 import LeadGenerationPanel from "./LeadGenerationPanel";
 import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
 import EmailTemplatesPanel from "./EmailTemplatesPanel";
@@ -219,6 +219,20 @@ export default function AdminPanel() {
   const [assigningAgency, setAssigningAgency] = useState<string | null>(null);
   const [assignTemplateId, setAssignTemplateId] = useState("");
 
+  // TrustID state
+  const [trustidConfig, setTrustidConfig] = useState<Record<string, Record<string, unknown>>>({});
+  const [trustidTasks, setTrustidTasks] = useState<Record<string, unknown>[]>([]);
+  const [trustidSummary, setTrustidSummary] = useState<Record<string, unknown>>({});
+  const [trustidMarkingId, setTrustidMarkingId] = useState<string | null>(null);
+  const [trustidMarkRef, setTrustidMarkRef] = useState("");
+  const [trustidMarkNotes, setTrustidMarkNotes] = useState("");
+  const [trustidResultId, setTrustidResultId] = useState<string | null>(null);
+  const [trustidResultValue, setTrustidResultValue] = useState("pass");
+  const [trustidResultRef, setTrustidResultRef] = useState("");
+  const [trustidResultNotes, setTrustidResultNotes] = useState("");
+  const [savingTrustid, setSavingTrustid] = useState(false);
+  const [trustidTaskFilter, setTrustidTaskFilter] = useState("");
+
   const loadBenchmarkData = useCallback(async () => {
     if (!token) return;
     setLoadingBenchmark(true);
@@ -352,6 +366,53 @@ export default function AdminPanel() {
     try { const data = await industryTemplatesApi.list(token); setIndTemplates(data); } catch { /* ignore */ }
   }, [token]);
 
+  const loadTrustidData = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [config, tasks, summary] = await Promise.all([
+        trustidApi.getConfig(token),
+        trustidApi.getAdminTasks(token, trustidTaskFilter || undefined).catch(() => []),
+        trustidApi.getTaskSummary(token).catch(() => ({})),
+      ]);
+      setTrustidConfig(config);
+      setTrustidTasks(tasks);
+      setTrustidSummary(summary);
+    } catch { /* ignore */ }
+  }, [token, trustidTaskFilter]);
+
+  const handleTrustidMarkSubmitted = async () => {
+    if (!token || !trustidMarkingId) return;
+    setSavingTrustid(true);
+    try {
+      await trustidApi.adminMarkSubmitted(token, { check_id: trustidMarkingId, trustid_reference: trustidMarkRef || undefined, notes: trustidMarkNotes || undefined });
+      showMessage("Check marked as submitted to TrustID");
+      setTrustidMarkingId(null); setTrustidMarkRef(""); setTrustidMarkNotes("");
+      await loadTrustidData();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setSavingTrustid(false); }
+  };
+
+  const handleTrustidRecordResult = async () => {
+    if (!token || !trustidResultId) return;
+    setSavingTrustid(true);
+    try {
+      await trustidApi.adminRecordResult(token, { check_id: trustidResultId, result: trustidResultValue, trustid_reference: trustidResultRef || undefined, notes: trustidResultNotes || undefined });
+      showMessage("TrustID result recorded successfully");
+      setTrustidResultId(null); setTrustidResultValue("pass"); setTrustidResultRef(""); setTrustidResultNotes("");
+      await loadTrustidData();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setSavingTrustid(false); }
+  };
+
+  const handleTrustidModeToggle = async (checkType: string, newMode: string) => {
+    if (!token) return;
+    try {
+      await trustidApi.updateConfig(token, { check_type: checkType, submission_mode: newMode });
+      showMessage(`${checkType.replace(/_/g, " ")} switched to ${newMode} mode`);
+      await loadTrustidData();
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+  };
+
   useEffect(() => { if (tab === "fraud") loadFraudData(); }, [tab, loadFraudData]);
   useEffect(() => { if (tab === "scheduler") loadSchedulerStatus(); }, [tab, loadSchedulerStatus]);
   useEffect(() => { if (tab === "settings") { loadPricing(); loadAlertSettings(); loadIndustryTemplates(); } }, [tab, loadPricing, loadAlertSettings, loadIndustryTemplates]);
@@ -361,6 +422,7 @@ export default function AdminPanel() {
   useEffect(() => { if (tab === "audit-logs") loadAuditLogs(); }, [tab, loadAuditLogs]);
   useEffect(() => { if (tab === "invoicing") loadAdminInvoices(); }, [tab, loadAdminInvoices]);
   useEffect(() => { if (tab === "subscriptions") { loadSubscriptionTiers(); loadCreditRates(); } }, [tab]);
+  useEffect(() => { if (mainTab === "settings" && subTab === "trustid") loadTrustidData(); }, [mainTab, subTab, loadTrustidData]);
 
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
@@ -1022,7 +1084,7 @@ export default function AdminPanel() {
       {mainTab === "settings" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "alerts-config", label: "Alert Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }].map((s) => (
+            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "trustid", label: "TrustID" }, { key: "alerts-config", label: "Alert Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -1074,6 +1136,171 @@ export default function AdminPanel() {
 
         {/* Payment Providers Sub-tab under Settings */}
         {mainTab === "settings" && subTab === "payment-providers" && <PaymentProvidersPanel />}
+
+        {/* TrustID Sub-tab under Settings */}
+        {mainTab === "settings" && subTab === "trustid" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">TrustID Integration</h2>
+              <button onClick={loadTrustidData} className="text-slate-400 hover:text-white"><RefreshCw size={16} /></button>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-5 gap-4">
+              {[
+                { label: "Pending Admin", value: trustidSummary.pending_admin ?? 0, color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
+                { label: "Awaiting Candidate", value: trustidSummary.awaiting_candidate ?? 0, color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
+                { label: "Submitted to TrustID", value: trustidSummary.submitted_to_trustid ?? 0, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/30" },
+                { label: "Completed", value: trustidSummary.completed ?? 0, color: "text-green-400", bg: "bg-green-500/10 border-green-500/30" },
+                { label: "Overdue (>24h)", value: trustidSummary.overdue ?? 0, color: "text-red-400", bg: "bg-red-500/10 border-red-500/30" },
+              ].map((card) => (
+                <div key={card.label} className={`rounded-xl border p-4 ${card.bg}`}>
+                  <p className="text-xs text-slate-400 mb-1">{card.label}</p>
+                  <p className={`text-2xl font-bold ${card.color}`}>{String(card.value)}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Mode Toggle Per Check Type */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">Submission Mode per Check Type</h3>
+              <p className="text-slate-400 text-sm mb-4">Toggle between manual (admin submits via TrustID portal) and API (automated) mode for each check type.</p>
+              <div className="space-y-3">
+                {Object.entries(trustidConfig).map(([checkType, cfg]) => (
+                  <div key={checkType} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
+                    <div>
+                      <span className="text-white font-medium">{(cfg.label as string) || checkType.replace(/_/g, " ")}</span>
+                      <span className={`ml-3 text-xs px-2 py-0.5 rounded-full ${cfg.submission_mode === "manual" ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" : "bg-green-500/20 text-green-400 border border-green-500/30"}`}>
+                        {(cfg.submission_mode as string)?.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleTrustidModeToggle(checkType, "manual")}
+                        className={`px-3 py-1.5 rounded text-xs font-medium ${cfg.submission_mode === "manual" ? "bg-orange-600 text-white" : "bg-slate-600 text-slate-400 hover:text-white"}`}>
+                        Manual
+                      </button>
+                      <button onClick={() => handleTrustidModeToggle(checkType, "api")}
+                        className={`px-3 py-1.5 rounded text-xs font-medium ${cfg.submission_mode === "api" ? "bg-green-600 text-white" : "bg-slate-600 text-slate-400 hover:text-white"}`}>
+                        API
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Task Queue */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">Task Queue</h3>
+                <div className="flex gap-2">
+                  {["", "pending_admin", "awaiting_candidate", "submitted_to_trustid"].map((f) => (
+                    <button key={f} onClick={() => setTrustidTaskFilter(f)}
+                      className={`px-3 py-1 rounded text-xs font-medium ${trustidTaskFilter === f ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400 hover:text-white"}`}>
+                      {f ? f.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()) : "All"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {trustidTasks.length === 0 ? (
+                <p className="text-slate-500 text-sm text-center py-8">No pending tasks</p>
+              ) : (
+                <div className="space-y-3">
+                  {trustidTasks.map((task) => (
+                    <div key={task.id as string} className="p-4 bg-slate-700/50 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <StatusBadge status={task.status as string} />
+                          <span className="text-white font-medium text-sm">{(task.check_type as string)?.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}</span>
+                        </div>
+                        <span className="text-xs text-slate-500">{(task.created_at as string)?.split("T")[0]}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs mb-3">
+                        <div><span className="text-slate-400">Candidate:</span> <span className="text-white">{task.candidate_name as string || `${task.first_name || ""} ${task.last_name || ""}`.trim() || "N/A"}</span></div>
+                        <div><span className="text-slate-400">Email:</span> <span className="text-white">{task.candidate_email as string || task.candidate_email_lookup as string || "N/A"}</span></div>
+                        <div><span className="text-slate-400">DOB:</span> <span className="text-white">{task.candidate_dob as string || "N/A"}</span></div>
+                      </div>
+                      {Boolean(task.trustid_reference) && (
+                        <div className="text-xs mb-2"><span className="text-slate-400">TrustID Ref:</span> <span className="text-blue-300">{String(task.trustid_reference)}</span></div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex gap-2 mt-2">
+                        {task.status === "pending_admin" && (
+                          <>
+                            {trustidMarkingId === (task.id as string) ? (
+                              <div className="flex-1 flex gap-2 items-end">
+                                <div className="flex-1">
+                                  <label className="block text-slate-400 text-xs mb-1">TrustID Reference</label>
+                                  <input type="text" value={trustidMarkRef} onChange={(e) => setTrustidMarkRef(e.target.value)} placeholder="e.g. TID-12345"
+                                    className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs" />
+                                </div>
+                                <div className="flex-1">
+                                  <label className="block text-slate-400 text-xs mb-1">Notes</label>
+                                  <input type="text" value={trustidMarkNotes} onChange={(e) => setTrustidMarkNotes(e.target.value)} placeholder="Optional notes"
+                                    className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs" />
+                                </div>
+                                <button onClick={handleTrustidMarkSubmitted} disabled={savingTrustid}
+                                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-3 py-1 rounded text-xs font-medium">
+                                  {savingTrustid ? "Saving..." : "Confirm"}
+                                </button>
+                                <button onClick={() => setTrustidMarkingId(null)} className="text-slate-400 hover:text-white text-xs px-2 py-1">Cancel</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setTrustidMarkingId(task.id as string)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-medium flex items-center gap-1">
+                                <Send size={12} /> Mark Submitted to TrustID
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {(task.status === "awaiting_candidate" || task.status === "submitted_to_trustid") && (
+                          <>
+                            {trustidResultId === (task.id as string) ? (
+                              <div className="flex-1 flex gap-2 items-end flex-wrap">
+                                <div>
+                                  <label className="block text-slate-400 text-xs mb-1">Result</label>
+                                  <select value={trustidResultValue} onChange={(e) => setTrustidResultValue(e.target.value)}
+                                    className="bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs">
+                                    <option value="pass">Pass</option>
+                                    <option value="fail">Fail</option>
+                                    <option value="inconclusive">Inconclusive</option>
+                                    <option value="intervention_required">Intervention Required</option>
+                                  </select>
+                                </div>
+                                <div className="flex-1">
+                                  <label className="block text-slate-400 text-xs mb-1">TrustID Ref</label>
+                                  <input type="text" value={trustidResultRef} onChange={(e) => setTrustidResultRef(e.target.value)} placeholder="Reference"
+                                    className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs" />
+                                </div>
+                                <div className="flex-1">
+                                  <label className="block text-slate-400 text-xs mb-1">Notes</label>
+                                  <input type="text" value={trustidResultNotes} onChange={(e) => setTrustidResultNotes(e.target.value)} placeholder="Notes"
+                                    className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs" />
+                                </div>
+                                <button onClick={handleTrustidRecordResult} disabled={savingTrustid}
+                                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-3 py-1 rounded text-xs font-medium">
+                                  {savingTrustid ? "Saving..." : "Record Result"}
+                                </button>
+                                <button onClick={() => setTrustidResultId(null)} className="text-slate-400 hover:text-white text-xs px-2 py-1">Cancel</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setTrustidResultId(task.id as string)}
+                                className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-medium flex items-center gap-1">
+                                <CheckCircle size={12} /> Record Result
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Operations Tab — 3.2, 3.3, 3.4, 3.5 */}
         {mainTab === "operations" && subTab === "analytics-dashboard" && <AnalyticsDashboard />}
