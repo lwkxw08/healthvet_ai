@@ -999,6 +999,7 @@ class EmailTemplateService:
         variables: dict,
     ) -> dict:
         """Render and send an email using SendGrid (or log if no API key)."""
+        reload_email_config()  # ensure DB-stored API keys are loaded
         rendered = EmailTemplateService.render_template(template_key, variables)
         if not rendered:
             logger.error(f"Template not found: {template_key}")
