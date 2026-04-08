@@ -539,56 +539,65 @@ async def retrigger_reference_verification(
             raise HTTPException(status_code=404, detail="Reference not found")
 
         ref_dict = dict(ref)
+        reminder_count = (ref_dict.get("reminder_count") or 0) + 1
 
         # Reset status to pending and increment reminder count
         db.execute(
-            "UPDATE references_ SET status='pending', reminder_count=reminder_count+1, sent_at=? WHERE id=?",
-            (now, ref_id))
+            "UPDATE references_ SET status='pending', reminder_count=?, sent_at=? WHERE id=?",
+            (reminder_count, now, ref_id))
 
-        # Send the reference reminder email
-        from app.services.email_service import EmailService
+        # Look up candidate name
         cand = db.execute("SELECT first_name, last_name FROM candidates WHERE id=?",
                           (candidate_id,)).fetchone()
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Unknown"
 
-        fallback_subject = f"Reference Request Reminder - {cand_name}"
-        fallback_body = f"This is a reminder to complete the reference verification for {cand_name}. Token: {ref_dict['token']}"
-        EmailService._send_via_template(
+        # Look up agency name
+        agency_link = db.execute(
+            "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1",
+            (candidate_id,)).fetchone()
+        agency_name = "HealthVet AI"
+        if agency_link:
+            agency = db.execute("SELECT name FROM agencies WHERE id=?",
+                                (dict(agency_link)["agency_id"],)).fetchone()
+            if agency:
+                agency_name = dict(agency)["name"]
+
+        # Send the reference reminder email with full template variables
+        from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+
+        base_url = "https://app-wwjesgoe.fly.dev"
+        reference_link = f"{base_url}/verify?token={ref_dict['token']}&type=reference"
+        verification_code = ref_dict.get("verification_code", "")
+
+        email_result = EmailTemplateService.send_email(
             template_key="reference_request",
             recipient_email=ref_dict["referee_email"],
             recipient_name=ref_dict["referee_name"],
             variables={
                 "candidate_name": cand_name,
                 "referee_name": ref_dict["referee_name"],
-                "token": ref_dict["token"],
+                "agency_name": agency_name,
+                "verification_code": verification_code,
+                "reference_link": reference_link,
+                **get_trust_signal_variables(),
             },
-            fallback_subject=fallback_subject,
-            fallback_body=fallback_body,
-            notification_type="reference_reminder",
-            related_id=ref_id,
         )
 
-        # Now auto-complete the reference (simulated)
-        from app.services.reference_automation import ReferenceAutomationService
-        responses = {
-            "job_title_confirmed": True,
-            "dates_confirmed": True,
-            "performance_rating": 4,
-            "would_rehire": True,
-            "concerns": "None",
-            "additional_comments": "Re-triggered by admin",
-        }
-        ReferenceAutomationService.submit_reference(ref_dict["token"], responses, "127.0.0.1")
-
-        # Re-evaluate compliance
-        from app.services.compliance_engine import ComplianceEngine
-        ComplianceEngine.evaluate_candidate(candidate_id)
-
+        # Audit log with detailed info
         log_id = generate_id()
+        import json as _json
+        details = _json.dumps({
+            "referee_email": ref_dict["referee_email"],
+            "referee_name": ref_dict["referee_name"],
+            "candidate_name": cand_name,
+            "reminder_number": reminder_count,
+            "email_status": email_result.get("status", "unknown") if email_result else "error",
+            "email_provider": email_result.get("provider", "none") if email_result else "none",
+        })
         db.execute(
             "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
             (log_id, "reference", ref_id, "admin_retrigger_reference",
-             current_user["sub"], f"Re-triggered reference for {ref_dict['referee_email']}", now))
+             current_user["sub"], details, now))
 
         updated = db.execute("SELECT * FROM references_ WHERE id=?", (ref_id,)).fetchone()
         return dict(updated)
@@ -609,51 +618,80 @@ async def retrigger_employment_verification(
             raise HTTPException(status_code=404, detail="Employment verification not found")
 
         ver_dict = dict(ver)
+        reminder_count = (ver_dict.get("reminder_count") or 0) + 1
 
         # Reset status and increment reminder
         db.execute(
-            "UPDATE employment_verifications SET status='pending', reminder_count=reminder_count+1, sent_at=? WHERE id=?",
-            (now, ver_id))
+            "UPDATE employment_verifications SET status='pending', reminder_count=?, sent_at=? WHERE id=?",
+            (reminder_count, now, ver_id))
 
-        # Send reminder email
-        from app.services.email_service import EmailService
+        # Look up candidate name
         cand = db.execute("SELECT first_name, last_name FROM candidates WHERE id=?",
                           (candidate_id,)).fetchone()
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Unknown"
 
-        fallback_subject = f"Employment Verification Reminder - {cand_name}"
-        fallback_body = f"This is a reminder to complete the employment verification for {cand_name} at {ver_dict.get('employer_name', 'your organization')}."
-        EmailService._send_via_template(
-            template_key="employment_verification",
+        # Look up agency name
+        agency_link = db.execute(
+            "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1",
+            (candidate_id,)).fetchone()
+        agency_name = "HealthVet AI"
+        if agency_link:
+            agency = db.execute("SELECT name FROM agencies WHERE id=?",
+                                (dict(agency_link)["agency_id"],)).fetchone()
+            if agency:
+                agency_name = dict(agency)["name"]
+
+        # Look up employment details
+        employment_id = ver_dict.get("employment_id", "")
+        emp_data = {}
+        if employment_id:
+            emp = db.execute(
+                "SELECT employer_name, job_title, start_date, end_date FROM employment_history WHERE id=?",
+                (employment_id,)).fetchone()
+            if emp:
+                emp_data = dict(emp)
+
+        # Send the employment verification email with full template variables
+        from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+
+        base_url = "https://app-wwjesgoe.fly.dev"
+        verification_link = f"{base_url}/verify?token={ver_dict['token']}&type=employment"
+        verification_code = ver_dict.get("verification_code", "")
+
+        email_result = EmailTemplateService.send_email(
+            template_key="employment_verification_request",
             recipient_email=ver_dict["verifier_email"],
             recipient_name=ver_dict["verifier_name"],
             variables={
                 "candidate_name": cand_name,
                 "verifier_name": ver_dict["verifier_name"],
-                "employer_name": ver_dict.get("employer_name", "your organization"),
+                "agency_name": agency_name,
+                "employer_name": emp_data.get("employer_name", ver_dict.get("employer_name", "")),
+                "job_title": emp_data.get("job_title", ""),
+                "start_date": emp_data.get("start_date", ""),
+                "end_date": emp_data.get("end_date", "Present"),
+                "verification_code": verification_code,
+                "verification_link": verification_link,
+                **get_trust_signal_variables(),
             },
-            fallback_subject=fallback_subject,
-            fallback_body=fallback_body,
-            notification_type="employment_verification_reminder",
-            related_id=ver_id,
         )
 
-        # Auto-complete the verification (simulated)
-        db.execute(
-            """UPDATE employment_verifications SET status='completed', job_title_confirmed=1,
-               dates_confirmed=1, reason_for_leaving_confirmed='Re-triggered by admin',
-               additional_comments='Admin re-triggered verification', completed_at=? WHERE id=?""",
-            (now, ver_id))
-
-        # Re-evaluate compliance
-        from app.services.compliance_engine import ComplianceEngine
-        ComplianceEngine.evaluate_candidate(candidate_id)
-
+        # Audit log with detailed info
         log_id = generate_id()
+        import json as _json
+        details = _json.dumps({
+            "verifier_email": ver_dict["verifier_email"],
+            "verifier_name": ver_dict["verifier_name"],
+            "candidate_name": cand_name,
+            "employer_name": emp_data.get("employer_name", ver_dict.get("employer_name", "")),
+            "reminder_number": reminder_count,
+            "email_status": email_result.get("status", "unknown") if email_result else "error",
+            "email_provider": email_result.get("provider", "none") if email_result else "none",
+        })
         db.execute(
             "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
             (log_id, "employment_verification", ver_id, "admin_retrigger_employment",
-             current_user["sub"], f"Re-triggered employment verification for {ver_dict['verifier_email']}", now))
+             current_user["sub"], details, now))
 
         updated = db.execute("SELECT * FROM employment_verifications WHERE id=?", (ver_id,)).fetchone()
         return dict(updated)
