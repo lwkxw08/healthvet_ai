@@ -209,20 +209,27 @@ class ComplianceEngine:
                     if requires_imposter and not imposter_pass:
                         flags.append("Imposter check declaration not submitted by agency")
 
-            # DBS Check
+            # DBS Check — handle both "dbs_valid" and "dbs_enhanced" template keys
+            # (some templates use "dbs_enhanced" instead of "dbs_valid" for enhanced+barred checks)
+            dbs_check_key = None
             if "dbs_valid" in rules:
-                dbs_config = template_config.get("dbs_valid", {})
+                dbs_check_key = "dbs_valid"
+            elif "dbs_enhanced" in rules:
+                dbs_check_key = "dbs_enhanced"
+
+            if dbs_check_key:
+                dbs_config = template_config.get(dbs_check_key, {})
                 dbs_level = dbs_config.get("level", "enhanced_barred")
 
                 if dbs_level == "none":
-                    checks["dbs_valid"] = True
+                    checks[dbs_check_key] = True
                     audit_entries.append({
                         "check": "dbs_check", "result": "passed",
                         "timestamp": now, "details": "not_required_for_industry",
                     })
                 else:
                     dbs_pass = dbs and dict(dbs).get("result") == "clear"
-                    checks["dbs_valid"] = dbs_pass
+                    checks[dbs_check_key] = dbs_pass
                     audit_entries.append({
                         "check": "dbs_check",
                         "result": "passed" if dbs_pass else "failed",
@@ -419,7 +426,7 @@ class ComplianceEngine:
                         overall_status, score,
                         1 if checks.get("identity_verified") else 0,
                         1 if checks.get("right_to_work_valid") else 0,
-                        1 if checks.get("dbs_valid") else 0,
+                        1 if checks.get("dbs_valid") or checks.get("dbs_enhanced") else 0,
                         1 if checks.get("registration_active") else 0,
                         1 if checks.get("references_verified") else 0,
                         1 if checks.get("cv_validated") else 0,
@@ -445,7 +452,7 @@ class ComplianceEngine:
                         generate_id(), candidate_id, overall_status, score,
                         1 if checks.get("identity_verified") else 0,
                         1 if checks.get("right_to_work_valid") else 0,
-                        1 if checks.get("dbs_valid") else 0,
+                        1 if checks.get("dbs_valid") or checks.get("dbs_enhanced") else 0,
                         1 if checks.get("registration_active") else 0,
                         1 if checks.get("references_verified") else 0,
                         1 if checks.get("cv_validated") else 0,
