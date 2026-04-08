@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from app.database import get_db
 from app.utils.auth import generate_id
+from app.services.compliance_engine import ComplianceEngine
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +250,12 @@ async def submit_employment_verification(body: EmploymentSubmission, request: Re
                 ),
             )
 
+    # Re-evaluate compliance now that employment verification is complete (outside DB context to avoid SQLite lock)
+    try:
+        ComplianceEngine.evaluate_candidate(record["candidate_id"])
+    except Exception as e:
+        logger.warning(f"Failed to re-evaluate compliance after employment verification: {e}")
+
     return {
         "success": True,
         "status": status,
@@ -360,6 +367,12 @@ async def submit_reference_verification(body: ReferenceSubmission, request: Requ
                     now,
                 ),
             )
+
+    # Re-evaluate compliance now that reference is complete (outside DB context to avoid SQLite lock)
+    try:
+        ComplianceEngine.evaluate_candidate(record["candidate_id"])
+    except Exception as e:
+        logger.warning(f"Failed to re-evaluate compliance after reference submission: {e}")
 
     return {
         "success": True,
