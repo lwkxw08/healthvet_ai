@@ -209,13 +209,14 @@ class ComplianceEngine:
                     if requires_imposter and not imposter_pass:
                         flags.append("Imposter check declaration not submitted by agency")
 
-            # DBS Check — handle both "dbs_valid" and "dbs_enhanced" template keys
-            # (some templates use "dbs_enhanced" instead of "dbs_valid" for enhanced+barred checks)
+            # DBS Check — handle all possible DBS template keys
+            # Templates may use: dbs_valid, dbs_enhanced, dbs_basic, dbs_standard, dbs_enhanced_barred
+            DBS_TEMPLATE_KEYS = ("dbs_valid", "dbs_enhanced", "dbs_basic", "dbs_standard", "dbs_enhanced_barred")
             dbs_check_key = None
-            if "dbs_valid" in rules:
-                dbs_check_key = "dbs_valid"
-            elif "dbs_enhanced" in rules:
-                dbs_check_key = "dbs_enhanced"
+            for _dbs_key in DBS_TEMPLATE_KEYS:
+                if _dbs_key in rules:
+                    dbs_check_key = _dbs_key
+                    break
 
             if dbs_check_key:
                 dbs_config = template_config.get(dbs_check_key, {})
@@ -426,7 +427,7 @@ class ComplianceEngine:
                         overall_status, score,
                         1 if checks.get("identity_verified") else 0,
                         1 if checks.get("right_to_work_valid") else 0,
-                        1 if checks.get("dbs_valid") or checks.get("dbs_enhanced") else 0,
+                        1 if any(checks.get(k) for k in DBS_TEMPLATE_KEYS) else 0,
                         1 if checks.get("registration_active") else 0,
                         1 if checks.get("references_verified") else 0,
                         1 if checks.get("cv_validated") else 0,
@@ -452,7 +453,7 @@ class ComplianceEngine:
                         generate_id(), candidate_id, overall_status, score,
                         1 if checks.get("identity_verified") else 0,
                         1 if checks.get("right_to_work_valid") else 0,
-                        1 if checks.get("dbs_valid") or checks.get("dbs_enhanced") else 0,
+                        1 if any(checks.get(k) for k in DBS_TEMPLATE_KEYS) else 0,
                         1 if checks.get("registration_active") else 0,
                         1 if checks.get("references_verified") else 0,
                         1 if checks.get("cv_validated") else 0,
