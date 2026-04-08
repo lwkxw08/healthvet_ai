@@ -532,6 +532,7 @@ async def retrigger_reference_verification(
     require_admin(current_user)
     now = datetime.now(timezone.utc).isoformat()
 
+    # Phase 1: DB reads and status update (close connection before email send)
     with get_db() as db:
         ref = db.execute("SELECT * FROM references_ WHERE id=? AND candidate_id=?",
                          (ref_id, candidate_id)).fetchone()
@@ -562,38 +563,39 @@ async def retrigger_reference_verification(
             if agency:
                 agency_name = dict(agency)["name"]
 
-        # Send the reference reminder email with full template variables
-        from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+    # Phase 2: Send email (outside DB context to avoid SQLite lock)
+    from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
 
-        base_url = "https://app-wwjesgoe.fly.dev"
-        reference_link = f"{base_url}/verify?token={ref_dict['token']}&type=reference"
-        verification_code = ref_dict.get("verification_code", "")
+    base_url = "https://app-wwjesgoe.fly.dev"
+    reference_link = f"{base_url}/verify?token={ref_dict['token']}&type=reference"
+    verification_code = ref_dict.get("verification_code", "")
 
-        email_result = EmailTemplateService.send_email(
-            template_key="reference_request",
-            recipient_email=ref_dict["referee_email"],
-            recipient_name=ref_dict["referee_name"],
-            variables={
-                "candidate_name": cand_name,
-                "referee_name": ref_dict["referee_name"],
-                "agency_name": agency_name,
-                "verification_code": verification_code,
-                "reference_link": reference_link,
-                **get_trust_signal_variables(),
-            },
-        )
-
-        # Audit log with detailed info
-        log_id = generate_id()
-        import json as _json
-        details = _json.dumps({
-            "referee_email": ref_dict["referee_email"],
-            "referee_name": ref_dict["referee_name"],
+    email_result = EmailTemplateService.send_email(
+        template_key="reference_request",
+        recipient_email=ref_dict["referee_email"],
+        recipient_name=ref_dict["referee_name"],
+        variables={
             "candidate_name": cand_name,
-            "reminder_number": reminder_count,
-            "email_status": email_result.get("status", "unknown") if email_result else "error",
-            "email_provider": email_result.get("provider", "none") if email_result else "none",
-        })
+            "referee_name": ref_dict["referee_name"],
+            "agency_name": agency_name,
+            "verification_code": verification_code,
+            "reference_link": reference_link,
+            **get_trust_signal_variables(),
+        },
+    )
+
+    # Phase 3: Audit log (separate DB context)
+    import json as _json
+    log_id = generate_id()
+    details = _json.dumps({
+        "referee_email": ref_dict["referee_email"],
+        "referee_name": ref_dict["referee_name"],
+        "candidate_name": cand_name,
+        "reminder_number": reminder_count,
+        "email_status": email_result.get("status", "unknown") if email_result else "error",
+        "email_provider": email_result.get("provider", "none") if email_result else "none",
+    })
+    with get_db() as db:
         db.execute(
             "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
             (log_id, "reference", ref_id, "admin_retrigger_reference",
@@ -611,6 +613,7 @@ async def retrigger_employment_verification(
     require_admin(current_user)
     now = datetime.now(timezone.utc).isoformat()
 
+    # Phase 1: DB reads and status update (close connection before email send)
     with get_db() as db:
         ver = db.execute("SELECT * FROM employment_verifications WHERE id=? AND candidate_id=?",
                          (ver_id, candidate_id)).fetchone()
@@ -651,43 +654,44 @@ async def retrigger_employment_verification(
             if emp:
                 emp_data = dict(emp)
 
-        # Send the employment verification email with full template variables
-        from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+    # Phase 2: Send email (outside DB context to avoid SQLite lock)
+    from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
 
-        base_url = "https://app-wwjesgoe.fly.dev"
-        verification_link = f"{base_url}/verify?token={ver_dict['token']}&type=employment"
-        verification_code = ver_dict.get("verification_code", "")
+    base_url = "https://app-wwjesgoe.fly.dev"
+    verification_link = f"{base_url}/verify?token={ver_dict['token']}&type=employment"
+    verification_code = ver_dict.get("verification_code", "")
 
-        email_result = EmailTemplateService.send_email(
-            template_key="employment_verification_request",
-            recipient_email=ver_dict["verifier_email"],
-            recipient_name=ver_dict["verifier_name"],
-            variables={
-                "candidate_name": cand_name,
-                "verifier_name": ver_dict["verifier_name"],
-                "agency_name": agency_name,
-                "employer_name": emp_data.get("employer_name", ver_dict.get("employer_name", "")),
-                "job_title": emp_data.get("job_title", ""),
-                "start_date": emp_data.get("start_date", ""),
-                "end_date": emp_data.get("end_date", "Present"),
-                "verification_code": verification_code,
-                "verification_link": verification_link,
-                **get_trust_signal_variables(),
-            },
-        )
-
-        # Audit log with detailed info
-        log_id = generate_id()
-        import json as _json
-        details = _json.dumps({
-            "verifier_email": ver_dict["verifier_email"],
-            "verifier_name": ver_dict["verifier_name"],
+    email_result = EmailTemplateService.send_email(
+        template_key="employment_verification_request",
+        recipient_email=ver_dict["verifier_email"],
+        recipient_name=ver_dict["verifier_name"],
+        variables={
             "candidate_name": cand_name,
+            "verifier_name": ver_dict["verifier_name"],
+            "agency_name": agency_name,
             "employer_name": emp_data.get("employer_name", ver_dict.get("employer_name", "")),
-            "reminder_number": reminder_count,
-            "email_status": email_result.get("status", "unknown") if email_result else "error",
-            "email_provider": email_result.get("provider", "none") if email_result else "none",
-        })
+            "job_title": emp_data.get("job_title", ""),
+            "start_date": emp_data.get("start_date", ""),
+            "end_date": emp_data.get("end_date", "Present"),
+            "verification_code": verification_code,
+            "verification_link": verification_link,
+            **get_trust_signal_variables(),
+        },
+    )
+
+    # Phase 3: Audit log (separate DB context)
+    import json as _json
+    log_id = generate_id()
+    details = _json.dumps({
+        "verifier_email": ver_dict["verifier_email"],
+        "verifier_name": ver_dict["verifier_name"],
+        "candidate_name": cand_name,
+        "employer_name": emp_data.get("employer_name", ver_dict.get("employer_name", "")),
+        "reminder_number": reminder_count,
+        "email_status": email_result.get("status", "unknown") if email_result else "error",
+        "email_provider": email_result.get("provider", "none") if email_result else "none",
+    })
+    with get_db() as db:
         db.execute(
             "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
             (log_id, "employment_verification", ver_id, "admin_retrigger_employment",
