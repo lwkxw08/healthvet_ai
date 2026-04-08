@@ -482,24 +482,24 @@ async def generate_invoices_for_agency(
             c = dict(cand)
             cand_name = f"{c['first_name']} {c['last_name']}"
 
-            # Skip candidates who already have a full_vetting invoice
-            # (new candidates are charged once via the invite flow)
+            # If candidate already has a full_vetting invoice from the invite
+            # flow, skip per-check line items (but still generate re-vet invoices)
             has_full_vetting = db.execute(
                 "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type='full_vetting'",
                 (agency_id, c["id"]),
             ).fetchone()
-            if has_full_vetting:
-                continue
 
-            # Check each type of check completed
-            check_tables = [
+            # Per-check line items — only for candidates without a full_vetting charge
+            if not has_full_vetting:
+              # Check each type of check completed
+              check_tables = [
                 ("identity", "identity_checks", "completed_at"),
                 ("dbs", "dbs_checks", "completed_at"),
                 ("right_to_work", "right_to_work_checks", "checked_at"),
                 ("cv_analysis", "cv_analyses", "analysed_at"),
                 ("registration", "registration_checks", "last_checked"),
-            ]
-            for check_type, table, date_col in check_tables:
+              ]
+              for check_type, table, date_col in check_tables:
                 completed = db.execute(
                     f"SELECT COUNT(*) as cnt FROM {table} WHERE candidate_id=? AND status IN ('complete','completed','verified','clear')",
                     (c["id"],),
@@ -521,13 +521,13 @@ async def generate_invoices_for_agency(
                         )
                         generated.append(inv_id)
 
-            # References (per reference)
-            refs = db.execute(
+              # References (per reference)
+              refs = db.execute(
                 "SELECT COUNT(*) as cnt FROM references_ WHERE candidate_id=? AND status='completed'",
                 (c["id"],),
-            ).fetchone()
-            ref_count = dict(refs)["cnt"] if refs else 0
-            if ref_count > 0 and "references" in pricing:
+              ).fetchone()
+              ref_count = dict(refs)["cnt"] if refs else 0
+              if ref_count > 0 and "references" in pricing:
                 existing = db.execute(
                     "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type='references'",
                     (agency_id, c["id"]),
@@ -543,7 +543,7 @@ async def generate_invoices_for_agency(
                     )
                     generated.append(inv_id)
 
-        # Re-vet requests (itemised per section)
+            # Re-vet requests (itemised per section) — always generated regardless of full_vetting
             revet_rows = db.execute(
                 "SELECT rr.* FROM revet_requests rr WHERE rr.agency_id=? AND rr.candidate_id=? AND rr.status IN ('completed', 'pending')",
                 (agency_id, c["id"]),
@@ -615,24 +615,24 @@ async def generate_grouped_invoice(
             cand_name = f"{c['first_name']} {c['last_name']}"
             cand_email = c.get("email", "")
 
-            # Skip candidates who already have a full_vetting invoice
-            # (new candidates are charged once via the invite flow)
+            # If candidate already has a full_vetting invoice from the invite
+            # flow, skip per-check line items (but still generate re-vet invoices)
             has_full_vetting = db.execute(
                 "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type='full_vetting'",
                 (data.agency_id, c["id"]),
             ).fetchone()
-            if has_full_vetting:
-                continue
 
-            # Check each type of check completed within the date range
-            check_tables = [
+            # Per-check line items — only for candidates without a full_vetting charge
+            if not has_full_vetting:
+              # Check each type of check completed within the date range
+              check_tables = [
                 ("identity", "identity_checks", "completed_at"),
                 ("dbs", "dbs_checks", "completed_at"),
                 ("right_to_work", "right_to_work_checks", "checked_at"),
                 ("cv_analysis", "cv_analyses", "analysed_at"),
                 ("registration", "registration_checks", "last_checked"),
-            ]
-            for check_type, table, date_col in check_tables:
+              ]
+              for check_type, table, date_col in check_tables:
                 completed = db.execute(
                     f"SELECT COUNT(*) as cnt FROM {table} WHERE candidate_id=? AND status IN ('complete','completed','verified','clear') AND {date_col} >= ? AND {date_col} <= ?",
                     (c["id"], data.date_from, data.date_to),
@@ -661,13 +661,13 @@ async def generate_grouped_invoice(
                             "cost": p["cost_price"], "sell": sell,
                         })
 
-            # References
-            refs = db.execute(
+              # References
+              refs = db.execute(
                 "SELECT COUNT(*) as cnt FROM references_ WHERE candidate_id=? AND status='completed' AND completed_at >= ? AND completed_at <= ?",
                 (c["id"], data.date_from, data.date_to),
-            ).fetchone()
-            ref_count = dict(refs)["cnt"] if refs else 0
-            if ref_count > 0 and "references" in pricing:
+              ).fetchone()
+              ref_count = dict(refs)["cnt"] if refs else 0
+              if ref_count > 0 and "references" in pricing:
                 existing = db.execute(
                     "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type='references'",
                     (data.agency_id, c["id"]),
@@ -692,7 +692,7 @@ async def generate_grouped_invoice(
                         "cost": cost, "sell": sell,
                     })
 
-            # Re-vet requests within date range
+            # Re-vet requests within date range — always generated regardless of full_vetting
             revet_rows = db.execute(
                 "SELECT rr.* FROM revet_requests rr WHERE rr.agency_id=? AND rr.candidate_id=? AND rr.status IN ('completed', 'pending') AND rr.created_at >= ? AND rr.created_at <= ?",
                 (data.agency_id, c["id"], data.date_from, data.date_to),
