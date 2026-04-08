@@ -266,6 +266,12 @@ export const adminApi = {
     apiRequest<Record<string, unknown>>(`/api/admin/invoices/generate?agency_id=${agencyId}`, { method: "POST", token }),
   generateGroupedInvoices: (token: string, agencyId: string, dateFrom: string, dateTo: string) =>
     apiRequest<Record<string, unknown>>("/api/admin/invoices/generate-grouped", { method: "POST", body: { agency_id: agencyId, date_from: dateFrom, date_to: dateTo }, token }),
+  getInvoiceSettings: (token: string) =>
+    apiRequest<Record<string, string>>("/api/admin/invoice-settings", { token }),
+  updateInvoiceSettings: (token: string, data: Record<string, string>) =>
+    apiRequest<Record<string, string>>("/api/admin/invoice-settings", { method: "PUT", body: data, token }),
+  sendInvoiceEmail: (token: string, invoiceIds: string[]) =>
+    apiRequest<Record<string, unknown>>("/api/admin/invoices/send-email", { method: "POST", body: { invoice_ids: invoiceIds }, token }),
 };
 
 // Admin Extended API (override checks, suspend agencies, manage users, audit logs, etc.)

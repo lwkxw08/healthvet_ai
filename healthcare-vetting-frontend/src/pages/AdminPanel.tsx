@@ -16,7 +16,7 @@ import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
   DollarSign, FileText, TrendingUp, ShieldAlert, Zap, Download, CreditCard,
-  Edit, Trash2, UserPlus, Ban, History, Send, PlusCircle,
+  Edit, Trash2, UserPlus, Ban, History, Send, PlusCircle, Building2,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
@@ -191,6 +191,16 @@ export default function AdminPanel() {
   const [invTabDateFrom, setInvTabDateFrom] = useState("");
   const [invTabDateTo, setInvTabDateTo] = useState("");
   const [invTabGenerating, setInvTabGenerating] = useState(false);
+
+  // Send invoice email state
+  const [sendingInvoiceEmail, setSendingInvoiceEmail] = useState(false);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+
+  // Invoice settings state
+  const [invoiceSettings, setInvoiceSettings] = useState<Record<string, string>>({});
+  const [editInvoiceSettings, setEditInvoiceSettings] = useState<Record<string, string>>({});
+  const [savingInvoiceSettings, setSavingInvoiceSettings] = useState(false);
+  const [invoiceSettingsLoaded, setInvoiceSettingsLoaded] = useState(false);
 
   // Monitoring candidates state
   const [monitoringCandidates, setMonitoringCandidates] = useState<Record<string, unknown>[]>([]);
@@ -425,7 +435,6 @@ export default function AdminPanel() {
   useEffect(() => { if (tab === "invoicing") loadAdminInvoices(); }, [tab, loadAdminInvoices]);
   useEffect(() => { if (tab === "subscriptions") { loadSubscriptionTiers(); loadCreditRates(); } }, [tab]);
   useEffect(() => { if (mainTab === "settings" && subTab === "trustid") loadTrustidData(); }, [mainTab, subTab, loadTrustidData]);
-
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
   const viewCandidate = async (candidate: Record<string, unknown>) => {
@@ -930,6 +939,45 @@ export default function AdminPanel() {
     ]);
   };
 
+  const loadInvoiceSettings = useCallback(async () => {
+    if (!token) return;
+    try {
+      const s = await adminApi.getInvoiceSettings(token);
+      setInvoiceSettings(s);
+      setEditInvoiceSettings(s);
+      setInvoiceSettingsLoaded(true);
+    } catch { /* ignore */ }
+  }, [token]);
+
+  const handleSaveInvoiceSettings = async () => {
+    if (!token) return;
+    setSavingInvoiceSettings(true);
+    try {
+      const updated = await adminApi.updateInvoiceSettings(token, editInvoiceSettings);
+      setInvoiceSettings(updated);
+      setEditInvoiceSettings(updated);
+      showMessage("Invoice settings saved successfully");
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed to save"}`); }
+    finally { setSavingInvoiceSettings(false); }
+  };
+
+  const handleSendInvoiceEmail = async (invoiceIds: string[]) => {
+    if (!token || invoiceIds.length === 0) return;
+    setSendingInvoiceEmail(true);
+    try {
+      const result = await adminApi.sendInvoiceEmail(token, invoiceIds);
+      showMessage(`Invoice email sent to agency (${(result as Record<string, unknown>).invoice_ref} — ${(result as Record<string, unknown>).total_due})`);
+      setSelectedInvoiceIds([]);
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed to send invoice email"}`); }
+    finally { setSendingInvoiceEmail(false); }
+  };
+
+  const toggleInvoiceSelection = (invId: string) => {
+    setSelectedInvoiceIds(prev => prev.includes(invId) ? prev.filter(id => id !== invId) : [...prev, invId]);
+  };
+
+  useEffect(() => { if (mainTab === "settings" && subTab === "invoice-settings" && !invoiceSettingsLoaded) loadInvoiceSettings(); }, [mainTab, subTab, invoiceSettingsLoaded, loadInvoiceSettings]);
+
   const handleGenerateGroupedInvoice = async (agencyId: string, dateFrom: string, dateTo: string, setLoading: (v: boolean) => void) => {
     if (!token || !agencyId || !dateFrom || !dateTo) { showMessage("Error: Please select an agency and date range"); return; }
     setLoading(true);
@@ -1128,7 +1176,7 @@ export default function AdminPanel() {
       {mainTab === "settings" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "trustid", label: "TrustID" }, { key: "alerts-config", label: "Alert Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }].map((s) => (
+            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "trustid", label: "TrustID" }, { key: "alerts-config", label: "Alert Settings" }, { key: "invoice-settings", label: "Invoice Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -2551,8 +2599,23 @@ export default function AdminPanel() {
               )}
             </div>
 
+            {/* Send Invoice Email Bar */}
+            {selectedInvoiceIds.length > 0 && (
+              <div className="bg-blue-900/30 border border-blue-600/40 rounded-xl p-4 flex items-center justify-between">
+                <p className="text-blue-300 text-sm">{selectedInvoiceIds.length} invoice(s) selected for emailing</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setSelectedInvoiceIds([])} className="text-xs bg-slate-600/20 text-slate-400 border border-slate-600/30 px-3 py-1.5 rounded hover:bg-slate-600/30">Clear Selection</button>
+                  <button onClick={() => handleSendInvoiceEmail(selectedInvoiceIds)} disabled={sendingInvoiceEmail}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:opacity-50 text-white px-5 py-1.5 rounded text-sm font-medium flex items-center gap-1">
+                    <Send size={14} /> {sendingInvoiceEmail ? "Sending..." : "Send Invoice Email"}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
               <table className="w-full"><thead><tr className="border-b border-slate-700">
+                <th className="text-left text-xs text-slate-400 font-medium px-3 py-3 w-8"><input type="checkbox" className="rounded" onChange={(e) => { if (e.target.checked) { setSelectedInvoiceIds(adminInvoices.filter(inv => String(inv.status) === "pending").map(inv => String(inv.id))); } else { setSelectedInvoiceIds([]); } }} checked={selectedInvoiceIds.length > 0 && selectedInvoiceIds.length === adminInvoices.filter(inv => String(inv.status) === "pending").length} /></th>
                 {["Invoice ID","Agency","Candidate","Type","Original Amount","Adjusted","Discount","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-3 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {adminInvoices
@@ -2575,6 +2638,7 @@ export default function AdminPanel() {
                     const isAdjusting = adjustingInvoice === invId;
                     return (
                       <tr key={invId} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                        <td className="px-3 py-3"><input type="checkbox" className="rounded" checked={selectedInvoiceIds.includes(invId)} onChange={() => toggleInvoiceSelection(invId)} /></td>
                         <td className="px-3 py-3 text-xs text-slate-300 font-mono">{invId.substring(0, 8)}...</td>
                         <td className="px-3 py-3 text-sm text-white">{String(inv.agency_name || "N/A")}</td>
                         <td className="px-3 py-3 text-sm text-slate-300">{String(inv.candidate_email || "N/A")}</td>
@@ -2616,6 +2680,8 @@ export default function AdminPanel() {
                                   className="text-xs bg-amber-600/20 text-amber-400 border border-amber-600/30 px-2 py-1 rounded hover:bg-amber-600/30">Adjust</button>
                                 <button onClick={() => handleMarkInvoicePaid(invId)}
                                   className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-1 rounded hover:bg-green-600/30">Mark Paid</button>
+                                <button onClick={() => handleSendInvoiceEmail([invId])} disabled={sendingInvoiceEmail}
+                                  className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-1 rounded hover:bg-blue-600/30">Send</button>
                               </>
                             )}
                           </div>
@@ -2630,7 +2696,7 @@ export default function AdminPanel() {
                   if (invoiceSearch) { const q = invoiceSearch.toLowerCase(); const s = `${String(inv.id || "")} ${String(inv.agency_name || "")} ${String(inv.candidate_email || "")} ${String(inv.check_type || "")} ${String(inv.description || "")}`.toLowerCase(); if (!s.includes(q)) return false; }
                   return true;
                 }).length === 0 && (
-                  <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500 text-sm">No invoices found matching filters</td></tr>
+                  <tr><td colSpan={10} className="px-4 py-6 text-center text-slate-500 text-sm">No invoices found matching filters</td></tr>
                 )}
               </tbody></table>
             </div>
@@ -2921,6 +2987,106 @@ export default function AdminPanel() {
                   <button onClick={() => setEditAlertSettings({})} className="text-slate-400 hover:text-white text-sm">Cancel</button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Settings Tab — Invoice Settings sub-tab */}
+        {tab === "settings" && subTab === "invoice-settings" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2"><FileText className="text-green-400" size={22} /> Invoice Settings</h2>
+            <p className="text-slate-400 text-sm">Configure company details, bank account information, VAT rate, and payment terms that appear on invoice emails sent to agencies.</p>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Company Information */}
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-white font-semibold mb-4 flex items-center gap-2"><Building2 size={16} className="text-blue-400" /> Company Information</h3>
+                <div className="space-y-3">
+                  {[
+                    { key: "invoice_company_name", label: "Company Name", placeholder: "Your Company Ltd" },
+                    { key: "invoice_company_address", label: "Address", placeholder: "123 Business Street, City, Postcode" },
+                    { key: "invoice_company_email", label: "Email", placeholder: "accounts@company.com" },
+                    { key: "invoice_company_phone", label: "Phone", placeholder: "+44 20 1234 5678" },
+                    { key: "invoice_company_registration", label: "Company Registration No.", placeholder: "12345678" },
+                    { key: "invoice_company_vat_number", label: "VAT Number", placeholder: "GB123456789" },
+                  ].map((field) => (
+                    <div key={field.key}>
+                      <label className="text-slate-400 text-xs font-medium block mb-1">{field.label}</label>
+                      <input type="text" value={editInvoiceSettings[field.key] || ""} onChange={(e) => setEditInvoiceSettings({ ...editInvoiceSettings, [field.key]: e.target.value })}
+                        placeholder={field.placeholder} className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Bank Details */}
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-white font-semibold mb-4 flex items-center gap-2"><CreditCard size={16} className="text-green-400" /> Bank Account Details</h3>
+                <div className="space-y-3">
+                  {[
+                    { key: "invoice_bank_account_name", label: "Account Name", placeholder: "Your Company Ltd" },
+                    { key: "invoice_bank_sort_code", label: "Sort Code", placeholder: "12-34-56" },
+                    { key: "invoice_bank_account_number", label: "Account Number", placeholder: "12345678" },
+                    { key: "invoice_bank_iban", label: "IBAN (optional)", placeholder: "GB00XXXX00000012345678" },
+                    { key: "invoice_bank_swift", label: "SWIFT/BIC (optional)", placeholder: "XXXXGB2L" },
+                  ].map((field) => (
+                    <div key={field.key}>
+                      <label className="text-slate-400 text-xs font-medium block mb-1">{field.label}</label>
+                      <input type="text" value={editInvoiceSettings[field.key] || ""} onChange={(e) => setEditInvoiceSettings({ ...editInvoiceSettings, [field.key]: e.target.value })}
+                        placeholder={field.placeholder} className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Billing Configuration */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-white font-semibold mb-4">Billing Configuration</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-slate-400 text-xs font-medium block mb-1">VAT Rate (%)</label>
+                  <input type="text" value={editInvoiceSettings["invoice_vat_rate"] || ""} onChange={(e) => setEditInvoiceSettings({ ...editInvoiceSettings, invoice_vat_rate: e.target.value })}
+                    placeholder="20" className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs font-medium block mb-1">Payment Terms</label>
+                  <input type="text" value={editInvoiceSettings["invoice_payment_terms"] || ""} onChange={(e) => setEditInvoiceSettings({ ...editInvoiceSettings, invoice_payment_terms: e.target.value })}
+                    placeholder="Net 30" className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs font-medium block mb-1">Currency Symbol</label>
+                  <input type="text" value={editInvoiceSettings["invoice_currency_symbol"] || ""} onChange={(e) => setEditInvoiceSettings({ ...editInvoiceSettings, invoice_currency_symbol: e.target.value })}
+                    placeholder="£" className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                </div>
+              </div>
+            </div>
+
+            {/* Additional Info */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-white font-semibold mb-4">Additional Invoice Information</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-slate-400 text-xs font-medium block mb-1">ICO Registration</label>
+                  <input type="text" value={editInvoiceSettings["invoice_ico_registration"] || ""} onChange={(e) => setEditInvoiceSettings({ ...editInvoiceSettings, invoice_ico_registration: e.target.value })}
+                    placeholder="ICO Registration: ZA123456" className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs font-medium block mb-1">Invoice Footer Note</label>
+                  <textarea value={editInvoiceSettings["invoice_footer_note"] || ""} onChange={(e) => setEditInvoiceSettings({ ...editInvoiceSettings, invoice_footer_note: e.target.value })}
+                    placeholder="Thank you for your business. Please quote your invoice number when making payment."
+                    rows={2} className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:border-blue-500 focus:outline-none resize-none" />
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex gap-3">
+              <button onClick={handleSaveInvoiceSettings} disabled={savingInvoiceSettings}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:opacity-50 text-white px-8 py-2.5 rounded-lg text-sm font-medium">
+                {savingInvoiceSettings ? "Saving..." : "Save Invoice Settings"}
+              </button>
+              <button onClick={() => setEditInvoiceSettings(invoiceSettings)} className="text-slate-400 hover:text-white text-sm px-4 py-2.5">Reset to Saved</button>
             </div>
           </div>
         )}

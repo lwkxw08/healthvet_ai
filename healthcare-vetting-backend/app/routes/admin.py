@@ -815,3 +815,185 @@ async def migrate_trustid_to_legacy(current_user: dict = Depends(get_current_use
         "synced": synced,
         "candidates_re_evaluated": evaluated,
     }
+
+
+# ── Invoice Settings (company info, bank details) ─────────────────────
+
+@router.get("/invoice-settings")
+async def get_invoice_settings_endpoint(current_user: dict = Depends(get_current_user)):
+    require_admin(current_user)
+    from app.services.email_templates import get_invoice_settings
+    return get_invoice_settings()
+
+
+class InvoiceSettingsUpdate(BaseModel):
+    company_name: Optional[str] = None
+    company_address: Optional[str] = None
+    company_email: Optional[str] = None
+    company_phone: Optional[str] = None
+    company_reg_info: Optional[str] = None
+    vat_number: Optional[str] = None
+    vat_rate: Optional[str] = None
+    bank_account_name: Optional[str] = None
+    bank_sort_code: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_iban: Optional[str] = None
+    payment_terms: Optional[str] = None
+
+
+@router.put("/invoice-settings")
+async def update_invoice_settings_endpoint(
+    data: InvoiceSettingsUpdate, current_user: dict = Depends(get_current_user)
+):
+    require_admin(current_user)
+    updates = {k: v for k, v in data.dict().items() if v is not None}
+    with get_db() as db:
+        for key, value in updates.items():
+            db.execute(
+                """INSERT INTO system_settings (setting_key, setting_value, updated_at)
+                   VALUES (?, ?, datetime('now'))
+                   ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,
+                   updated_at=excluded.updated_at""",
+                (f"invoice_{key}", value),
+            )
+        db.commit()
+    from app.services.email_templates import get_invoice_settings
+    return get_invoice_settings()
+
+
+# ── Send Itemised Invoice Email ───────────────────────────────────────
+
+class SendInvoiceRequest(BaseModel):
+    invoice_ids: List[str]
+
+
+@router.post("/invoices/send-email")
+async def send_invoice_email(
+    data: SendInvoiceRequest, current_user: dict = Depends(get_current_user)
+):
+    """Send an itemised invoice email to the agency for the given invoice IDs."""
+    require_admin(current_user)
+    from app.services.email_templates import get_invoice_settings, EmailTemplateService
+
+    if not data.invoice_ids:
+        raise HTTPException(status_code=400, detail="No invoice IDs provided")
+
+    with get_db() as db:
+        # Fetch invoices
+        placeholders = ",".join("?" for _ in data.invoice_ids)
+        invoices = db.execute(
+            f"SELECT * FROM invoices WHERE id IN ({placeholders})",
+            data.invoice_ids,
+        ).fetchall()
+        invoices = [dict(r) for r in invoices]
+
+        if not invoices:
+            raise HTTPException(status_code=404, detail="No invoices found")
+
+        # All invoices must belong to the same agency
+        agency_ids = set(inv["agency_id"] for inv in invoices)
+        if len(agency_ids) > 1:
+            raise HTTPException(status_code=400, detail="All invoices must belong to the same agency")
+
+        agency_id = agency_ids.pop()
+        agency = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        if not agency:
+            raise HTTPException(status_code=404, detail="Agency not found")
+        agency = dict(agency)
+
+        # Build line items
+        line_items_html = ""
+        line_items_text = ""
+        subtotal = 0.0
+        for inv in invoices:
+            sell = inv.get("sell_amount") or inv.get("cost_amount") or 0.0
+            subtotal += sell
+            desc = inv.get("description") or inv.get("check_type") or "Vetting Service"
+            # Get candidate name if available
+            candidate_name = ""
+            if inv.get("candidate_id"):
+                cand = db.execute(
+                    "SELECT full_name FROM candidates WHERE id=?", (inv["candidate_id"],)
+                ).fetchone()
+                if cand:
+                    candidate_name = cand["full_name"] or ""
+
+            line_items_html += (
+                f'<tr>'
+                f'<td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">{desc}</td>'
+                f'<td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">{candidate_name}</td>'
+                f'<td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right;">\u00a3{sell:.2f}</td>'
+                f'</tr>'
+            )
+            line_items_text += f"  {desc:<40} {candidate_name:<20} \u00a3{sell:.2f}\n"
+
+    # Get invoice settings
+    settings = get_invoice_settings()
+    vat_rate_pct = float(settings.get("vat_rate") or "0")
+    vat_amount = subtotal * (vat_rate_pct / 100)
+    total_due = subtotal + vat_amount
+
+    # Build a grouped invoice reference from the first invoice ID
+    invoice_ref = invoices[0]["id"][:8].upper()
+    now = datetime.now(timezone.utc)
+    invoice_date = now.strftime("%d %B %Y")
+
+    # Calculate due date from payment terms
+    terms = settings.get("payment_terms", "Net 30")
+    try:
+        days = int("".join(c for c in terms if c.isdigit()) or "30")
+    except ValueError:
+        days = 30
+    due_date = (now + timedelta(days=days)).strftime("%d %B %Y")
+
+    agency_email = agency.get("email") or agency.get("contact_email") or ""
+    if not agency_email:
+        raise HTTPException(status_code=400, detail="Agency has no email address configured")
+
+    variables = {
+        "invoice_ref": invoice_ref,
+        "invoice_date": invoice_date,
+        "due_date": due_date,
+        "payment_terms": terms,
+        "agency_name": agency.get("name") or agency.get("company_name") or "Agency",
+        "agency_email": agency_email,
+        "line_items_html": line_items_html,
+        "line_items_text": line_items_text,
+        "subtotal": f"\u00a3{subtotal:.2f}",
+        "vat_rate": f"{vat_rate_pct:.0f}%",
+        "vat_amount": f"\u00a3{vat_amount:.2f}",
+        "total_due": f"\u00a3{total_due:.2f}",
+        "company_name": settings.get("company_name", ""),
+        "company_address": settings.get("company_address", ""),
+        "company_email": settings.get("company_email", ""),
+        "company_phone": settings.get("company_phone", ""),
+        "company_reg_info": settings.get("company_reg_info", ""),
+        "vat_number": settings.get("vat_number", ""),
+        "bank_account_name": settings.get("bank_account_name", ""),
+        "bank_sort_code": settings.get("bank_sort_code", ""),
+        "bank_account_number": settings.get("bank_account_number", ""),
+    }
+
+    fallback_subject = f"Invoice #{invoice_ref} - \u00a3{total_due:.2f}"
+    fallback_body = f"Dear {variables['agency_name']},\n\nPlease find attached invoice #{invoice_ref} for \u00a3{total_due:.2f}.\n\nBest regards,\n{settings.get('company_name', 'HealthVet AI')}"
+
+    try:
+        EmailTemplateService.send_email(
+            template_key="invoice_notification",
+            recipient_email=agency_email,
+            recipient_name=variables["agency_name"],
+            variables=variables,
+            fallback_subject=fallback_subject,
+            fallback_body=fallback_body,
+        )
+    except Exception as e:
+        logger.error(f"Failed to send invoice email: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+    return {
+        "success": True,
+        "message": f"Invoice email sent to {agency_email}",
+        "invoice_ref": invoice_ref,
+        "total_due": f"\u00a3{total_due:.2f}",
+        "line_items_count": len(invoices),
+    }

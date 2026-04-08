@@ -42,6 +42,21 @@ TRUST_SIGNAL_DEFAULTS = {
     "verification_url": "verify.healthvet.ai",
 }
 
+INVOICE_SETTINGS_DEFAULTS = {
+    "company_name": "HealthVet AI Ltd",
+    "company_address": "",
+    "company_email": "billing@healthvet.ai",
+    "company_phone": "+44 (0) XXX XXX XXXX",
+    "company_reg_info": "Registered in England & Wales",
+    "vat_number": "",
+    "vat_rate": "20",
+    "bank_account_name": "",
+    "bank_sort_code": "",
+    "bank_account_number": "",
+    "bank_iban": "",
+    "payment_terms": "Net 30",
+}
+
 
 def get_trust_signal_variables() -> dict:
     """Load trust signal values from DB settings, falling back to defaults."""
@@ -52,6 +67,23 @@ def get_trust_signal_variables() -> dict:
                 row = db.execute(
                     "SELECT setting_value FROM system_settings WHERE setting_key=?",
                     (f"trust_{key}",),
+                ).fetchone()
+                if row and row["setting_value"]:
+                    result[key] = row["setting_value"]
+    except Exception:
+        pass
+    return result
+
+
+def get_invoice_settings() -> dict:
+    """Load invoice / company / bank settings from DB, falling back to defaults."""
+    result = dict(INVOICE_SETTINGS_DEFAULTS)
+    try:
+        with get_db() as db:
+            for key in INVOICE_SETTINGS_DEFAULTS:
+                row = db.execute(
+                    "SELECT setting_value FROM system_settings WHERE setting_key=?",
+                    (f"invoice_{key}",),
                 ).fetchone()
                 if row and row["setting_value"]:
                     result[key] = row["setting_value"]
@@ -501,57 +533,147 @@ HealthVet AI Compliance Team""",
     },
     {
         "template_key": "invoice_notification",
-        "name": "Invoice Notification",
-        "description": "Sent to an agency when a new invoice is generated.",
+        "name": "Itemised Invoice",
+        "description": "Professional itemised invoice sent to an agency with company details, line items, totals, and bank payment information.",
         "category": "billing",
-        "subject": "New Invoice #{{invoice_ref}} — {{amount}}",
-        "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-<div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
-    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Invoice Notification</p>
-</div>
-<div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
-    <p>Dear {{agency_name}},</p>
-    <p>A new invoice has been generated for your account:</p>
-    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 15px; margin: 20px 0;">
-        <table style="width: 100%; border-collapse: collapse;">
-            <tr><td style="padding: 8px 0; color: #64748b; width: 40%;">Invoice Reference:</td><td style="padding: 8px 0; font-weight: 600;">#{{invoice_ref}}</td></tr>
-            <tr><td style="padding: 8px 0; color: #64748b;">Amount Due:</td><td style="padding: 8px 0; font-weight: 600; font-size: 18px; color: #1e293b;">{{amount}}</td></tr>
-            <tr><td style="padding: 8px 0; color: #64748b;">Description:</td><td style="padding: 8px 0;">{{description}}</td></tr>
-            <tr><td style="padding: 8px 0; color: #64748b;">Date:</td><td style="padding: 8px 0;">{{invoice_date}}</td></tr>
+        "subject": "Invoice #{{invoice_ref}} — {{total_due}} from {{company_name}}",
+        "body_html": """<div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; background: #f1f5f9;">
+<div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+    <!-- Header -->
+    <div style="background: #1e293b; padding: 30px;">
+        <table style="width: 100%;">
+            <tr>
+                <td style="vertical-align: top;">
+                    <h1 style="color: #60a5fa; margin: 0; font-size: 28px;">INVOICE</h1>
+                    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 13px;">#{{invoice_ref}}</p>
+                </td>
+                <td style="text-align: right; color: #94a3b8; font-size: 13px; vertical-align: top;">
+                    <p style="margin: 0; color: white; font-weight: 600; font-size: 16px;">{{company_name}}</p>
+                    <p style="margin: 4px 0 0;">{{company_address}}</p>
+                    <p style="margin: 2px 0 0;">{{company_email}}</p>
+                    <p style="margin: 2px 0 0;">{{company_phone}}</p>
+                </td>
+            </tr>
         </table>
     </div>
-    <div style="text-align: center; margin: 25px 0;">
-        <a href="{{payment_link}}" style="background: #22c55e; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">Pay Now</a>
+
+    <div style="padding: 30px;">
+        <!-- Invoice Meta -->
+        <table style="width: 100%; margin-bottom: 25px;">
+            <tr>
+                <td style="vertical-align: top; width: 50%;">
+                    <p style="color: #64748b; font-size: 11px; text-transform: uppercase; margin: 0 0 5px;">Bill To</p>
+                    <p style="margin: 0; font-weight: 600; font-size: 15px; color: #1e293b;">{{agency_name}}</p>
+                    <p style="margin: 2px 0 0; color: #64748b; font-size: 13px;">{{agency_email}}</p>
+                </td>
+                <td style="vertical-align: top; text-align: right;">
+                    <table style="margin-left: auto;">
+                        <tr><td style="color: #64748b; font-size: 12px; padding: 2px 10px 2px 0;">Invoice Date:</td><td style="font-size: 12px; font-weight: 600;">{{invoice_date}}</td></tr>
+                        <tr><td style="color: #64748b; font-size: 12px; padding: 2px 10px 2px 0;">Due Date:</td><td style="font-size: 12px; font-weight: 600;">{{due_date}}</td></tr>
+                        <tr><td style="color: #64748b; font-size: 12px; padding: 2px 10px 2px 0;">Payment Terms:</td><td style="font-size: 12px; font-weight: 600;">{{payment_terms}}</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Line Items Table -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background: #f8fafc;">
+                    <th style="text-align: left; padding: 10px; font-size: 11px; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e2e8f0;">Description</th>
+                    <th style="text-align: left; padding: 10px; font-size: 11px; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e2e8f0;">Candidate</th>
+                    <th style="text-align: right; padding: 10px; font-size: 11px; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e2e8f0;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{line_items_html}}
+            </tbody>
+        </table>
+
+        <!-- Totals -->
+        <table style="width: 100%; margin-bottom: 25px;">
+            <tr>
+                <td style="width: 60%;"></td>
+                <td>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr><td style="padding: 6px 10px; color: #64748b; font-size: 13px;">Subtotal:</td><td style="padding: 6px 10px; text-align: right; font-size: 13px;">{{subtotal}}</td></tr>
+                        <tr><td style="padding: 6px 10px; color: #64748b; font-size: 13px;">VAT ({{vat_rate}}):</td><td style="padding: 6px 10px; text-align: right; font-size: 13px;">{{vat_amount}}</td></tr>
+                        <tr style="border-top: 2px solid #1e293b;"><td style="padding: 10px; font-weight: 700; font-size: 16px; color: #1e293b;">Total Due:</td><td style="padding: 10px; text-align: right; font-weight: 700; font-size: 16px; color: #1e293b;">{{total_due}}</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Bank Details -->
+        <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 15px; margin-bottom: 20px;">
+            <p style="margin: 0 0 8px; font-weight: 600; color: #0369a1; font-size: 13px;">Payment Details — Bank Transfer</p>
+            <table style="width: 100%; font-size: 13px;">
+                <tr><td style="padding: 3px 0; color: #64748b; width: 35%;">Account Name:</td><td style="padding: 3px 0; font-weight: 600;">{{bank_account_name}}</td></tr>
+                <tr><td style="padding: 3px 0; color: #64748b;">Sort Code:</td><td style="padding: 3px 0; font-weight: 600;">{{bank_sort_code}}</td></tr>
+                <tr><td style="padding: 3px 0; color: #64748b;">Account Number:</td><td style="padding: 3px 0; font-weight: 600;">{{bank_account_number}}</td></tr>
+                <tr><td style="padding: 3px 0; color: #64748b;">Reference:</td><td style="padding: 3px 0; font-weight: 600;">#{{invoice_ref}}</td></tr>
+            </table>
+        </div>
+
+        <!-- Company Registration -->
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+        <div style="color: #94a3b8; font-size: 11px; line-height: 1.6;">
+            <p style="margin: 0;">{{company_name}} | {{company_reg_info}} | VAT No: {{vat_number}}</p>
+            <p style="margin: 2px 0 0;">{{company_address}}</p>
+            <p style="margin: 6px 0 0;">If you have any questions about this invoice, please contact {{company_email}} or call {{company_phone}}.</p>
+        </div>
     </div>
-    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">This is an automated invoice from HealthVet AI.</p>
 </div>
 </div>""",
-        "body_text": """Invoice Notification
-
-Dear {{agency_name}},
-
-A new invoice has been generated:
-
-Invoice Reference: #{{invoice_ref}}
-Amount Due: {{amount}}
-Description: {{description}}
+        "body_text": """INVOICE #{{invoice_ref}}
+From: {{company_name}}
 Date: {{invoice_date}}
+Due: {{due_date}}
+Payment Terms: {{payment_terms}}
 
-Please log in to your dashboard to view and pay this invoice:
-{{payment_link}}
+Bill To: {{agency_name}} ({{agency_email}})
 
-Best regards,
-HealthVet AI Billing Team""",
+LINE ITEMS
+{{line_items_text}}
+
+Subtotal: {{subtotal}}
+VAT ({{vat_rate}}): {{vat_amount}}
+TOTAL DUE: {{total_due}}
+
+PAYMENT DETAILS — Bank Transfer
+Account Name: {{bank_account_name}}
+Sort Code: {{bank_sort_code}}
+Account Number: {{bank_account_number}}
+Reference: #{{invoice_ref}}
+
+---
+{{company_name}} | {{company_reg_info}} | VAT No: {{vat_number}}
+{{company_address}}
+Questions? Contact {{company_email}} or call {{company_phone}}""",
         "variables": json.dumps([
-            {"key": "agency_name", "description": "Name of the agency"},
             {"key": "invoice_ref", "description": "Invoice reference number"},
-            {"key": "amount", "description": "Invoice amount (e.g., \u00a3150.00)"},
-            {"key": "description", "description": "Invoice description"},
-            {"key": "invoice_date", "description": "Date of the invoice"},
-            {"key": "payment_link", "description": "Link to pay the invoice"},
+            {"key": "invoice_date", "description": "Date the invoice was issued"},
+            {"key": "due_date", "description": "Payment due date"},
+            {"key": "payment_terms", "description": "Payment terms (e.g. Net 30)"},
+            {"key": "agency_name", "description": "Name of the agency being billed"},
+            {"key": "agency_email", "description": "Agency email address"},
+            {"key": "line_items_html", "description": "HTML table rows of invoice line items"},
+            {"key": "line_items_text", "description": "Plain text list of invoice line items"},
+            {"key": "subtotal", "description": "Subtotal before VAT"},
+            {"key": "vat_rate", "description": "VAT rate percentage (e.g. 20%)"},
+            {"key": "vat_amount", "description": "VAT amount"},
+            {"key": "total_due", "description": "Total amount due including VAT"},
+            {"key": "company_name", "description": "Your company name"},
+            {"key": "company_address", "description": "Your company address"},
+            {"key": "company_email", "description": "Your company email"},
+            {"key": "company_phone", "description": "Your company phone"},
+            {"key": "company_reg_info", "description": "Company registration info"},
+            {"key": "vat_number", "description": "VAT registration number"},
+            {"key": "bank_account_name", "description": "Bank account name"},
+            {"key": "bank_sort_code", "description": "Bank sort code"},
+            {"key": "bank_account_number", "description": "Bank account number"},
         ]),
+    },
     },
     {
         "template_key": "payment_reminder",
