@@ -545,17 +545,25 @@ async def retrigger_reference_verification(
             "UPDATE references_ SET status='pending', reminder_count=reminder_count+1, sent_at=? WHERE id=?",
             (now, ref_id))
 
-        # Simulate sending the email
+        # Send the reference reminder email
         from app.services.email_service import EmailService
         cand = db.execute("SELECT first_name, last_name FROM candidates WHERE id=?",
                           (candidate_id,)).fetchone()
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Unknown"
 
-        EmailService.send_notification(
+        fallback_subject = f"Reference Request Reminder - {cand_name}"
+        fallback_body = f"This is a reminder to complete the reference verification for {cand_name}. Token: {ref_dict['token']}"
+        EmailService._send_via_template(
+            template_key="reference_request",
             recipient_email=ref_dict["referee_email"],
             recipient_name=ref_dict["referee_name"],
-            subject=f"Reference Request Reminder - {cand_name}",
-            body=f"This is a reminder to complete the reference verification for {cand_name}. Token: {ref_dict['token']}",
+            variables={
+                "candidate_name": cand_name,
+                "referee_name": ref_dict["referee_name"],
+                "token": ref_dict["token"],
+            },
+            fallback_subject=fallback_subject,
+            fallback_body=fallback_body,
             notification_type="reference_reminder",
             related_id=ref_id,
         )
@@ -613,11 +621,19 @@ async def retrigger_employment_verification(
                           (candidate_id,)).fetchone()
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Unknown"
 
-        EmailService.send_notification(
+        fallback_subject = f"Employment Verification Reminder - {cand_name}"
+        fallback_body = f"This is a reminder to complete the employment verification for {cand_name} at {ver_dict.get('employer_name', 'your organization')}."
+        EmailService._send_via_template(
+            template_key="employment_verification",
             recipient_email=ver_dict["verifier_email"],
             recipient_name=ver_dict["verifier_name"],
-            subject=f"Employment Verification Reminder - {cand_name}",
-            body=f"This is a reminder to complete the employment verification for {cand_name} at {ver_dict.get('employer_name', 'your organization')}.",
+            variables={
+                "candidate_name": cand_name,
+                "verifier_name": ver_dict["verifier_name"],
+                "employer_name": ver_dict.get("employer_name", "your organization"),
+            },
+            fallback_subject=fallback_subject,
+            fallback_body=fallback_body,
             notification_type="employment_verification_reminder",
             related_id=ver_id,
         )

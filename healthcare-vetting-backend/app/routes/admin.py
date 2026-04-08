@@ -1,10 +1,13 @@
 """Admin settings, analytics, and pricing routes."""
+import logging
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 from app.database import get_db
 from app.utils.auth import get_current_user, generate_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
@@ -367,8 +370,38 @@ async def create_invoice(data: InvoiceCreate, current_user: dict = Depends(get_c
                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
             (invoice_id, data.agency_id, data.candidate_id, data.check_type, data.description, data.cost_amount, data.sell_amount, now),
         )
-        row = db.execute("SELECT i.*, a.name as agency_name FROM invoices i LEFT JOIN agencies a ON i.agency_id = a.id WHERE i.id=?", (invoice_id,)).fetchone()
-        return dict(row)
+        row = db.execute("SELECT i.*, a.name as agency_name, a.email as agency_email FROM invoices i LEFT JOIN agencies a ON i.agency_id = a.id WHERE i.id=?", (invoice_id,)).fetchone()
+        invoice = dict(row)
+
+        # Send invoice notification email to agency
+        agency_email = invoice.get("agency_email")
+        if agency_email:
+            try:
+                from app.services.email_service import EmailService
+                EmailService.send_invoice_notification(
+                    agency_email=agency_email,
+                    agency_name=invoice.get("agency_name", "Agency"),
+                    invoice_id=invoice_id,
+                    amount=data.sell_amount,
+                    description=data.description,
+                )
+                logger.info(f"Invoice email sent to {agency_email} for invoice {invoice_id}")
+            except Exception as e:
+                logger.error(f"Failed to send invoice email: {e}")
+
+        # Create a notification for the agency
+        try:
+            notif_id = generate_id()
+            db.execute(
+                """INSERT INTO notifications (id, user_id, user_type, category, title, message, is_read, created_at)
+                   VALUES (?, ?, 'agency', 'billing', ?, ?, 0, ?)""",
+                (notif_id, data.agency_id, f"New Invoice: £{data.sell_amount:.2f}",
+                 f"{data.description} - Please review and pay in your Billing tab.", now),
+            )
+        except Exception as e:
+            logger.error(f"Failed to create invoice notification: {e}")
+
+        return invoice
 
 
 @router.post("/invoices/{invoice_id}/mark-paid")

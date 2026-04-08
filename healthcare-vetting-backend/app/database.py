@@ -281,6 +281,29 @@ def migrate_db():
                 (generate_id(), check_type, label, cost, sell),
             )
 
+    # Seed expanded check types (granular DBS variants, etc.) if not already present
+    from app.utils.auth import generate_id as _gid_expand
+    expanded_checks = [
+        ("dbs_standard", "Standard DBS Check", 26.0, 45.0),
+        ("dbs_enhanced", "Enhanced DBS Check", 49.0, 85.0),
+        ("dbs_enhanced_barred", "Enhanced DBS + Barred List", 49.0, 95.0),
+        ("dbs_basic", "Basic DBS Check", 18.0, 30.0),
+        ("dbs_update_service", "DBS Update Service Check", 6.0, 15.0),
+        ("overseas_criminal", "Overseas Criminal Record Check", 20.0, 55.0),
+        ("professional_registration", "Professional Registration (NMC/GMC/HCPC)", 2.0, 15.0),
+        ("fit_to_work", "Fit to Work / Occupational Health", 15.0, 40.0),
+        ("training_verification", "Training Certificate Verification", 1.0, 8.0),
+        ("address_history", "Address History Check (5yr)", 3.0, 12.0),
+        ("sanctions_check", "Sanctions & Barred List Check", 5.0, 20.0),
+    ]
+    for check_type, label, cost, sell in expanded_checks:
+        existing = cursor.execute("SELECT id FROM pricing_settings WHERE check_type=?", (check_type,)).fetchone()
+        if not existing:
+            cursor.execute(
+                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (?, ?, ?, ?, ?)",
+                (_gid_expand(), check_type, label, cost, sell),
+            )
+
     # Seed default partial credit rates if table is empty
     try:
         pcr_count = cursor.execute("SELECT COUNT(*) FROM partial_credit_rates").fetchone()[0]

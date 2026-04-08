@@ -101,6 +101,9 @@ export default function AgencyDashboard() {
   // Shift Readiness state
   const [shiftOverview, setShiftOverview] = useState<Record<string, unknown> | null>(null);
 
+  // Credit pack tiers from DB
+  const [creditPackTiers, setCreditPackTiers] = useState<Record<string, unknown>[]>([]);
+
   const loadData = useCallback(async () => {
     if (!token) return;
     try {
@@ -162,6 +165,12 @@ export default function AgencyDashboard() {
       try {
         const sr = await shiftReadinessApi.getAgencyOverview(token);
         setShiftOverview(sr);
+      } catch { /* ignore */ }
+      // Load credit pack tier config from DB
+      try {
+        const tiers = await billingApi.getTiers(token);
+        const tiersArr = (tiers as Record<string, unknown>).tiers as Record<string, unknown>[] || [];
+        if (tiersArr.length > 0) setCreditPackTiers(tiersArr);
       } catch { /* ignore */ }
     } catch (err) {
       console.error("Failed to load data", err);
@@ -338,6 +347,22 @@ export default function AgencyDashboard() {
       await loadData();
     } catch (err) {
       console.error("Failed to revoke invite", err);
+    }
+  };
+
+  const [resendingInvite, setResendingInvite] = useState<string | null>(null);
+  const resendInvite = async (inviteId: string) => {
+    if (!token) return;
+    setResendingInvite(inviteId);
+    try {
+      await agencyInvitesApi.resendInvite(token, inviteId);
+      setInviteSuccess("Invite email resent successfully");
+      setTimeout(() => setInviteSuccess(""), 3000);
+    } catch (err) {
+      console.error("Failed to resend invite", err);
+      setInviteError(err instanceof Error ? err.message : "Failed to resend invite");
+    } finally {
+      setResendingInvite(null);
     }
   };
 
@@ -652,6 +677,25 @@ export default function AgencyDashboard() {
   // Load data for specific tabs
   useEffect(() => { if (tab === "sub-accounts") { loadSubAccounts(); loadAvailableTemplates(); } }, [tab]);
   useEffect(() => { if (tab === "notifications") loadNotifications(); }, [tab, notifCategoryFilter]);
+
+  // Auto-refresh notifications every 30 seconds when on the notifications tab
+  useEffect(() => {
+    if (tab !== "notifications") return;
+    const interval = setInterval(() => { loadNotifications(); }, 30000);
+    return () => clearInterval(interval);
+  }, [tab, notifCategoryFilter]);
+
+  // Poll unread notification count every 60 seconds (all tabs)
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(async () => {
+      try {
+        const nc = await notificationsApi.getUnreadCount(token);
+        setUnreadCount(nc.unread_count);
+      } catch { /* ignore */ }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [token]);
 
   // Shift readiness badge helper
   const getShiftBadge = (candidate: Record<string, unknown>) => {
@@ -1259,13 +1303,23 @@ export default function AgencyDashboard() {
                               <Copy size={14} /> {copiedCode === inv.invite_code ? "Copied!" : "Copy Link"}
                             </button>
                             {inv.status === "pending" && (
-                              <button
-                                onClick={() => revokeInvite(inv.id as string)}
-                                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
-                                title="Revoke invite"
-                              >
-                                <Trash2 size={14} /> Revoke
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => resendInvite(inv.id as string)}
+                                  disabled={resendingInvite === inv.id}
+                                  className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1 disabled:opacity-50"
+                                  title="Resend invite email"
+                                >
+                                  <Send size={14} /> {resendingInvite === inv.id ? "Sending..." : "Resend"}
+                                </button>
+                                <button
+                                  onClick={() => revokeInvite(inv.id as string)}
+                                  className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                                  title="Revoke invite"
+                                >
+                                  <Trash2 size={14} /> Revoke
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -1449,16 +1503,22 @@ export default function AgencyDashboard() {
                 <h3 className="text-md font-semibold text-white mb-2">{remainingChecks && (remainingChecks.has_credit_pack as boolean) ? "Top Up Credits" : "Purchase a Credit Pack"}</h3>
                 <p className="text-slate-400 text-sm mb-4">Credits are valid for 12 months from purchase. Unused credits from your current pack carry over.</p>
                 <div className="grid grid-cols-4 gap-4 mb-6">
-                  {[
-                    { key: "starter", name: "Starter Pack", credits: 5, price: 995, perCredit: "199.00", saving: "", color: "border-blue-500/30" },
-                    { key: "growth", name: "Growth Pack", credits: 10, price: 1750, perCredit: "175.00", saving: "12% saving", color: "border-green-500/30" },
-                    { key: "enterprise", name: "Professional Pack", credits: 20, price: 3400, perCredit: "170.00", saving: "15% saving", color: "border-purple-500/30" },
-                    { key: "per_worker", name: "Enterprise Pack", credits: 50, price: 8250, perCredit: "165.00", saving: "17% saving", color: "border-amber-500/30" },
-                  ].map((pack) => (
+                  {(creditPackTiers.length > 0 ? creditPackTiers.map((t) => {
+                    const credits = Number(t.credits_included || 0);
+                    const price = Number(t.monthly_price || 0);
+                    const perCredit = credits > 0 ? (price / credits).toFixed(2) : "0.00";
+                    const colorMap: Record<string, string> = { starter: "border-blue-500/30", standard: "border-green-500/30", professional: "border-purple-500/30", enterprise: "border-amber-500/30" };
+                    return { key: String(t.tier_key), name: String(t.name), credits, price, perCredit, saving: "", color: colorMap[String(t.tier_key)] || "border-slate-500/30" };
+                  }) : [
+                    { key: "starter", name: "Starter Pack", credits: 25, price: 125, perCredit: "5.00", saving: "", color: "border-blue-500/30" },
+                    { key: "standard", name: "Standard Pack", credits: 50, price: 225, perCredit: "4.50", saving: "10% saving", color: "border-green-500/30" },
+                    { key: "professional", name: "Professional Pack", credits: 100, price: 400, perCredit: "4.00", saving: "20% saving", color: "border-purple-500/30" },
+                    { key: "enterprise", name: "Enterprise Pack", credits: 250, price: 875, perCredit: "3.50", saving: "30% saving", color: "border-amber-500/30" },
+                  ]).map((pack) => (
                     <div key={pack.key} onClick={() => setSelectedTier(pack.key)}
                       className={`p-5 bg-slate-700/50 rounded-xl border cursor-pointer transition-all ${selectedTier === pack.key ? "border-blue-400 ring-2 ring-blue-400/30" : pack.color + " hover:border-slate-500"}`}>
                       <p className="text-white font-bold text-lg mb-1">{pack.name}</p>
-                      <p className="text-blue-400 text-2xl font-bold mb-1">£{pack.price}</p>
+                      <p className="text-blue-400 text-2xl font-bold mb-1">£{Number(pack.price).toFixed(2)}</p>
                       <p className="text-slate-300 text-sm mb-1">{pack.credits} credits</p>
                       <p className="text-slate-400 text-xs">£{pack.perCredit} per credit</p>
                       {pack.saving && <p className="text-green-400 text-xs mt-1 font-medium">{pack.saving}</p>}

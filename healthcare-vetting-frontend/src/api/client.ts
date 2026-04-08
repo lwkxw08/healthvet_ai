@@ -939,13 +939,15 @@ export const trustidApi = {
 // Agency Invites API
 export const agencyInvitesApi = {
   getVettingPricing: (token: string) =>
-    apiRequest<{ vetting_total: number; monitoring_annual_price: number }>("/api/agencies/vetting-pricing", { token }),
+    apiRequest<{ vetting_total: number; monitoring_annual_price: number; line_items?: Record<string, unknown>[] }>("/api/agencies/vetting-pricing", { token }),
   createInvite: (token: string, candidateEmail: string, includeMonitoring: boolean = false, subAccountId?: string) =>
     apiRequest<Record<string, unknown>>("/api/agencies/invites", { method: "POST", body: { candidate_email: candidateEmail, include_monitoring: includeMonitoring, sub_account_id: subAccountId }, token }),
   listInvites: (token: string) =>
     apiRequest<Record<string, unknown>[]>("/api/agencies/invites", { token }),
   revokeInvite: (token: string, inviteId: string) =>
     apiRequest<Record<string, unknown>>(`/api/agencies/invites/${inviteId}`, { method: "DELETE", token }),
+  resendInvite: (token: string, inviteId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/agencies/invites/${inviteId}/resend`, { method: "POST", token }),
   getInviteInfo: (inviteCode: string) =>
     apiRequest<{ invite_code: string; agency_name: string; candidate_email: string }>(`/api/agencies/invite-info/${inviteCode}`, {}),
   acceptInvite: (token: string, inviteCode: string) =>

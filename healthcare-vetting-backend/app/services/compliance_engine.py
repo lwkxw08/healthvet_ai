@@ -300,36 +300,48 @@ class ComplianceEngine:
                         (candidate_id,),
                     ).fetchall()
                     cert_map = {dict(c)["certificate_name"]: dict(c) for c in training_certs}
-                    mandatory_valid = 0
-                    mandatory_expired = 0
-                    mandatory_missing = []
-                    for name in mandatory_names:
-                        cert = cert_map.get(name)
-                        if cert and cert.get("status") == "valid":
-                            mandatory_valid += 1
-                        elif cert and cert.get("status") == "expired":
-                            mandatory_expired += 1
-                        else:
-                            mandatory_missing.append(name)
-                    training_pass = mandatory_valid == len(mandatory_names) if mandatory_names else True
+
+                    # If candidate has NO training certificates at all, show generic warning
+                    if len(training_certs) == 0:
+                        training_pass = False
+                        mandatory_valid = 0
+                        mandatory_expired = 0
+                        mandatory_missing = []  # Don't list specifics when none provided
+                    else:
+                        mandatory_valid = 0
+                        mandatory_expired = 0
+                        mandatory_missing = []
+                        for name in mandatory_names:
+                            cert = cert_map.get(name)
+                            if cert and cert.get("status") == "valid":
+                                mandatory_valid += 1
+                            elif cert and cert.get("status") == "expired":
+                                mandatory_expired += 1
+                            else:
+                                mandatory_missing.append(name)
+                        training_pass = mandatory_valid == len(mandatory_names) if mandatory_names else True
                 except Exception:
                     training_pass = False
                     mandatory_valid = 0
                     mandatory_expired = 0
-                    mandatory_missing = list(mandatory_names)
+                    mandatory_missing = []
 
                 checks["training_compliant"] = training_pass
                 audit_entries.append({
                     "check": "training_compliance",
                     "result": "passed" if training_pass else "failed",
                     "timestamp": now,
-                    "details": f"{mandatory_valid}/{len(mandatory_names)} mandatory certificates valid",
+                    "details": f"{mandatory_valid}/{len(mandatory_names)} mandatory certificates valid" if len(training_certs) > 0 else "No training certificates provided",
                 })
                 if not training_pass:
-                    if mandatory_expired > 0:
-                        flags.append(f"Training: {mandatory_expired} mandatory certificate(s) expired")
-                    if mandatory_missing:
-                        flags.append(f"Training: missing {', '.join(mandatory_missing[:3])}{'...' if len(mandatory_missing) > 3 else ''}")
+                    if len(training_certs) == 0:
+                        # Generic warning when no training data provided at all
+                        flags.append("Training: no training certificates provided by candidate")
+                    else:
+                        if mandatory_expired > 0:
+                            flags.append(f"Training: {mandatory_expired} mandatory certificate(s) expired")
+                        if mandatory_missing:
+                            flags.append(f"Training: missing {', '.join(mandatory_missing[:3])}{'...' if len(mandatory_missing) > 3 else ''}")
 
             # Employment Verification
             if "employment_verified" in rules:

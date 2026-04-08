@@ -15,26 +15,90 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agencies", tags=["Agencies"])
 
 
+def _get_agency_template_check_keys(db, agency_id: str) -> list[str]:
+    """Get the list of enabled check_keys from the agency's industry template.
+    Falls back to the default template, then to hardcoded defaults."""
+    template_id = None
+
+    # 1. Agency-level template
+    agency = db.execute(
+        "SELECT industry_template_id FROM agencies WHERE id=?", (agency_id,)
+    ).fetchone()
+    if agency and dict(agency).get("industry_template_id"):
+        template_id = dict(agency)["industry_template_id"]
+
+    # 2. Fall back to default template
+    if not template_id:
+        default_tmpl = db.execute(
+            "SELECT id FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
+        ).fetchone()
+        if default_tmpl:
+            template_id = dict(default_tmpl)["id"]
+
+    # 3. Load check keys from template
+    if template_id:
+        checks = db.execute(
+            "SELECT check_key FROM industry_template_checks WHERE template_id=? AND is_enabled=1",
+            (template_id,),
+        ).fetchall()
+        if checks:
+            return [dict(c)["check_key"] for c in checks]
+
+    # 4. Hardcoded fallback (all standard checks)
+    return [
+        "identity_verified", "dbs_valid", "right_to_work_valid",
+        "cv_validated", "registration_active", "references_verified",
+        "employment_verified", "training_compliant",
+    ]
+
+
 @router.get("/vetting-pricing")
 async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
-    """Get the total vetting cost and annual monitoring cost for the cost confirmation modal."""
+    """Get the total vetting cost and annual monitoring cost for the cost confirmation modal.
+    Uses the agency's assigned industry template to determine which checks are included."""
     if current_user["type"] != "agency":
         raise HTTPException(status_code=403, detail="Agencies only")
 
+    agency_id = current_user["sub"]
     with get_db() as db:
+        # Get all pricing
         rows = db.execute("SELECT check_type, label, sell_price FROM pricing_settings").fetchall()
-        checks = [dict(r) for r in rows]
-        # Sum all check sell prices for full vetting (exclude monitoring)
-        vetting_total = sum(c["sell_price"] for c in checks if c["check_type"] != "monitoring")
+        pricing_map = {dict(r)["check_type"]: dict(r) for r in rows}
+
+        # Get the agency's industry template to know which checks are required
+        template_checks = _get_agency_template_check_keys(db, agency_id)
+
+        # Map template check_keys to pricing check_types
+        check_key_to_pricing = {
+            "identity_verified": "identity",
+            "dbs_valid": "dbs",
+            "right_to_work_valid": "right_to_work",
+            "cv_validated": "cv_analysis",
+            "registration_active": "registration",
+            "references_verified": "references",
+            "employment_verified": "employment",
+            "training_compliant": None,  # no direct pricing item
+        }
+
+        # Sum only the checks required by the template
+        vetting_total = 0.0
+        line_items = []
+        for ck in template_checks:
+            pricing_key = check_key_to_pricing.get(ck)
+            if pricing_key and pricing_key in pricing_map:
+                p = pricing_map[pricing_key]
+                vetting_total += p["sell_price"]
+                line_items.append({"check_type": pricing_key, "label": p["label"], "sell_price": p["sell_price"]})
+
         # Get monitoring price separately
         monitoring_price = 0.0
-        for c in checks:
-            if c["check_type"] == "monitoring":
-                monitoring_price = c["sell_price"]
-                break
+        if "monitoring" in pricing_map:
+            monitoring_price = pricing_map["monitoring"]["sell_price"]
+
         return {
             "vetting_total": round(vetting_total, 2),
             "monitoring_annual_price": round(monitoring_price, 2),
+            "line_items": line_items,
         }
 
 
@@ -77,16 +141,25 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
                 detail="A pending invite already exists for this email",
             )
 
-        # Calculate vetting cost and monitoring cost from pricing_settings
+        # Calculate vetting cost based on agency's industry template (not all pricing items)
         rows = db.execute("SELECT check_type, sell_price FROM pricing_settings").fetchall()
-        checks = [dict(r) for r in rows]
-        vetting_cost = sum(c["sell_price"] for c in checks if c["check_type"] != "monitoring")
+        pricing_map = {dict(r)["check_type"]: dict(r) for r in rows}
+        template_checks = _get_agency_template_check_keys(db, agency_id)
+        check_key_to_pricing = {
+            "identity_verified": "identity", "dbs_valid": "dbs",
+            "right_to_work_valid": "right_to_work", "cv_validated": "cv_analysis",
+            "registration_active": "registration", "references_verified": "references",
+            "employment_verified": "employment", "training_compliant": None,
+        }
+        vetting_cost = 0.0
+        for ck in template_checks:
+            pk = check_key_to_pricing.get(ck)
+            if pk and pk in pricing_map:
+                vetting_cost += pricing_map[pk]["sell_price"]
+        checks = [dict(r) for r in rows]  # keep for cost_amount calc below
         monitoring_cost = 0.0
-        if data.include_monitoring:
-            for c in checks:
-                if c["check_type"] == "monitoring":
-                    monitoring_cost = c["sell_price"]
-                    break
+        if data.include_monitoring and "monitoring" in pricing_map:
+            monitoring_cost = pricing_map["monitoring"]["sell_price"]
 
         # Apply agency discount if set
         if discount_pct > 0:
@@ -103,7 +176,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
 
         # Route based on billing_mode
         payment_info = {"billing_mode": billing_mode, "payment_required": False}
-        cost_amount = round(sum(c["sell_price"] * 0.3 for c in checks if c["check_type"] != "monitoring"), 2)
+        cost_amount = round(vetting_cost * 0.3, 2)
 
         if billing_mode in ("subscription", "credit_pack"):
             # Try to use subscription credits first
@@ -243,6 +316,50 @@ async def revoke_invite(invite_id: str, current_user: dict = Depends(get_current
         )
 
     return {"status": "revoked"}
+
+
+@router.post("/invites/{invite_id}/resend")
+async def resend_invite(invite_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    """Resend the invite email for a pending invite."""
+    if current_user["type"] != "agency":
+        raise HTTPException(status_code=403, detail="Agencies only")
+
+    agency_id = current_user["sub"]
+    with get_db() as db:
+        row = db.execute(
+            "SELECT * FROM agency_invites WHERE id=? AND agency_id=?",
+            (invite_id, agency_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Invite not found")
+        invite = dict(row)
+        if invite["status"] != "pending":
+            raise HTTPException(status_code=400, detail="Can only resend pending invites")
+
+        agency_row = db.execute("SELECT name FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        agency_name = dict(agency_row)["name"] if agency_row else "Unknown Agency"
+
+        # Send the invite email again
+        try:
+            reload_email_config()
+            base_url = str(request.base_url).rstrip("/")
+            invite_link = f"{base_url}/?invite={invite['invite_code']}"
+            email_result = EmailTemplateService.send_email(
+                template_key="candidate_invite",
+                recipient_email=invite["candidate_email"],
+                recipient_name=invite["candidate_email"].split("@")[0],
+                variables={
+                    "candidate_name": invite["candidate_email"].split("@")[0].title(),
+                    "agency_name": agency_name,
+                    "invite_link": invite_link,
+                },
+            )
+            logger.info(f"Resent invite email to {invite['candidate_email']}: {email_result.get('status')}")
+        except Exception as e:
+            logger.error(f"Failed to resend invite email: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+    return {"status": "resent", "candidate_email": invite["candidate_email"]}
 
 
 @router.get("/invite-info/{invite_code}")
