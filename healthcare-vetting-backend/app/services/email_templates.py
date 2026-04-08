@@ -674,7 +674,6 @@ Questions? Contact {{company_email}} or call {{company_phone}}""",
             {"key": "bank_account_number", "description": "Bank account number"},
         ]),
     },
-    },
     {
         "template_key": "payment_reminder",
         "name": "Payment Reminder",
