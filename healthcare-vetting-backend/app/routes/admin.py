@@ -722,3 +722,78 @@ async def generate_grouped_invoice(
             "total_cost": round(total_cost, 2),
             "total_sell": round(total_sell, 2),
         }
+
+
+# ── One-Time Migration: Sync completed TrustID checks to legacy tables ──
+
+@router.post("/migrate/trustid-to-legacy")
+async def migrate_trustid_to_legacy(current_user: dict = Depends(get_current_user)):
+    """One-time migration: for all completed TrustID checks with result='pass',
+    insert corresponding records into legacy check tables (identity_checks,
+    right_to_work_checks, dbs_checks) so the compliance engine recognises them.
+    Then re-evaluate compliance for all affected candidates."""
+    require_admin(current_user)
+    import json as _json
+    from app.services.trustid_checks import TrustIDService
+
+    now = datetime.now(timezone.utc).isoformat()
+    synced = []
+    candidate_ids = set()
+
+    with get_db() as db:
+        completed = db.execute(
+            "SELECT * FROM trustid_checks WHERE status='completed' AND result='pass'"
+        ).fetchall()
+
+        for row in completed:
+            check = dict(row)
+            candidate_id = check["candidate_id"]
+            check_type = check["check_type"]
+            ref = check.get("trustid_reference")
+            notes = check.get("admin_notes")
+
+            # Check if a legacy record already exists for this candidate+check_type
+            already_exists = False
+            if check_type == "identity_verification":
+                existing = db.execute(
+                    "SELECT id FROM identity_checks WHERE candidate_id=? AND provider='trustid'",
+                    (candidate_id,),
+                ).fetchone()
+                already_exists = existing is not None
+            elif check_type == "right_to_work":
+                existing = db.execute(
+                    "SELECT id FROM right_to_work_checks WHERE candidate_id=? AND verification_method='trustid'",
+                    (candidate_id,),
+                ).fetchone()
+                already_exists = existing is not None
+            elif check_type == "dbs_check":
+                existing = db.execute(
+                    "SELECT id FROM dbs_checks WHERE candidate_id=? AND provider='trustid'",
+                    (candidate_id,),
+                ).fetchone()
+                already_exists = existing is not None
+
+            if already_exists:
+                continue
+
+            TrustIDService._sync_to_legacy_check_table(
+                db, candidate_id, check_type, now, ref, notes,
+            )
+            synced.append({"candidate_id": candidate_id, "check_type": check_type, "trustid_check_id": check["id"]})
+            candidate_ids.add(candidate_id)
+
+    # Re-evaluate compliance for all affected candidates
+    from app.services.compliance_engine import ComplianceEngine
+    evaluated = []
+    for cid in candidate_ids:
+        try:
+            ComplianceEngine.evaluate_candidate(cid)
+            evaluated.append(cid)
+        except Exception as e:
+            logger.warning(f"Compliance re-evaluation failed for {cid}: {e}")
+
+    return {
+        "synced_count": len(synced),
+        "synced": synced,
+        "candidates_re_evaluated": evaluated,
+    }
