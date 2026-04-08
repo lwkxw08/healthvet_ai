@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi } from "../api/client";
 import LeadGenerationPanel from "./LeadGenerationPanel";
 import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
 import EmailTemplatesPanel from "./EmailTemplatesPanel";
@@ -758,7 +758,25 @@ export default function AdminPanel() {
     try {
       await adminExtendedApi.retriggerEmployment(token, candidateId, verId);
       showMessage("Employment verification re-triggered");
+      loadCandidateDetail(candidateId);
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setRetriggeringId(""); }
+  };
+
+  const handleSendEmploymentVerification = async (candidateId: string, employmentId: string, verifierName: string, verifierEmail: string, verifierJobTitle?: string) => {
+    if (!token) return;
+    setRetriggeringId(employmentId);
+    try {
+      await checksApi.sendEmploymentVerification(token, {
+        candidate_id: candidateId,
+        employment_id: employmentId,
+        verifier_name: verifierName,
+        verifier_email: verifierEmail,
+        verifier_job_title: verifierJobTitle,
+      });
+      showMessage("Employment verification request sent");
+      loadCandidateDetail(candidateId);
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed to send verification"}`); }
     finally { setRetriggeringId(""); }
   };
 
@@ -3086,16 +3104,15 @@ export default function AdminPanel() {
               </div>
             )}
 
-            {/* ── Employment & CV Verification History (References shown separately below) ── */}
-            {(empVerifications.length > 0 || cvAnalyses.length > 0) && (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-3">Verification History</h3>
+            {/* ── Employment Verification History ── */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-3">Employment Verification History ({empVerifications.length})</h3>
+              {empVerifications.length > 0 ? (
                 <div className="space-y-2">
                   {empVerifications.map((ver) => (
                     <div key={ver.id as string} className="p-3 bg-slate-700/50 rounded-lg flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span className="text-xs bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full">Employment</span>
-                        <span className="text-white text-sm">{ver.verifier_name as string} ({ver.verifier_email as string})</span>
+                        <span className="text-white text-sm font-medium">{ver.verifier_name as string} ({ver.verifier_email as string})</span>
                         <span className="text-slate-500 text-xs">{ver.employer_name as string}</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -3109,26 +3126,17 @@ export default function AdminPanel() {
                       </div>
                     </div>
                   ))}
-                  {cvAnalyses.map((cv) => (
-                    <div key={cv.id as string} className="p-3 bg-slate-700/50 rounded-lg flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full">CV Analysis</span>
-                        <span className="text-white text-sm">Fraud Risk: <span className={`font-bold ${(cv.fraud_risk_score as number) < 0.3 ? "text-green-400" : (cv.fraud_risk_score as number) < 0.6 ? "text-amber-400" : "text-red-400"}`}>{((cv.fraud_risk_score as number) * 100).toFixed(0)}%</span></span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <StatusBadge status={cv.status as string || "completed"} />
-                        <span className="text-xs text-slate-500">{cv.analysed_at as string}</span>
-                      </div>
-                    </div>
-                  ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <p className="text-slate-500 text-sm">No employment verification requests sent yet</p>
+              )}
+            </div>
 
             {/* ── CV Analysis Results ── */}
-            {cvAnalyses.length > 0 && (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-3">CV Analysis Results</h3>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-3">CV Analysis Results</h3>
+            {cvAnalyses.length > 0 ? (
+              <div>
                 {cvAnalyses.map((analysis) => {
                   let gapDisplay = analysis.gap_analysis as string;
                   let qualDisplay = analysis.qualification_flags as string;
@@ -3169,13 +3177,15 @@ export default function AdminPanel() {
                   );
                 })}
               </div>
+            ) : (
+              <p className="text-slate-500 text-sm">No CV analyses completed yet</p>
             )}
+            </div>
 
             {/* ── Employment History ── */}
-            {empHistory.length > 0 && (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-3">Employment History ({empHistory.length})</h3>
-                {empHistory.map((entry) => {
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-3">Employment History ({empHistory.length})</h3>
+              {empHistory.length > 0 ? empHistory.map((entry) => {
                   const entryId = entry.id as string;
                   const verification = empVerifications.find((v) => v.employment_id === entryId);
                   return (
@@ -3234,16 +3244,35 @@ export default function AdminPanel() {
                         </div>
                       )}
 
-                      {!verification && (
-                        <div className="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs text-yellow-300">
-                          No verification request sent yet
+                      {!verification && typeof entry.verifier_name === "string" && typeof entry.verifier_email === "string" && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="p-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs text-yellow-300 flex-1">
+                            Verification not yet sent — verifier: {String(entry.verifier_name)} ({String(entry.verifier_email)})
+                          </div>
+                          <button onClick={() => handleSendEmploymentVerification(
+                            selectedCandidate.id as string,
+                            entry.id as string,
+                            entry.verifier_name as string,
+                            entry.verifier_email as string,
+                            entry.verifier_job_title as string | undefined,
+                          )}
+                            disabled={retriggeringId === (entry.id as string)}
+                            className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-3 py-1.5 rounded hover:bg-green-600/30 whitespace-nowrap">
+                            {retriggeringId === (entry.id as string) ? "Sending..." : "Send Verification Request"}
+                          </button>
+                        </div>
+                      )}
+                      {!verification && !(entry.verifier_name && entry.verifier_email) && (
+                        <div className="mt-2 p-2 bg-slate-600/30 border border-slate-600/50 rounded text-xs text-slate-400">
+                          No verifier contact details provided by candidate
                         </div>
                       )}
                     </div>
                   );
-                })}
-              </div>
-            )}
+                }) : (
+                  <p className="text-slate-500 text-sm">No employment history entries yet</p>
+                )}
+            </div>
 
             {/* ── Registration Check History ── */}
             {regChecks.length > 0 && (
@@ -3297,25 +3326,25 @@ export default function AdminPanel() {
             )}
 
             {/* ── Training Certificates ── */}
-            {trainingCerts.length > 0 && (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-3">Training Certificates ({trainingCerts.length})</h3>
-                {trainingCerts.map((cert) => (
-                  <div key={cert.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-white text-sm font-medium">{cert.certificate_name as string}</span>
-                      <StatusBadge status={cert.status as string || "pending"} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div><span className="text-slate-400">Category:</span> <span className="text-slate-300">{(cert.category as string) || "N/A"}</span></div>
-                      <div><span className="text-slate-400">Provider:</span> <span className="text-slate-300">{(cert.provider as string) || "N/A"}</span></div>
-                      <div><span className="text-slate-400">Issued:</span> <span className="text-slate-300">{(cert.issue_date as string) || "N/A"}</span></div>
-                      <div><span className="text-slate-400">Expires:</span> <span className={`${cert.expiry_date ? "text-slate-300" : "text-slate-500"}`}>{(cert.expiry_date as string) || "No expiry"}</span></div>
-                    </div>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-3">Training Certificates ({trainingCerts.length})</h3>
+              {trainingCerts.length > 0 ? trainingCerts.map((cert) => (
+                <div key={cert.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white text-sm font-medium">{cert.certificate_name as string}</span>
+                    <StatusBadge status={cert.status as string || "pending"} />
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div><span className="text-slate-400">Category:</span> <span className="text-slate-300">{(cert.category as string) || "N/A"}</span></div>
+                    <div><span className="text-slate-400">Provider:</span> <span className="text-slate-300">{(cert.provider as string) || "N/A"}</span></div>
+                    <div><span className="text-slate-400">Issued:</span> <span className="text-slate-300">{(cert.issue_date as string) || "N/A"}</span></div>
+                    <div><span className="text-slate-400">Expires:</span> <span className={`${cert.expiry_date ? "text-slate-300" : "text-slate-500"}`}>{(cert.expiry_date as string) || "No expiry"}</span></div>
+                  </div>
+                </div>
+              )) : (
+                <p className="text-slate-500 text-sm">No training certificates recorded yet</p>
+              )}
+            </div>
           </div>
           );
         })()}
