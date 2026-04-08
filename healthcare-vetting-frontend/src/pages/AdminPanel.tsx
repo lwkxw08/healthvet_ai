@@ -2703,10 +2703,46 @@ export default function AdminPanel() {
 
                 <h4 className="text-sm font-semibold text-white mt-4">Check Configuration</h4>
                 <p className="text-xs text-slate-400">Toggle checks on/off, set required status, and configure weights for each compliance check.</p>
-                <button onClick={() => {
-                  const nextOrder = templateChecks.length + 1;
-                  setTemplateChecks([...templateChecks, { check_key: "new_check_" + nextOrder, check_label: "New Check", is_required: false, is_enabled: true, weight: 5, config: {}, sort_order: nextOrder }]);
-                }} className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded hover:bg-blue-600/30 mb-2">+ Add Check</button>
+                {(() => {
+                  const ALL_TEMPLATE_CHECKS = [
+                    { check_key: "identity_verified", check_label: "Identity Verification" },
+                    { check_key: "right_to_work_valid", check_label: "Right to Work" },
+                    { check_key: "dbs_valid", check_label: "DBS Check" },
+                    { check_key: "dbs_standard", check_label: "Standard DBS Check" },
+                    { check_key: "dbs_enhanced", check_label: "Enhanced DBS Check" },
+                    { check_key: "dbs_enhanced_barred", check_label: "Enhanced DBS + Barred List" },
+                    { check_key: "employment_verified", check_label: "Employment Verification" },
+                    { check_key: "references_verified", check_label: "References" },
+                    { check_key: "registration_active", check_label: "Professional Registration" },
+                    { check_key: "cv_validated", check_label: "CV Validation" },
+                    { check_key: "training_compliant", check_label: "Training Compliance" },
+                    { check_key: "overseas_criminal_check", check_label: "Overseas Criminal Record Check" },
+                    { check_key: "professional_registration_check", check_label: "Professional Registration (NMC/GMC/HCPC)" },
+                    { check_key: "occupational_health_check", check_label: "Occupational Health Check" },
+                    { check_key: "training_verification", check_label: "Training Certificate Verification" },
+                    { check_key: "sanctions_check", check_label: "Sanctions & Barred List Check" },
+                    { check_key: "credit_check", check_label: "Credit Check" },
+                    { check_key: "social_media_check", check_label: "Social Media Check" },
+                    { check_key: "counterterrorism_check", check_label: "Counter-Terrorism Check" },
+                  ];
+                  const existingKeys = new Set(templateChecks.map((c) => String(c.check_key)));
+                  const available = ALL_TEMPLATE_CHECKS.filter((c) => !existingKeys.has(c.check_key));
+                  return available.length > 0 ? (
+                    <div className="flex items-center gap-2 mb-2">
+                      <select id="add-check-select" className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs">
+                        {available.map((c) => <option key={c.check_key} value={c.check_key}>{c.check_label}</option>)}
+                      </select>
+                      <button onClick={() => {
+                        const sel = (document.getElementById("add-check-select") as HTMLSelectElement)?.value;
+                        const match = ALL_TEMPLATE_CHECKS.find((c) => c.check_key === sel);
+                        if (match) {
+                          const nextOrder = templateChecks.length + 1;
+                          setTemplateChecks([...templateChecks, { check_key: match.check_key, check_label: match.check_label, is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: nextOrder }]);
+                        }
+                      }} className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded hover:bg-blue-600/30">+ Add Check</button>
+                    </div>
+                  ) : <p className="text-xs text-slate-500 mb-2">All available check types are already included.</p>;
+                })()}
                 <div className="space-y-2">
                   {templateChecks.map((check, idx) => (
                     <div key={idx} className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg border border-slate-600/30">
