@@ -340,7 +340,38 @@ async def update_section_post_submission(
         elif section == "training":
             TriggerEngine._run_training(candidate_id, body.data)
         elif section == "employment":
-            # Send verification emails for any new entries with verifier details
+            # Insert new employment entries into employment_history table
+            from app.services.employment_verification import EmploymentVerificationService
+            entries = body.data.get("employment_entries", [])
+            with get_db() as db:
+                existing_employers = {
+                    (row["employer_name"], row["job_title"])
+                    for row in [
+                        dict(r) for r in db.execute(
+                            "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=?",
+                            (candidate_id,),
+                        ).fetchall()
+                    ]
+                }
+            for entry in entries:
+                if entry.get("employer_name") and entry.get("job_title"):
+                    # Skip if this entry already exists (match on employer_name + job_title)
+                    if (entry["employer_name"], entry["job_title"]) in existing_employers:
+                        continue
+                    EmploymentVerificationService.add_employment_entry(
+                        candidate_id=candidate_id,
+                        employer_name=entry["employer_name"],
+                        job_title=entry["job_title"],
+                        start_date=entry.get("start_date"),
+                        end_date=entry.get("end_date"),
+                        is_current=entry.get("is_current", False),
+                        reason_for_leaving=entry.get("reason_for_leaving"),
+                        duties=entry.get("duties"),
+                        verifier_name=entry.get("verifier_name"),
+                        verifier_email=entry.get("verifier_email"),
+                        verifier_job_title=entry.get("verifier_job_title"),
+                    )
+            # Now send verification emails for any new entries with verifier details
             TriggerEngine._run_employment_verifications(candidate_id)
     except Exception:
         pass  # Section data saved even if re-processing fails
