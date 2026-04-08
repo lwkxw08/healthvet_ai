@@ -339,6 +339,9 @@ async def update_section_post_submission(
             TriggerEngine._run_references(candidate_id, body.data)
         elif section == "training":
             TriggerEngine._run_training(candidate_id, body.data)
+        elif section == "employment":
+            # Send verification emails for any new entries with verifier details
+            TriggerEngine._run_employment_verifications(candidate_id)
     except Exception:
         pass  # Section data saved even if re-processing fails
 

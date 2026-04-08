@@ -138,6 +138,9 @@ class TriggerEngine:
         if "training" in sections and "training" in section_data:
             results["training"] = TriggerEngine._run_training(candidate_id, section_data["training"])
 
+        # Send employment verification emails for any entries with verifier details
+        results["employment_verification"] = TriggerEngine._run_employment_verifications(candidate_id)
+
         # Run compliance evaluation
         ComplianceEngine.evaluate_candidate(candidate_id)
 
@@ -294,6 +297,44 @@ class TriggerEngine:
                     )
                     sent += 1
             return f"completed ({sent} requests sent)"
+        except Exception as e:
+            return f"error: {str(e)}"
+
+    @staticmethod
+    def _run_employment_verifications(candidate_id: str) -> str:
+        """Send verification emails for all employment entries that have verifier details but no verification sent yet."""
+        try:
+            with get_db() as db:
+                # Get all employment entries with verifier details
+                entries = db.execute(
+                    "SELECT * FROM employment_history WHERE candidate_id=? AND verifier_name IS NOT NULL AND verifier_email IS NOT NULL",
+                    (candidate_id,),
+                ).fetchall()
+
+                # Get existing verifications to avoid duplicates
+                existing = db.execute(
+                    "SELECT employment_id FROM employment_verifications WHERE candidate_id=?",
+                    (candidate_id,),
+                ).fetchall()
+                existing_ids = {dict(e)["employment_id"] for e in existing}
+
+            sent = 0
+            for entry in entries:
+                ed = dict(entry)
+                if ed["id"] not in existing_ids and ed.get("verifier_name") and ed.get("verifier_email"):
+                    try:
+                        EmploymentVerificationService.send_verification_request(
+                            candidate_id=candidate_id,
+                            employment_id=ed["id"],
+                            verifier_name=ed["verifier_name"],
+                            verifier_email=ed["verifier_email"],
+                            verifier_job_title=ed.get("verifier_job_title"),
+                        )
+                        sent += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to send employment verification for entry {ed['id']}: {e}")
+
+            return f"completed ({sent} verification requests sent)"
         except Exception as e:
             return f"error: {str(e)}"
 

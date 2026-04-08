@@ -2969,7 +2969,7 @@ export default function AdminPanel() {
             {/* ── Identity Verification History ── */}
             {idChecks.length > 0 && (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-3">Verification History</h3>
+                <h3 className="text-md font-semibold text-white mb-3">Identity Verification History</h3>
                 {idChecks.map((check) => {
                   let details: Record<string, unknown> = {};
                   try { details = JSON.parse(check.details as string || "{}"); } catch { /* ignore */ }
@@ -3083,6 +3083,62 @@ export default function AdminPanel() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* ── Unified Verification History (Employment + CV + References) ── */}
+            {(empVerifications.length > 0 || cvAnalyses.length > 0 || detailRefs.length > 0) && (
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                <h3 className="text-md font-semibold text-white mb-3">Verification History</h3>
+                <div className="space-y-2">
+                  {empVerifications.map((ver) => (
+                    <div key={ver.id as string} className="p-3 bg-slate-700/50 rounded-lg flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full">Employment</span>
+                        <span className="text-white text-sm">{ver.verifier_name as string} ({ver.verifier_email as string})</span>
+                        <span className="text-slate-500 text-xs">{ver.employer_name as string}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={ver.status as string} />
+                        <span className="text-xs text-slate-500">{(ver.sent_at as string || "")}</span>
+                        <button onClick={() => handleRetriggerEmployment(selectedCandidate.id as string, ver.id as string)}
+                          disabled={retriggeringId === (ver.id as string)}
+                          className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-0.5 rounded hover:bg-blue-600/30 ml-2">
+                          {retriggeringId === (ver.id as string) ? "Re-triggering..." : "Re-trigger"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {detailRefs.map((ref) => (
+                    <div key={ref.id as string} className="p-3 bg-slate-700/50 rounded-lg flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded-full">Reference</span>
+                        <span className="text-white text-sm">{ref.referee_name as string} ({ref.referee_email as string})</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={ref.status as string} />
+                        <span className="text-xs text-slate-500">{(ref.sent_at as string || "")}</span>
+                        <button onClick={() => handleRetriggerReference(selectedCandidate.id as string, ref.id as string)}
+                          disabled={retriggeringId === (ref.id as string)}
+                          className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-0.5 rounded hover:bg-blue-600/30 ml-2">
+                          {retriggeringId === (ref.id as string) ? "Re-triggering..." : "Re-trigger"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {cvAnalyses.map((cv) => (
+                    <div key={cv.id as string} className="p-3 bg-slate-700/50 rounded-lg flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full">CV Analysis</span>
+                        <span className="text-white text-sm">Fraud Risk: <span className={`font-bold ${(cv.fraud_risk_score as number) < 0.3 ? "text-green-400" : (cv.fraud_risk_score as number) < 0.6 ? "text-amber-400" : "text-red-400"}`}>{((cv.fraud_risk_score as number) * 100).toFixed(0)}%</span></span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={cv.status as string || "completed"} />
+                        <span className="text-xs text-slate-500">{cv.analysed_at as string}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
