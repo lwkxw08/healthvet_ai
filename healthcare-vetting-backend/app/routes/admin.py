@@ -482,6 +482,15 @@ async def generate_invoices_for_agency(
             c = dict(cand)
             cand_name = f"{c['first_name']} {c['last_name']}"
 
+            # Skip candidates who already have a full_vetting invoice
+            # (new candidates are charged once via the invite flow)
+            has_full_vetting = db.execute(
+                "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type='full_vetting'",
+                (agency_id, c["id"]),
+            ).fetchone()
+            if has_full_vetting:
+                continue
+
             # Check each type of check completed
             check_tables = [
                 ("identity", "identity_checks", "completed_at"),
@@ -605,6 +614,15 @@ async def generate_grouped_invoice(
             c = dict(cand)
             cand_name = f"{c['first_name']} {c['last_name']}"
             cand_email = c.get("email", "")
+
+            # Skip candidates who already have a full_vetting invoice
+            # (new candidates are charged once via the invite flow)
+            has_full_vetting = db.execute(
+                "SELECT id FROM invoices WHERE agency_id=? AND candidate_id=? AND check_type='full_vetting'",
+                (data.agency_id, c["id"]),
+            ).fetchone()
+            if has_full_vetting:
+                continue
 
             # Check each type of check completed within the date range
             check_tables = [

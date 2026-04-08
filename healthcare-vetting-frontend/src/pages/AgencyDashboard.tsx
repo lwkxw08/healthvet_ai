@@ -702,8 +702,11 @@ export default function AgencyDashboard() {
     const rag = getRagStatus(candidate);
     const status = String(candidate.compliance_status || "incomplete");
     const score = Number(candidate.compliance_score || 0);
-    if (status === "compliant" && score >= 95) return { label: "READY", color: "bg-green-500/20 text-green-400 border-green-500/30" };
-    if (rag.label === "AMBER") return { label: "CONDITIONAL", color: "bg-amber-500/20 text-amber-400 border-amber-500/30" };
+    // READY: compliant status OR GREEN RAG with high score
+    if ((status === "compliant" && score >= 80) || (rag.label === "GREEN" && score >= 90)) return { label: "READY", color: "bg-green-500/20 text-green-400 border-green-500/30" };
+    // CONDITIONAL: GREEN or AMBER RAG (reasonable compliance but not fully ready)
+    if (rag.label === "GREEN" || rag.label === "AMBER") return { label: "CONDITIONAL", color: "bg-amber-500/20 text-amber-400 border-amber-500/30" };
+    // NOT READY: RED RAG or very low compliance
     return { label: "NOT READY", color: "bg-red-500/20 text-red-400 border-red-500/30" };
   };
 
