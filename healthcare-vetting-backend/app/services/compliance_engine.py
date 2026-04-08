@@ -354,7 +354,7 @@ class ComplianceEngine:
             # Employment Verification
             if "employment_verified" in rules:
                 emp_verifications = db.execute(
-                    "SELECT * FROM employment_verifications WHERE candidate_id=? AND status='completed'",
+                    "SELECT * FROM employment_verifications WHERE candidate_id=? AND status IN ('completed', 'verified')",
                     (candidate_id,),
                 ).fetchall()
                 emp_entries = db.execute(
