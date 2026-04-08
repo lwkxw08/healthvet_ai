@@ -3086,8 +3086,8 @@ export default function AdminPanel() {
               </div>
             )}
 
-            {/* ── Unified Verification History (Employment + CV + References) ── */}
-            {(empVerifications.length > 0 || cvAnalyses.length > 0 || detailRefs.length > 0) && (
+            {/* ── Employment & CV Verification History (References shown separately below) ── */}
+            {(empVerifications.length > 0 || cvAnalyses.length > 0) && (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-3">Verification History</h3>
                 <div className="space-y-2">
@@ -3105,23 +3105,6 @@ export default function AdminPanel() {
                           disabled={retriggeringId === (ver.id as string)}
                           className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-0.5 rounded hover:bg-blue-600/30 ml-2">
                           {retriggeringId === (ver.id as string) ? "Re-triggering..." : "Re-trigger"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  {detailRefs.map((ref) => (
-                    <div key={ref.id as string} className="p-3 bg-slate-700/50 rounded-lg flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded-full">Reference</span>
-                        <span className="text-white text-sm">{ref.referee_name as string} ({ref.referee_email as string})</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <StatusBadge status={ref.status as string} />
-                        <span className="text-xs text-slate-500">{(ref.sent_at as string || "")}</span>
-                        <button onClick={() => handleRetriggerReference(selectedCandidate.id as string, ref.id as string)}
-                          disabled={retriggeringId === (ref.id as string)}
-                          className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-0.5 rounded hover:bg-blue-600/30 ml-2">
-                          {retriggeringId === (ref.id as string) ? "Re-triggering..." : "Re-trigger"}
                         </button>
                       </div>
                     </div>
