@@ -233,17 +233,34 @@ class TriggerEngine:
 
     @staticmethod
     def _run_cv(candidate_id: str, data: dict) -> str:
-        """Fire CV analysis."""
+        """Fire CV analysis and process employment entries."""
         try:
             cv_text = data.get("cv_text", "")
             cv_file_name = data.get("cv_file_name")
+            result = "skipped"
             if cv_text:
                 CVAnalysisService.analyse_cv(candidate_id, cv_text, cv_file_name)
+                result = "completed"
 
-                # Also create employment history entries from CV data
-                entries = data.get("employment_entries", [])
+            # Create employment history entries (independent of CV text)
+            entries = data.get("employment_entries", [])
+            added = 0
+            if entries:
+                # Get existing entries to avoid duplicates
+                with get_db() as db:
+                    existing = {
+                        (row["employer_name"], row["job_title"])
+                        for row in [
+                            dict(r) for r in db.execute(
+                                "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=?",
+                                (candidate_id,),
+                            ).fetchall()
+                        ]
+                    }
                 for entry in entries:
                     if entry.get("employer_name") and entry.get("job_title"):
+                        if (entry["employer_name"], entry["job_title"]) in existing:
+                            continue
                         EmploymentVerificationService.add_employment_entry(
                             candidate_id=candidate_id,
                             employer_name=entry["employer_name"],
@@ -255,8 +272,14 @@ class TriggerEngine:
                             verifier_email=entry.get("verifier_email"),
                             verifier_job_title=entry.get("verifier_job_title"),
                         )
-                return "completed"
-            return "skipped"
+                        added += 1
+                result = "completed"
+
+            # Trigger verification emails for any entries with verifier details
+            if added > 0 or entries:
+                TriggerEngine._run_employment_verifications(candidate_id)
+
+            return result
         except Exception as e:
             return f"error: {str(e)}"
 

@@ -335,6 +335,39 @@ async def update_section_post_submission(
     try:
         if section == "cv":
             TriggerEngine._run_cv(candidate_id, body.data)
+            # Also insert any new employment entries and trigger verification emails
+            # (employment entries are part of the cv section in the frontend)
+            from app.services.employment_verification import EmploymentVerificationService as EVS_cv
+            emp_entries = body.data.get("employment_entries", [])
+            if emp_entries:
+                with get_db() as db:
+                    existing_emp = {
+                        (row["employer_name"], row["job_title"])
+                        for row in [
+                            dict(r) for r in db.execute(
+                                "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=?",
+                                (candidate_id,),
+                            ).fetchall()
+                        ]
+                    }
+                for ent in emp_entries:
+                    if ent.get("employer_name") and ent.get("job_title"):
+                        if (ent["employer_name"], ent["job_title"]) in existing_emp:
+                            continue
+                        EVS_cv.add_employment_entry(
+                            candidate_id=candidate_id,
+                            employer_name=ent["employer_name"],
+                            job_title=ent["job_title"],
+                            start_date=ent.get("start_date"),
+                            end_date=ent.get("end_date"),
+                            is_current=ent.get("is_current", False),
+                            reason_for_leaving=ent.get("reason_for_leaving"),
+                            duties=ent.get("duties"),
+                            verifier_name=ent.get("verifier_name"),
+                            verifier_email=ent.get("verifier_email"),
+                            verifier_job_title=ent.get("verifier_job_title"),
+                        )
+                TriggerEngine._run_employment_verifications(candidate_id)
         elif section == "references":
             TriggerEngine._run_references(candidate_id, body.data)
         elif section == "training":
