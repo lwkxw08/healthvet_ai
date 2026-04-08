@@ -878,11 +878,22 @@ export default function AdminPanel() {
       { check_key: "identity_verified", check_label: "Identity Verification", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 1 },
       { check_key: "right_to_work_valid", check_label: "Right to Work", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 2 },
       { check_key: "dbs_valid", check_label: "DBS Check", is_required: true, is_enabled: true, weight: 17, config: {}, sort_order: 3 },
-      { check_key: "employment_verified", check_label: "Employment Verification", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 4 },
-      { check_key: "references_verified", check_label: "References", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 5 },
-      { check_key: "registration_active", check_label: "Professional Registration", is_required: false, is_enabled: true, weight: 9, config: {}, sort_order: 6 },
-      { check_key: "cv_validated", check_label: "CV Validation", is_required: false, is_enabled: true, weight: 5, config: {}, sort_order: 7 },
-      { check_key: "training_compliant", check_label: "Training Compliance", is_required: true, is_enabled: true, weight: 12, config: {}, sort_order: 8 },
+      { check_key: "dbs_standard", check_label: "Standard DBS Check", is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: 4 },
+      { check_key: "dbs_enhanced", check_label: "Enhanced DBS Check", is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: 5 },
+      { check_key: "dbs_enhanced_barred", check_label: "Enhanced DBS + Barred List", is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: 6 },
+      { check_key: "employment_verified", check_label: "Employment Verification", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 7 },
+      { check_key: "references_verified", check_label: "References", is_required: true, is_enabled: true, weight: 13, config: {}, sort_order: 8 },
+      { check_key: "registration_active", check_label: "Professional Registration", is_required: false, is_enabled: true, weight: 9, config: {}, sort_order: 9 },
+      { check_key: "cv_validated", check_label: "CV Validation", is_required: false, is_enabled: true, weight: 5, config: {}, sort_order: 10 },
+      { check_key: "training_compliant", check_label: "Training Compliance", is_required: true, is_enabled: true, weight: 12, config: {}, sort_order: 11 },
+      { check_key: "overseas_criminal_check", check_label: "Overseas Criminal Record Check", is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: 12 },
+      { check_key: "professional_registration_check", check_label: "Professional Registration (NMC/GMC/HCPC)", is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: 13 },
+      { check_key: "occupational_health_check", check_label: "Occupational Health Check", is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: 14 },
+      { check_key: "training_verification", check_label: "Training Certificate Verification", is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: 15 },
+      { check_key: "sanctions_check", check_label: "Sanctions & Barred List Check", is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: 16 },
+      { check_key: "credit_check", check_label: "Credit Check", is_required: false, is_enabled: false, weight: 3, config: {}, sort_order: 17 },
+      { check_key: "social_media_check", check_label: "Social Media Check", is_required: false, is_enabled: false, weight: 3, config: {}, sort_order: 18 },
+      { check_key: "counterterrorism_check", check_label: "Counter-Terrorism Check", is_required: false, is_enabled: false, weight: 5, config: {}, sort_order: 19 },
     ]);
   };
 
@@ -2692,6 +2703,10 @@ export default function AdminPanel() {
 
                 <h4 className="text-sm font-semibold text-white mt-4">Check Configuration</h4>
                 <p className="text-xs text-slate-400">Toggle checks on/off, set required status, and configure weights for each compliance check.</p>
+                <button onClick={() => {
+                  const nextOrder = templateChecks.length + 1;
+                  setTemplateChecks([...templateChecks, { check_key: "new_check_" + nextOrder, check_label: "New Check", is_required: false, is_enabled: true, weight: 5, config: {}, sort_order: nextOrder }]);
+                }} className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded hover:bg-blue-600/30 mb-2">+ Add Check</button>
                 <div className="space-y-2">
                   {templateChecks.map((check, idx) => (
                     <div key={idx} className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg border border-slate-600/30">
@@ -2858,7 +2873,7 @@ export default function AdminPanel() {
                 <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                   <h3 className="text-md font-semibold text-white mb-3">Compliance Breakdown</h3>
                   <div className="space-y-2">
-                    {[{ label: "Identity", key: "identity_verified" },{ label: "Right to Work", key: "right_to_work_valid" },{ label: "DBS Check", key: "dbs_valid" },{ label: "Registration", key: "registration_active" },{ label: "Employment", key: "employment_verified" },{ label: "References", key: "references_verified" },{ label: "CV Validated", key: "cv_validated" }].map((item) => (
+                    {[{ label: "Identity", key: "identity_verified" },{ label: "Right to Work", key: "right_to_work_valid" },{ label: "DBS Check", key: "dbs_valid" },{ label: "Registration", key: "registration_active" },{ label: "Employment", key: "employment_verified" },{ label: "References", key: "references_verified" },{ label: "CV Validated", key: "cv_validated" },{ label: "Training", key: "training_compliant" }].map((item) => (
                       <div key={item.key} className="flex items-center gap-2 p-2 bg-slate-700/50 rounded"><CheckIcon passed={candidateCompliance[item.key] as boolean} /><span className="text-slate-200 text-sm">{item.label}</span></div>
                     ))}
                   </div>

@@ -1302,24 +1302,24 @@ export default function AgencyDashboard() {
                             >
                               <Copy size={14} /> {copiedCode === inv.invite_code ? "Copied!" : "Copy Link"}
                             </button>
-                            {inv.status === "pending" && (
-                              <>
-                                <button
-                                  onClick={() => resendInvite(inv.id as string)}
-                                  disabled={resendingInvite === inv.id}
-                                  className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1 disabled:opacity-50"
-                                  title="Resend invite email"
-                                >
-                                  <Send size={14} /> {resendingInvite === inv.id ? "Sending..." : "Resend"}
-                                </button>
-                                <button
-                                  onClick={() => revokeInvite(inv.id as string)}
-                                  className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
-                                  title="Revoke invite"
-                                >
-                                  <Trash2 size={14} /> Revoke
-                                </button>
-                              </>
+                            {(inv.status === "pending" || inv.status === "sent") && (
+                              <button
+                                onClick={() => resendInvite(inv.id as string)}
+                                disabled={resendingInvite === inv.id}
+                                className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1 disabled:opacity-50"
+                                title="Resend invite email"
+                              >
+                                <Send size={14} /> {resendingInvite === inv.id ? "Sending..." : "Resend"}
+                              </button>
+                            )}
+                            {inv.status !== "revoked" && inv.status !== "accepted" && (
+                              <button
+                                onClick={() => revokeInvite(inv.id as string)}
+                                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                                title="Revoke invite"
+                              >
+                                <Trash2 size={14} /> Revoke
+                              </button>
                             )}
                           </div>
                         </td>

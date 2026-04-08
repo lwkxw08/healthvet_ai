@@ -333,8 +333,8 @@ async def resend_invite(invite_id: str, request: Request, current_user: dict = D
         if not row:
             raise HTTPException(status_code=404, detail="Invite not found")
         invite = dict(row)
-        if invite["status"] != "pending":
-            raise HTTPException(status_code=400, detail="Can only resend pending invites")
+        if invite["status"] not in ("pending", "sent"):
+            raise HTTPException(status_code=400, detail="Can only resend pending or sent invites")
 
         agency_row = db.execute("SELECT name FROM agencies WHERE id=?", (agency_id,)).fetchone()
         agency_name = dict(agency_row)["name"] if agency_row else "Unknown Agency"
