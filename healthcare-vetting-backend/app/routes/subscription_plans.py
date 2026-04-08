@@ -18,6 +18,72 @@ def require_admin(current_user: dict):
         raise HTTPException(status_code=403, detail="Admin only")
 
 
+# Mapping from template check_key to pricing_settings check_type (for default price lookup)
+CHECK_KEY_TO_PRICING_TYPE = {
+    "identity_verified": "identity",
+    "right_to_work_valid": "right_to_work",
+    "dbs_valid": "dbs",
+    "dbs_standard": "dbs_standard",
+    "dbs_enhanced": "dbs_enhanced",
+    "dbs_enhanced_barred": "dbs_enhanced_barred",
+    "employment_verified": "employment",
+    "references_verified": "references",
+    "registration_active": "registration",
+    "cv_validated": "cv_analysis",
+    "training_compliant": "training_verification",
+    "overseas_criminal_check": "overseas_criminal",
+    "professional_registration_check": "professional_registration",
+    "occupational_health_check": "fit_to_work",
+    "training_verification": "training_verification",
+    "sanctions_check": "sanctions_check",
+    "credit_check": "credit_check",
+    "social_media_check": "social_media_check",
+    "counterterrorism_check": "counterterrorism_check",
+}
+
+
+def _sync_industry_pricing(db, industry_template_id: str):
+    """Ensure industry_check_pricing has a row for every enabled check in the template.
+    Missing checks are auto-populated with defaults from pricing_settings."""
+    template_checks = db.execute(
+        "SELECT check_key, check_label FROM industry_template_checks WHERE template_id=? AND is_enabled=1 ORDER BY sort_order",
+        (industry_template_id,)
+    ).fetchall()
+    if not template_checks:
+        return
+
+    existing_types = {row[0] for row in db.execute(
+        "SELECT check_type FROM industry_check_pricing WHERE industry_template_id=?",
+        (industry_template_id,)
+    ).fetchall()}
+
+    # Load default pricing for lookup
+    pricing_defaults = {dict(r)["check_type"]: dict(r) for r in db.execute("SELECT * FROM pricing_settings").fetchall()}
+
+    now = datetime.now(timezone.utc).isoformat()
+    for tc in template_checks:
+        tc_dict = dict(tc)
+        check_key = tc_dict["check_key"]
+        if check_key in existing_types:
+            continue
+        # Look up default pricing
+        pricing_type = CHECK_KEY_TO_PRICING_TYPE.get(check_key, check_key)
+        defaults = pricing_defaults.get(pricing_type, {})
+        pricing_id = generate_id()
+        db.execute(
+            """INSERT INTO industry_check_pricing
+               (id, industry_template_id, check_type, label, credit_value,
+                third_party_cost, sell_price, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (pricing_id, industry_template_id, check_key,
+             tc_dict["check_label"],
+             1.0,
+             defaults.get("cost_price", 0),
+             defaults.get("sell_price", 0),
+             now),
+        )
+
+
 # ── Schemas ──────────────────────────────────────────────────────────
 
 class IndustryPlanLinkCreate(BaseModel):
@@ -167,11 +233,15 @@ async def list_industry_check_pricing(
     industry_template_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
-    """List per-element pricing for industries."""
+    """List per-element pricing for industries.
+    Auto-syncs: if template has enabled checks without pricing rows, creates them from pricing_settings defaults."""
     require_admin(current_user)
 
     with get_db() as db:
         if industry_template_id:
+            # Auto-sync: ensure pricing rows exist for all enabled template checks
+            _sync_industry_pricing(db, industry_template_id)
+
             rows = db.execute("""
                 SELECT icp.*, it.name as industry_name
                 FROM industry_check_pricing icp

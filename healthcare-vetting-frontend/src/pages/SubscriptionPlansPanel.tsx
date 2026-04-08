@@ -225,47 +225,16 @@ export default function SubscriptionPlansPanel() {
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
   };
 
-  // Comprehensive list of ALL available check types
-  const ALL_CHECK_TYPES = [
-    { key: "identity", label: "Identity Verification" },
-    { key: "right_to_work", label: "Right to Work" },
-    { key: "dbs", label: "DBS Check" },
-    { key: "dbs_standard", label: "Standard DBS Check" },
-    { key: "dbs_enhanced", label: "Enhanced DBS Check" },
-    { key: "dbs_enhanced_barred", label: "Enhanced DBS + Barred List" },
-    { key: "employment", label: "Employment Verification" },
-    { key: "references", label: "References" },
-    { key: "registration", label: "Professional Registration" },
-    { key: "cv_analysis", label: "CV Validation" },
-    { key: "training", label: "Training Compliance" },
-    { key: "overseas_criminal", label: "Overseas Criminal Record Check" },
-    { key: "professional_registration_nmc", label: "Professional Registration (NMC)" },
-    { key: "professional_registration_gmc", label: "Professional Registration (GMC)" },
-    { key: "professional_registration_hcpc", label: "Professional Registration (HCPC)" },
-    { key: "occupational_health", label: "Occupational Health Check" },
-    { key: "training_verification", label: "Training Certificate Verification" },
-    { key: "sanctions_check", label: "Sanctions & Barred List Check" },
-    { key: "credit_check", label: "Credit Check" },
-    { key: "social_media_check", label: "Social Media Check" },
-    { key: "counterterrorism_check", label: "Counter-Terrorism Check" },
-    { key: "monitoring", label: "Annual Monitoring" },
-  ];
-
-  // Derive check type options: use template checks + ALL_CHECK_TYPES as comprehensive fallback
-  const getCheckOptions = (templateId: string) => {
+  // Derive check type options from the selected industry template's enabled checks only
+  const getTemplateChecks = (templateId: string) => {
     const tmpl = templates.find((t) => String(t.id) === templateId);
-    const checks = (tmpl?.checks || []) as { check_key: string; check_label: string }[];
-    const templateOptions = checks.map((c) => ({ key: c.check_key, label: c.check_label }));
-    // Merge: start with template checks, then add any ALL_CHECK_TYPES not already present
-    const existingKeys = new Set(templateOptions.map((o) => o.key));
-    const merged = [...templateOptions];
-    for (const ct of ALL_CHECK_TYPES) {
-      if (!existingKeys.has(ct.key)) merged.push(ct);
-    }
-    return merged.length > 0 ? merged : ALL_CHECK_TYPES;
+    const checks = (tmpl?.checks || []) as { check_key: string; check_label: string; is_enabled?: boolean }[];
+    return checks
+      .filter((c) => c.is_enabled !== false)
+      .map((c) => ({ key: c.check_key, label: c.check_label }));
   };
-  const pricingCheckOptions = getCheckOptions(selectedIndustry);
-  const matrixCheckOptions = getCheckOptions(matrixSelectedIndustry);
+  const pricingCheckOptions = getTemplateChecks(selectedIndustry);
+  const matrixCheckOptions = getTemplateChecks(matrixSelectedIndustry);
 
   return (
     <div className="space-y-6">
