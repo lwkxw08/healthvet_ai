@@ -19,6 +19,14 @@ async def evaluate_compliance(candidate_id: str, current_user: dict = Depends(ge
 @router.get("/compliance/{candidate_id}", response_model=ComplianceResponse)
 async def get_compliance(candidate_id: str, current_user: dict = Depends(get_current_user)):
     verify_agency_owns_candidate(current_user, candidate_id)
+    # Always re-evaluate to ensure compliance data reflects latest check results
+    try:
+        result = ComplianceEngine.evaluate_candidate(candidate_id)
+        if result:
+            return result
+    except Exception:
+        pass
+    # Fallback to cached record if re-evaluation fails
     result = ComplianceEngine.get_compliance(candidate_id)
     if not result:
         raise HTTPException(status_code=404, detail="No compliance record found")
