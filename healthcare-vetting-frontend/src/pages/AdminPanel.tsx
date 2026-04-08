@@ -94,6 +94,8 @@ export default function AdminPanel() {
   const [pricing, setPricing] = useState<Record<string, unknown>[]>([]);
   const [editingPricing, setEditingPricing] = useState<Record<string, { cost_price: string; sell_price: string }>>({});
   const [savingPricing, setSavingPricing] = useState("");
+  const [pushToIndustriesPrompt, setPushToIndustriesPrompt] = useState<string | null>(null);
+  const [pushingToIndustries, setPushingToIndustries] = useState(false);
 
   // Analytics state
   const [revenuePeriod, setRevenuePeriod] = useState("ytd");
@@ -462,8 +464,21 @@ export default function AdminPanel() {
       await adminApi.updatePricing(token, checkType, { cost_price: parseFloat(edit.cost_price), sell_price: parseFloat(edit.sell_price) });
       showMessage(`Pricing updated for ${checkType}`); await loadPricing();
       setEditingPricing((prev) => { const next = { ...prev }; delete next[checkType]; return next; });
+      setPushToIndustriesPrompt(checkType);
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
     finally { setSavingPricing(""); }
+  };
+
+  const pushToAllIndustries = async (checkType: string) => {
+    if (!token) return;
+    setPushingToIndustries(true);
+    try {
+      const result = await adminApi.pushPricingToIndustries(token, checkType);
+      const updated = (result as Record<string, unknown>).updated || 0;
+      showMessage(`Updated ${updated} industry pricing row${updated !== 1 ? "s" : ""} for ${checkType}`);
+      setPushToIndustriesPrompt(null);
+    } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+    finally { setPushingToIndustries(false); }
   };
 
   const generateInvoicesForAgency = async (agencyId: string) => {
@@ -2631,6 +2646,27 @@ export default function AdminPanel() {
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings className="text-blue-400" size={22} /> Per-Element Pricing Configuration</h2>
             <p className="text-slate-400 text-sm">Set cost prices (what you pay) and sell prices (what agencies are charged) for each individual check element. This includes DBS variants (Standard, Enhanced, Enhanced + Barred), training verification, and imposter checks.</p>
+
+            {/* Push to All Industries confirmation banner */}
+            {pushToIndustriesPrompt && (
+              <div className="bg-blue-900/30 border border-blue-600/40 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-blue-300 text-sm font-medium">Push updated pricing to all industry templates?</p>
+                  <p className="text-slate-400 text-xs mt-1">This will update the cost and sell price for <span className="text-white font-mono">{pushToIndustriesPrompt}</span> across all industry per-check pricing matrices. Industries with custom pricing will also be overwritten.</p>
+                </div>
+                <div className="flex gap-2 ml-4 shrink-0">
+                  <button onClick={() => pushToAllIndustries(pushToIndustriesPrompt)} disabled={pushingToIndustries}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-medium disabled:opacity-50">
+                    {pushingToIndustries ? "Pushing..." : "Yes, Push to All"}
+                  </button>
+                  <button onClick={() => setPushToIndustriesPrompt(null)}
+                    className="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-medium">
+                    No, Keep As Is
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
               <table className="w-full"><thead><tr className="border-b border-slate-700">
                 {["Check Type","Label","Cost Price (\u00A3)","Sell Price (\u00A3)","Margin","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}

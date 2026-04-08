@@ -224,6 +224,8 @@ export const adminApi = {
     apiRequest<Record<string, unknown>[]>("/api/admin/pricing", { token }),
   updatePricing: (token: string, checkType: string, data: { cost_price?: number; sell_price?: number; label?: string }) =>
     apiRequest<Record<string, unknown>>(`/api/admin/pricing/${checkType}`, { method: "PUT", body: data, token }),
+  pushPricingToIndustries: (token: string, checkType: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/pricing/${checkType}/push-to-industries`, { method: "POST", token }),
   getRevenueAnalytics: (token: string, params?: { period?: string; date_from?: string; date_to?: string; agency_id?: string }) => {
     const qs = new URLSearchParams();
     if (params?.period) qs.set("period", params.period);

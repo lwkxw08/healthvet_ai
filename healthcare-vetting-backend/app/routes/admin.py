@@ -57,6 +57,42 @@ async def update_pricing(check_type: str, data: PricingUpdate, current_user: dic
         return dict(row)
 
 
+@router.post("/pricing/{check_type}/push-to-industries")
+async def push_pricing_to_industries(check_type: str, current_user: dict = Depends(get_current_user)):
+    """Push updated default pricing to all industry_check_pricing rows that match this check type.
+    Uses the reverse mapping from pricing_settings check_type → template check_keys."""
+    require_admin(current_user)
+    from app.routes.subscription_plans import CHECK_KEY_TO_PRICING_TYPE
+
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as db:
+        # Get the new default pricing
+        default_row = db.execute("SELECT * FROM pricing_settings WHERE check_type=?", (check_type,)).fetchone()
+        if not default_row:
+            raise HTTPException(status_code=404, detail="Pricing setting not found")
+        default = dict(default_row)
+        new_cost = default.get("cost_price", 0)
+        new_sell = default.get("sell_price", 0)
+
+        # Build reverse mapping: pricing_settings check_type → list of template check_keys
+        matching_check_keys = [ck for ck, pt in CHECK_KEY_TO_PRICING_TYPE.items() if pt == check_type]
+        # Also include the check_type itself (some industry rows use check_type directly as check_type)
+        matching_check_keys.append(check_type)
+        matching_check_keys = list(set(matching_check_keys))
+
+        # Update all matching industry_check_pricing rows
+        placeholders = ",".join("?" for _ in matching_check_keys)
+        result = db.execute(
+            f"""UPDATE industry_check_pricing
+                SET third_party_cost=?, sell_price=?, updated_at=?
+                WHERE check_type IN ({placeholders})""",
+            [new_cost, new_sell, now] + matching_check_keys,
+        )
+        updated_count = result.rowcount
+
+        return {"updated": updated_count, "check_type": check_type, "new_cost_price": new_cost, "new_sell_price": new_sell}
+
+
 # ── Revenue & Financial Analytics ─────────────────────────────────
 
 def _parse_date_range(period: str, date_from: str = None, date_to: str = None):
