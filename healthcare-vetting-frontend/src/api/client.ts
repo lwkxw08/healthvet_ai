@@ -558,6 +558,10 @@ export const submissionsApi = {
     apiRequest<Record<string, unknown>>(`/api/submissions/${submissionId}/status`, { token }),
   getRevetInfo: (revetToken: string) =>
     apiRequest<Record<string, unknown>>(`/api/submissions/revet-info/${revetToken}`, {}),
+  updateSection: (token: string, submissionId: string, section: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>(`/api/submissions/${submissionId}/update-section`, {
+      method: "POST", body: { section, data }, token,
+    }),
 };
 
 // Industry Templates API (Admin)

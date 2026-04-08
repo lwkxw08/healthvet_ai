@@ -248,6 +248,114 @@ async def save_section(
     return {"status": "saved", "section": section, "completed": body.completed}
 
 
+# ── Post-Submission Section Update ────────────────────────────────
+
+# Sections that can be edited after submission (additive — can add more data)
+EDITABLE_AFTER_SUBMISSION = {"references", "training", "cv", "employment"}
+# Sections locked once their check is verified
+LOCKED_CHECK_KEYS = {"identity", "rtw", "dbs", "registration", "personal"}
+
+
+class PostSubmissionUpdateRequest(BaseModel):
+    section: str
+    data: dict
+
+
+@router.post("/{submission_id}/update-section")
+async def update_section_post_submission(
+    submission_id: str,
+    body: PostSubmissionUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Allow candidates to update specific sections after submission.
+    
+    Rules:
+    - references, training, cv, employment: always editable (additive)
+    - identity, rtw, dbs, registration, personal: locked once check is verified
+    """
+    if current_user["type"] != "candidate":
+        raise HTTPException(status_code=403, detail="Candidates only")
+
+    candidate_id = current_user["sub"]
+    section = body.section
+    now = datetime.now(timezone.utc).isoformat()
+
+    with get_db() as db:
+        sub = db.execute(
+            "SELECT * FROM candidate_submissions WHERE id=? AND candidate_id=?",
+            (submission_id, candidate_id),
+        ).fetchone()
+        if not sub:
+            raise HTTPException(status_code=404, detail="Submission not found")
+
+        sub_data = dict(sub)
+        if sub_data["status"] == "draft":
+            raise HTTPException(status_code=400, detail="Use the regular save endpoint for draft submissions")
+
+        # Check if section is editable
+        if section in LOCKED_CHECK_KEYS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The {section} section is locked after submission. Contact your agency if changes are needed.",
+            )
+
+        if section not in EDITABLE_AFTER_SUBMISSION:
+            raise HTTPException(status_code=400, detail=f"Section '{section}' cannot be edited after submission")
+
+        # Save the updated section data
+        existing = db.execute(
+            "SELECT id FROM candidate_draft_data WHERE submission_id=? AND section=?",
+            (submission_id, section),
+        ).fetchone()
+
+        data_json = json.dumps(body.data)
+        if existing:
+            db.execute(
+                "UPDATE candidate_draft_data SET data=?, completed=1, updated_at=? WHERE id=?",
+                (data_json, now, dict(existing)["id"]),
+            )
+        else:
+            db.execute(
+                """INSERT INTO candidate_draft_data (id, submission_id, candidate_id, section, data, completed, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 1, ?)""",
+                (generate_id(), submission_id, candidate_id, section, data_json, now),
+            )
+
+        # Audit log
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (?, 'submission', ?, 'section_updated_post_submission', ?, ?, ?)""",
+            (generate_id(), submission_id, candidate_id,
+             json.dumps({"section": section, "submission_status": sub_data["status"]}),
+             now),
+        )
+
+    # Re-process the updated section
+    from app.services.trigger_engine import TriggerEngine
+    try:
+        if section == "cv":
+            TriggerEngine._run_cv(candidate_id, body.data)
+        elif section == "references":
+            TriggerEngine._run_references(candidate_id, body.data)
+        elif section == "training":
+            TriggerEngine._run_training(candidate_id, body.data)
+    except Exception:
+        pass  # Section data saved even if re-processing fails
+
+    # Re-evaluate compliance
+    from app.services.compliance_engine import ComplianceEngine
+    try:
+        ComplianceEngine.evaluate_candidate(candidate_id)
+    except Exception:
+        pass
+
+    return {
+        "status": "updated",
+        "section": section,
+        "message": f"{section.replace('_', ' ').title()} section updated successfully. Checks are being re-processed.",
+    }
+
+
 # ── Validate Submission ───────────────────────────────────────────
 
 @router.post("/{submission_id}/validate")
@@ -419,6 +527,27 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
 
         # Get check statuses (status only, not detailed analysis)
         check_statuses = {}
+
+        # Personal Details — verified when core candidate fields are populated
+        cand = db.execute(
+            "SELECT first_name, last_name, email, phone, date_of_birth FROM candidates WHERE id=?",
+            (candidate_id,),
+        ).fetchone()
+        if cand:
+            cand_data = dict(cand)
+            has_name = bool(cand_data.get("first_name") and cand_data.get("last_name"))
+            has_contact = bool(cand_data.get("email"))
+            if has_name and has_contact:
+                check_statuses["personal"] = {"status": "verified", "label": "Personal Details Complete"}
+            else:
+                missing = []
+                if not has_name:
+                    missing.append("name")
+                if not has_contact:
+                    missing.append("email")
+                check_statuses["personal"] = {"status": "processing", "label": f"Missing: {', '.join(missing)}"}
+        else:
+            check_statuses["personal"] = {"status": "pending", "label": "Personal Details Pending"}
 
         # Identity
         identity = db.execute(

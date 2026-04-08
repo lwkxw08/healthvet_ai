@@ -272,6 +272,15 @@ export default function CandidateOnboarding() {
       complianceScore={complianceScore}
       complianceStatus={complianceStatus}
       submissionStatus={submissionStatus}
+      submissionId={submissionId}
+      token={token}
+      sectionData={sectionData}
+      candidateInfo={candidateInfo}
+      isManualMode={isManualMode}
+      trustidChecks={trustidChecks}
+      trustidSubmitted={trustidSubmitted}
+      submittingTrustid={submittingTrustid}
+      onSubmitTrustid={submitTrustidChecks}
       onRefresh={() => submissionId ? loadStatus(submissionId) : undefined}
       onLogout={logout}
     />;
@@ -399,14 +408,31 @@ export default function CandidateOnboarding() {
   );
 }
 
-function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, submissionStatus, onRefresh, onLogout }: {
+// Sections that candidates can update after submission
+const EDITABLE_SECTIONS = new Set(["references", "training", "cv", "employment"]);
+
+function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, submissionStatus, submissionId, token, sectionData, candidateInfo, isManualMode, trustidChecks, trustidSubmitted, submittingTrustid, onSubmitTrustid, onRefresh, onLogout }: {
   checkStatuses: Record<string, {status: string; label: string}>;
   complianceScore: number;
   complianceStatus: string;
   submissionStatus: string;
+  submissionId: string | null;
+  token: string | null;
+  sectionData: SectionData;
+  candidateInfo: Record<string, unknown>;
+  isManualMode: (checkType: string) => boolean;
+  trustidChecks: Record<string, unknown>[];
+  trustidSubmitted: boolean;
+  submittingTrustid: boolean;
+  onSubmitTrustid: () => void;
   onRefresh: () => void;
   onLogout: () => void;
 }) {
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [editData, setEditData] = useState<Record<string, unknown>>({});
+  const [savingUpdate, setSavingUpdate] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState("");
+
   const StatusIcon = ({ status }: { status: string }) => {
     if (status === "verified") return <CheckCircle size={18} className="text-green-400" />;
     if (status === "processing") return <Clock size={18} className="text-yellow-400 animate-pulse" />;
@@ -419,6 +445,39 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
     if (status === "processing") return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
     if (status === "review") return "bg-red-500/20 text-red-400 border-red-500/30";
     return "bg-slate-700 text-slate-400 border-slate-600";
+  };
+
+  const startEditing = (sectionKey: string) => {
+    setEditData(sectionData[sectionKey] || {});
+    setEditingSection(sectionKey);
+    setUpdateMessage("");
+  };
+
+  const cancelEditing = () => {
+    setEditingSection(null);
+    setEditData({});
+    setUpdateMessage("");
+  };
+
+  const saveUpdate = async () => {
+    if (!token || !submissionId || !editingSection) return;
+    setSavingUpdate(true);
+    setUpdateMessage("");
+    try {
+      const result = await submissionsApi.updateSection(token, submissionId, editingSection, editData);
+      setUpdateMessage((result.message as string) || "Section updated successfully.");
+      setEditingSection(null);
+      setEditData({});
+      onRefresh();
+    } catch (e: unknown) {
+      setUpdateMessage(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setSavingUpdate(false);
+    }
+  };
+
+  const updateEditField = (field: string, value: unknown) => {
+    setEditData(prev => ({ ...prev, [field]: value }));
   };
 
   const overallColor = complianceStatus === "compliant" ? "text-green-400" : complianceStatus === "flagged" ? "text-red-400" : "text-yellow-400";
@@ -464,18 +523,75 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
           </div>
         </div>
 
+        {updateMessage && (
+          <div className={`mb-4 p-3 rounded-lg border text-sm ${
+            updateMessage.includes("failed") || updateMessage.includes("error")
+              ? "bg-red-500/10 border-red-500/30 text-red-400"
+              : "bg-green-500/10 border-green-500/30 text-green-400"
+          }`}>
+            {updateMessage}
+            <button onClick={() => setUpdateMessage("")} className="float-right text-current bg-transparent border-none cursor-pointer">&#10005;</button>
+          </div>
+        )}
+
         <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
           <h3 className="text-md font-semibold text-white mb-4">Check Status</h3>
           <div className="flex flex-col gap-2">
             {SECTIONS.map(s => {
               const check = checkStatuses[s.key] || { status: "pending", label: s.label + " Pending" };
+              const isEditable = EDITABLE_SECTIONS.has(s.key);
+              const isCurrentlyEditing = editingSection === s.key;
               return (
-                <div key={s.key} className="flex justify-between items-center p-3 rounded-lg bg-slate-700/50">
-                  <span className="text-sm font-medium text-slate-200">{s.label}</span>
-                  <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium ${statusBadgeClass(check.status)}`}>
-                    <StatusIcon status={check.status} />
-                    {check.label}
-                  </span>
+                <div key={s.key}>
+                  <div className="flex justify-between items-center p-3 rounded-lg bg-slate-700/50">
+                    <span className="text-sm font-medium text-slate-200">{s.label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium ${statusBadgeClass(check.status)}`}>
+                        <StatusIcon status={check.status} />
+                        {check.label}
+                      </span>
+                      {isEditable && !isCurrentlyEditing && (
+                        <button
+                          onClick={() => startEditing(s.key)}
+                          className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2.5 py-1 rounded-lg hover:bg-blue-600/30 cursor-pointer"
+                        >
+                          Update
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {isCurrentlyEditing && (
+                    <div className="mt-2 p-4 bg-slate-800/80 rounded-lg border border-blue-500/30">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-semibold text-blue-400">Update {s.label}</h4>
+                        <button onClick={cancelEditing} className="text-slate-400 hover:text-white bg-transparent border-none cursor-pointer text-xs">Cancel</button>
+                      </div>
+                      <SectionForm
+                        section={s}
+                        data={editData}
+                        candidateInfo={candidateInfo}
+                        onUpdate={(field, value) => updateEditField(field, value)}
+                        onUpdateBulk={(data) => setEditData(prev => ({ ...prev, ...data }))}
+                        isManualMode={isManualMode}
+                        trustidChecks={trustidChecks}
+                        trustidSubmitted={trustidSubmitted}
+                        submittingTrustid={submittingTrustid}
+                        onSubmitTrustid={onSubmitTrustid}
+                      />
+                      <div className="flex justify-end gap-3 mt-4">
+                        <button onClick={cancelEditing} className="px-4 py-2 rounded-lg border border-slate-600 bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer text-sm">
+                          Cancel
+                        </button>
+                        <button
+                          onClick={saveUpdate}
+                          disabled={savingUpdate}
+                          className="px-4 py-2 rounded-lg border-none bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white cursor-pointer font-semibold text-sm flex items-center gap-1"
+                        >
+                          {savingUpdate ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : "Save & Re-process"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -483,7 +599,7 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
         </div>
 
         <p className="text-center text-slate-500 text-xs mt-6">
-          Statuses update automatically. Click Refresh to check for the latest updates.
+          Sections marked with "Update" can be edited after submission. Identity, DBS, and Right to Work sections are locked once verified.
         </p>
       </div>
     </div>
