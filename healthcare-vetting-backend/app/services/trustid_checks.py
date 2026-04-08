@@ -8,9 +8,12 @@ The submission_mode per check type is stored in the trustid_config table and can
 toggled independently by the admin (e.g. identity on API while DBS is still manual).
 """
 import json
+import logging
 from datetime import datetime, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
+
+logger = logging.getLogger(__name__)
 
 
 # Default config for each TrustID check type
@@ -273,8 +276,62 @@ class TrustIDService:
                  now),
             )
 
+            # When result is 'pass', insert into the legacy check tables
+            # so the compliance engine can recognise the result
+            candidate_id = check["candidate_id"]
+            check_type = check["check_type"]
+            if result == "pass":
+                TrustIDService._sync_to_legacy_check_table(
+                    db, candidate_id, check_type, now, trustid_reference, notes,
+                )
+
             updated = db.execute("SELECT * FROM trustid_checks WHERE id=?", (check_id,)).fetchone()
-            return dict(updated)
+            result_dict = dict(updated)
+
+        # Re-evaluate compliance outside the DB context to avoid locking
+        try:
+            from app.services.compliance_engine import ComplianceEngine
+            ComplianceEngine.evaluate_candidate(candidate_id)
+        except Exception as e:
+            logger.warning(f"Compliance re-evaluation failed after TrustID result: {e}")
+
+        return result_dict
+
+    @staticmethod
+    def _sync_to_legacy_check_table(
+        db, candidate_id: str, check_type: str, now: str,
+        trustid_reference: str | None = None, notes: str | None = None,
+    ) -> None:
+        """Insert a record into the legacy check table (identity_checks,
+        right_to_work_checks, dbs_checks) so the compliance engine can
+        find the passed result."""
+        if check_type == "identity_verification":
+            db.execute(
+                """INSERT INTO identity_checks
+                   (id, candidate_id, provider, status, result, details, started_at, completed_at)
+                   VALUES (?, ?, 'trustid', 'completed', 'clear', ?, ?, ?)""",
+                (generate_id(), candidate_id,
+                 json.dumps({"source": "trustid_manual", "reference": trustid_reference, "notes": notes}),
+                 now, now),
+            )
+        elif check_type == "right_to_work":
+            db.execute(
+                """INSERT INTO right_to_work_checks
+                   (id, candidate_id, verification_method, status, verified, result, details, checked_at)
+                   VALUES (?, ?, 'trustid', 'completed', 1, 'clear', ?, ?)""",
+                (generate_id(), candidate_id,
+                 json.dumps({"source": "trustid_manual", "reference": trustid_reference, "notes": notes}),
+                 now),
+            )
+        elif check_type == "dbs_check":
+            db.execute(
+                """INSERT INTO dbs_checks
+                   (id, candidate_id, provider, status, result, details, submitted_at, completed_at)
+                   VALUES (?, ?, 'trustid', 'completed', 'clear', ?, ?, ?)""",
+                (generate_id(), candidate_id,
+                 json.dumps({"source": "trustid_manual", "reference": trustid_reference, "notes": notes}),
+                 now, now),
+            )
 
     @staticmethod
     def get_task_summary() -> dict:
