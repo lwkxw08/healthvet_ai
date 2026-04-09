@@ -38,7 +38,7 @@ export default function NotificationBell({ token, onNavigate }: NotificationBell
     setLoading(true);
     try {
       const data = await notificationsApi.getNotifications(token, { limit: 20 });
-      const resp = data as { notifications: Notification[]; unread_count: number };
+      const resp = data as unknown as { notifications: Notification[]; unread_count: number };
       setNotifications(resp.notifications || []);
       setUnreadCount(resp.unread_count || 0);
     } catch {
