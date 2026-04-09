@@ -427,6 +427,186 @@ async def pay_invoice(invoice_id: str, user=Depends(get_current_user)):
     return result
 
 
+@router.get("/billing/invoices/{invoice_id}/pdf")
+async def download_invoice_pdf(invoice_id: str, user=Depends(get_current_user)):
+    """Download a professional PDF invoice for a specific invoice."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable,
+    )
+
+    with get_db() as db:
+        inv = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        invoice = dict(inv)
+
+        # Verify access: user must be admin or belong to the agency
+        user_type = user.get("type")
+        if user_type == "agency" and invoice.get("agency_id") != user["sub"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Get agency details
+        agency = None
+        if invoice.get("agency_id"):
+            agency_row = db.execute("SELECT * FROM agencies WHERE id=?", (invoice["agency_id"],)).fetchone()
+            if agency_row:
+                agency = dict(agency_row)
+
+        # Get candidate details if applicable
+        candidate = None
+        if invoice.get("candidate_id"):
+            cand_row = db.execute("SELECT * FROM candidates WHERE id=?", (invoice["candidate_id"],)).fetchone()
+            if cand_row:
+                candidate = dict(cand_row)
+
+    # Build PDF
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            topMargin=20*mm, bottomMargin=20*mm,
+                            leftMargin=15*mm, rightMargin=15*mm)
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('InvTitle', parent=styles['Title'],
+                                  fontSize=20, textColor=colors.HexColor('#1e3a5f'))
+    heading_style = ParagraphStyle('InvHeading', parent=styles['Heading2'],
+                                    textColor=colors.HexColor('#1e3a5f'), fontSize=12)
+    normal_style = styles['Normal']
+    small_style = ParagraphStyle('InvSmall', parent=normal_style, fontSize=8,
+                                  textColor=colors.grey)
+    bold_style = ParagraphStyle('InvBold', parent=normal_style,
+                                 fontName='Helvetica-Bold', fontSize=10)
+
+    elements = []
+
+    # Header
+    elements.append(Paragraph("HealthVet AI", title_style))
+    elements.append(Paragraph("Healthcare Compliance Vetting Platform", small_style))
+    elements.append(Spacer(1, 5*mm))
+    elements.append(HRFlowable(width="100%", color=colors.HexColor('#1e3a5f'), thickness=2))
+    elements.append(Spacer(1, 8*mm))
+
+    # Invoice details
+    elements.append(Paragraph("INVOICE", ParagraphStyle('InvLabel', parent=styles['Heading1'],
+                                                          fontSize=24, textColor=colors.HexColor('#1e3a5f'))))
+    elements.append(Spacer(1, 5*mm))
+
+    inv_info = [
+        ["Invoice ID:", invoice.get("id", "N/A")],
+        ["Date:", (invoice.get("created_at") or "N/A")[:10]],
+        ["Status:", (invoice.get("status") or "N/A").upper()],
+    ]
+    if invoice.get("paid_at"):
+        inv_info.append(["Paid At:", invoice["paid_at"][:10]])
+    if invoice.get("payment_method"):
+        inv_info.append(["Payment Method:", invoice["payment_method"].title()])
+
+    t = Table(inv_info, colWidths=[35*mm, 80*mm])
+    t.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 8*mm))
+
+    # Bill To
+    if agency:
+        elements.append(Paragraph("Bill To:", heading_style))
+        bill_to = [
+            ["Agency:", agency.get("name", "N/A")],
+            ["Email:", agency.get("email", "N/A")],
+        ]
+        if agency.get("phone"):
+            bill_to.append(["Phone:", agency["phone"]])
+        if agency.get("address"):
+            bill_to.append(["Address:", agency["address"]])
+        t = Table(bill_to, colWidths=[25*mm, 90*mm])
+        t.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        elements.append(t)
+        elements.append(Spacer(1, 8*mm))
+
+    # Line items
+    elements.append(Paragraph("Line Items", heading_style))
+    elements.append(Spacer(1, 3*mm))
+
+    line_data = [["Description", "Type", "Cost", "Amount"]]
+    desc = invoice.get("description") or "Vetting Service"
+    check_type = invoice.get("check_type") or "N/A"
+    cost_amount = float(invoice.get("cost_amount") or 0)
+    sell_amount = float(invoice.get("sell_amount") or 0)
+
+    if candidate:
+        desc += f" — {candidate.get('first_name', '')} {candidate.get('last_name', '')}"
+
+    line_data.append([
+        desc[:60],
+        check_type,
+        f"\u00a3{cost_amount:,.2f}",
+        f"\u00a3{sell_amount:,.2f}",
+    ])
+
+    t = Table(line_data, colWidths=[75*mm, 30*mm, 30*mm, 30*mm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 5*mm))
+
+    # Total
+    adjusted = invoice.get("adjusted_amount")
+    total = float(adjusted) if adjusted else sell_amount
+    total_data = [["Total:", f"\u00a3{total:,.2f}"]]
+    if adjusted and float(adjusted) != sell_amount:
+        total_data = [
+            ["Subtotal:", f"\u00a3{sell_amount:,.2f}"],
+            ["Adjusted Total:", f"\u00a3{float(adjusted):,.2f}"],
+        ]
+    t = Table(total_data, colWidths=[130*mm, 35*mm])
+    t.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('LINEABOVE', (0, 0), (-1, 0), 1, colors.HexColor('#1e3a5f')),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(t)
+
+    # Footer
+    elements.append(Spacer(1, 20*mm))
+    elements.append(HRFlowable(width="100%", color=colors.HexColor('#1e3a5f')))
+    elements.append(Paragraph(
+        f"Generated by HealthVet AI on {datetime.now(timezone.utc).strftime('%d %B %Y at %H:%M UTC')}.",
+        small_style,
+    ))
+    elements.append(Paragraph("This is a computer-generated invoice. No signature required.", small_style))
+
+    doc.build(elements)
+    pdf_bytes = buffer.getvalue()
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=invoice_{invoice_id[:8]}.pdf"},
+    )
+
+
 @router.post("/billing/generate-recurring")
 async def generate_recurring_invoices(user=Depends(get_current_admin)):
     """Generate recurring invoices for due subscriptions (admin only)."""

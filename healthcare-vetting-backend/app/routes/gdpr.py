@@ -2,6 +2,8 @@
 import csv
 import io
 import json
+import logging
+import zipfile
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -15,6 +17,8 @@ from app.utils.auth import (
     get_current_admin,
     get_current_user,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/gdpr", tags=["GDPR"])
 
@@ -268,6 +272,26 @@ async def request_erasure(
             (candidate_id,),
         )
 
+        # Delete files from external storage
+        files_deleted = 0
+        try:
+            from app.services.document_storage import get_storage_backend, list_documents
+            docs = list_documents(candidate_id=candidate_id)
+            if docs:
+                storage = get_storage_backend()
+                for doc in docs:
+                    try:
+                        storage.delete(doc["storage_key"])
+                        if doc.get("thumbnail_key"):
+                            storage.delete(doc["thumbnail_key"])
+                        files_deleted += 1
+                    except Exception as e:
+                        logger.warning("Failed to delete storage file %s: %s", doc.get("storage_key"), e)
+                # Remove document metadata records
+                db.execute("DELETE FROM documents WHERE candidate_id=?", (candidate_id,))
+        except Exception as e:
+            logger.warning("Document cleanup during erasure failed: %s", e)
+
         # Mark erasure as completed
         db.execute(
             "UPDATE gdpr_erasure_requests SET status='completed', completed_at=? WHERE id=?",
@@ -287,6 +311,7 @@ async def request_erasure(
         "status": "completed",
         "candidate_id": candidate_id,
         "message": "Personal data has been anonymised. Regulatory compliance records retained in anonymised form.",
+        "files_deleted": files_deleted,
     }
 
 
@@ -372,6 +397,96 @@ async def withdraw_consent(
         )
 
     return {"withdrawal_id": withdrawal_id, "withdrawn_at": now}
+
+
+@router.get("/consent-summary/{candidate_id}")
+async def get_consent_summary(
+    candidate_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Get a summary of current consent status for all consent types.
+    Shows the latest consent decision for each type (data_processing, marketing, etc.)."""
+    user_type = current_user.get("type")
+    if user_type == "candidate" and current_user["sub"] != candidate_id:
+        raise HTTPException(status_code=403, detail="You can only view your own consent summary")
+
+    required_consent_types = [
+        "data_processing", "background_checks", "data_sharing",
+        "marketing", "analytics",
+    ]
+
+    with get_db() as db:
+        summary = {}
+        for consent_type in required_consent_types:
+            row = db.execute(
+                """SELECT * FROM consent_logs
+                   WHERE candidate_id=? AND consent_type=?
+                   ORDER BY timestamp DESC LIMIT 1""",
+                (candidate_id, consent_type),
+            ).fetchone()
+            if row:
+                r = dict(row)
+                summary[consent_type] = {
+                    "consent_given": bool(r["consent_given"]),
+                    "timestamp": r["timestamp"],
+                    "privacy_policy_version": r.get("privacy_policy_version"),
+                    "terms_version": r.get("terms_version"),
+                    "ip_address": r.get("ip_address"),
+                }
+            else:
+                summary[consent_type] = {
+                    "consent_given": False,
+                    "timestamp": None,
+                    "privacy_policy_version": None,
+                    "terms_version": None,
+                    "ip_address": None,
+                }
+
+        all_required = all(
+            summary[ct]["consent_given"]
+            for ct in ["data_processing", "background_checks"]
+        )
+
+    return {
+        "candidate_id": candidate_id,
+        "consents": summary,
+        "all_required_consents_given": all_required,
+        "required_types": ["data_processing", "background_checks"],
+        "optional_types": ["data_sharing", "marketing", "analytics"],
+    }
+
+
+@router.get("/consent-verify/{candidate_id}")
+async def verify_consent(
+    candidate_id: str,
+    consent_type: str = "data_processing",
+    current_user: dict = Depends(get_current_user),
+):
+    """Verify whether a candidate has given a specific type of consent.
+    Used by other services before processing data."""
+    with get_db() as db:
+        row = db.execute(
+            """SELECT consent_given, timestamp FROM consent_logs
+               WHERE candidate_id=? AND consent_type=?
+               ORDER BY timestamp DESC LIMIT 1""",
+            (candidate_id, consent_type),
+        ).fetchone()
+
+        if not row:
+            return {
+                "candidate_id": candidate_id,
+                "consent_type": consent_type,
+                "has_consent": False,
+                "message": "No consent record found for this type",
+            }
+
+        r = dict(row)
+        return {
+            "candidate_id": candidate_id,
+            "consent_type": consent_type,
+            "has_consent": bool(r["consent_given"]),
+            "consented_at": r["timestamp"],
+        }
 
 
 # ── DPIA Management (Admin only) ───────────────────────────────────────────
@@ -646,4 +761,116 @@ async def download_data_export(
         io.BytesIO(csv_bytes),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=gdpr_export_{candidate_id[:8]}.csv"},
+    )
+
+
+@router.get("/data-portability/{candidate_id}")
+async def data_portability_package(
+    candidate_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Generate a comprehensive GDPR Article 20 data portability package.
+    Returns a ZIP file containing JSON exports of all candidate data sections
+    plus any uploaded documents."""
+    user_type = current_user.get("type")
+    if user_type == "candidate" and current_user["sub"] != candidate_id:
+        raise HTTPException(status_code=403, detail="You can only export your own data")
+    if user_type == "agency":
+        raise HTTPException(status_code=403, detail="Agencies cannot export candidate data directly")
+
+    now = datetime.now(timezone.utc).isoformat()
+    zip_buffer = io.BytesIO()
+
+    with get_db() as db:
+        candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        c = dict(candidate)
+        c.pop("password_hash", None)
+
+        def _fetch_section(query: str, params: tuple) -> list[dict]:
+            rows = db.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+        sections = {
+            "personal_data": c,
+            "consent_history": _fetch_section(
+                "SELECT * FROM consent_logs WHERE candidate_id=? ORDER BY timestamp DESC", (candidate_id,)),
+            "identity_checks": _fetch_section(
+                "SELECT * FROM identity_checks WHERE candidate_id=?", (candidate_id,)),
+            "right_to_work_checks": _fetch_section(
+                "SELECT * FROM right_to_work_checks WHERE candidate_id=?", (candidate_id,)),
+            "dbs_checks": _fetch_section(
+                "SELECT * FROM dbs_checks WHERE candidate_id=?", (candidate_id,)),
+            "cv_analyses": _fetch_section(
+                "SELECT * FROM cv_analyses WHERE candidate_id=?", (candidate_id,)),
+            "registration_checks": _fetch_section(
+                "SELECT * FROM registration_checks WHERE candidate_id=?", (candidate_id,)),
+            "references": _fetch_section(
+                "SELECT * FROM references_ WHERE candidate_id=?", (candidate_id,)),
+            "employment_history": _fetch_section(
+                "SELECT * FROM employment_history WHERE candidate_id=?", (candidate_id,)),
+            "employment_verifications": _fetch_section(
+                "SELECT * FROM employment_verifications WHERE candidate_id=?", (candidate_id,)),
+            "compliance_records": _fetch_section(
+                "SELECT * FROM compliance_records WHERE candidate_id=?", (candidate_id,)),
+            "submissions": _fetch_section(
+                "SELECT * FROM candidate_submissions WHERE candidate_id=?", (candidate_id,)),
+        }
+
+        # Get documents metadata
+        doc_rows = _fetch_section(
+            "SELECT * FROM documents WHERE candidate_id=?", (candidate_id,))
+        sections["documents_metadata"] = doc_rows
+
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            # Write manifest
+            manifest = {
+                "export_type": "GDPR Article 20 Data Portability Package",
+                "candidate_id": candidate_id,
+                "generated_at": now,
+                "generated_by": "HealthVet AI",
+                "sections": list(sections.keys()),
+                "total_documents": len(doc_rows),
+            }
+            zf.writestr("manifest.json", json.dumps(manifest, indent=2, default=str))
+
+            # Write each data section as JSON
+            for section_name, section_data in sections.items():
+                zf.writestr(
+                    f"data/{section_name}.json",
+                    json.dumps(section_data, indent=2, default=str),
+                )
+
+            # Include actual document files if available
+            try:
+                from app.services.document_storage import get_storage_backend
+                storage = get_storage_backend()
+                for doc in doc_rows:
+                    storage_key = doc.get("storage_key")
+                    if storage_key:
+                        try:
+                            file_data, original_name, _ = storage.download(storage_key)
+                            content = file_data.read()
+                            if hasattr(file_data, "close"):
+                                file_data.close()
+                            zf.writestr(f"documents/{original_name}", content)
+                        except Exception as e:
+                            logger.warning("Could not include document %s: %s", storage_key, e)
+            except Exception as e:
+                logger.warning("Could not include documents in portability package: %s", e)
+
+        # Audit log
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (?, 'candidate', ?, 'gdpr_portability_package', ?, ?, ?)""",
+            (generate_id(), candidate_id, current_user.get("sub", "unknown"),
+             json.dumps({"format": "zip", "sections": list(sections.keys())}), now),
+        )
+
+    zip_bytes = zip_buffer.getvalue()
+    return StreamingResponse(
+        io.BytesIO(zip_bytes),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=data_portability_{candidate_id[:8]}.zip"},
     )

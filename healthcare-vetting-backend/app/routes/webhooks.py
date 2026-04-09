@@ -1,11 +1,12 @@
 """Webhook handlers for external service callbacks."""
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Request, HTTPException
 from app.database import get_db
 from app.utils.auth import generate_id
 from app.services.compliance_engine import ComplianceEngine
+from app.services.billing import BillingService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["Webhooks"])
@@ -175,6 +176,46 @@ async def stripe_webhook(request: Request):
                     "UPDATE invoices SET status='paid', paid_at=?, payment_method='stripe', stripe_payment_intent_id=?, stripe_session_id=? WHERE id=?",
                     (now, payment_intent, session_id, invoice_id),
                 )
+
+            # Auto-allocate credits if this is a credit pack purchase
+            pack_tier = metadata.get("pack_tier")
+            if agency_id and pack_tier:
+                try:
+                    BillingService.create_subscription(
+                        agency_id, pack_tier, billing_method="stripe",
+                        stripe_payment_method_id=payment_intent,
+                    )
+                    logger.info("Credits allocated for agency=%s tier=%s", agency_id, pack_tier)
+                except Exception as e:
+                    logger.error("Failed to allocate credits for agency=%s: %s", agency_id, e)
+            elif agency_id and invoice_id:
+                # Check if this invoice is for a credit_pack purchase
+                inv_row = db.execute(
+                    "SELECT check_type, description FROM invoices WHERE id=?", (invoice_id,)
+                ).fetchone()
+                if inv_row and dict(inv_row).get("check_type") == "credit_pack":
+                    # Invoice is a credit pack — look up agency's pending subscription
+                    pending_sub = db.execute(
+                        """SELECT * FROM agency_subscriptions
+                           WHERE agency_id=? AND status='active'
+                           ORDER BY created_at DESC LIMIT 1""",
+                        (agency_id,),
+                    ).fetchone()
+                    if not pending_sub:
+                        # No active sub yet — try to find the tier from available tiers
+                        tier_row = db.execute(
+                            "SELECT tier_key FROM subscription_tier_config WHERE is_active=1 ORDER BY monthly_price ASC LIMIT 1"
+                        ).fetchone()
+                        if tier_row:
+                            try:
+                                BillingService.create_subscription(
+                                    agency_id, dict(tier_row)["tier_key"],
+                                    billing_method="stripe",
+                                    stripe_payment_method_id=payment_intent,
+                                )
+                                logger.info("Credits auto-allocated for agency=%s from invoice=%s", agency_id, invoice_id)
+                            except Exception as e:
+                                logger.error("Failed to auto-allocate credits: %s", e)
 
             logger.info("Stripe checkout completed: session=%s invoice=%s", session_id, invoice_id)
 
