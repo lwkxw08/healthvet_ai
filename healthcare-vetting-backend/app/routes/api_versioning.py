@@ -16,18 +16,20 @@ def register_v1_routes(app) -> None:  # noqa: ANN001
     ``/api/`` it adds a mirror under ``/api/v1/``.  This avoids duplicating
     the include_router() calls in main.py — any new router added there is
     automatically available under both prefixes.
+
+    v1 routes are inserted *before* the catch-all frontend route so they
+    are matched first by Starlette's router.
     """
     from fastapi.routing import APIRoute
 
+    new_routes = []
     for route in list(app.routes):
         if not isinstance(route, APIRoute):
             continue
         if not route.path.startswith("/api/"):
             continue
-        # Build the v1 path by inserting /v1 after /api
-        v1_path = "/api/v1" + route.path[4:]  # strip "/api" prefix, prepend "/api/v1"
+        v1_path = "/api/v1" + route.path[4:]
 
-        # Create a new route with the v1 path
         new_route = APIRoute(
             path=v1_path,
             endpoint=route.endpoint,
@@ -44,4 +46,15 @@ def register_v1_routes(app) -> None:  # noqa: ANN001
             operation_id=f"v1_{route.operation_id}" if route.operation_id else None,
             include_in_schema=route.include_in_schema,
         )
-        app.routes.append(new_route)
+        new_routes.append(new_route)
+
+    # Insert v1 routes BEFORE the catch-all frontend route so they match first
+    insert_idx = len(app.routes)
+    for i, route in enumerate(app.routes):
+        path = getattr(route, "path", "")
+        if "{full_path" in path:
+            insert_idx = i
+            break
+
+    for i, route in enumerate(new_routes):
+        app.routes.insert(insert_idx + i, route)
