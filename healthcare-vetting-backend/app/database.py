@@ -1047,6 +1047,21 @@ def migrate_db():
                 (_tid_gen(), ct, label),
             )
 
+    # Create sms_notifications table if it doesn't exist
+    cursor.execute("""CREATE TABLE IF NOT EXISTS sms_notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        user_type TEXT,
+        to_number TEXT NOT NULL,
+        message TEXT NOT NULL,
+        category TEXT DEFAULT 'general',
+        reference_id TEXT,
+        provider TEXT DEFAULT 'console',
+        status TEXT DEFAULT 'pending',
+        provider_response TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+
     # Seed default admin user if admin_users table is empty
     admin_count = cursor.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0]
     if admin_count == 0:

@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type MainTab = "overview" | "candidates" | "agencies" | "compliance" | "user-management" | "audit-logs" | "settings" | "lead-generation" | "operations";
+type MainTab = "overview" | "candidates" | "agencies" | "compliance" | "trustid-queue" | "user-management" | "audit-logs" | "settings" | "lead-generation" | "operations";
 type SubTab = string;
 
 export default function AdminPanel() {
@@ -56,6 +56,7 @@ export default function AdminPanel() {
       return "user-management";
     }
     if (mainTab === "lead-generation") return "lead-generation";
+    if (mainTab === "trustid-queue") return "trustid-queue";
     if (mainTab === "operations") {
       if (subTab === "analytics-dashboard") return "analytics-dashboard";
       if (subTab === "webhook-dashboard") return "webhook-dashboard";
@@ -76,6 +77,7 @@ export default function AdminPanel() {
       "compliance": "alerts",
       "user-management": "users",
       "audit-logs": "logs",
+      "trustid-queue": "tasks",
       "settings": "pricing",
       "lead-generation": "scrape",
       "operations": "analytics-dashboard",
@@ -271,6 +273,8 @@ export default function AdminPanel() {
         monitoringApi.getAlerts(token).catch(() => []),
       ]);
       setStats(s); setCandidates(c); setAlerts(a);
+      // Load TrustID summary for badge count in nav
+      try { const ts = await trustidApi.getTaskSummary(token).catch(() => ({})); setTrustidSummary(ts); } catch { /* ignore */ }
     } catch (err) { console.error("Failed to load data", err); }
   }, [token]);
 
@@ -436,6 +440,7 @@ export default function AdminPanel() {
   useEffect(() => { if (tab === "invoicing") loadAdminInvoices(); }, [tab, loadAdminInvoices]);
   useEffect(() => { if (tab === "subscriptions") { loadSubscriptionTiers(); loadCreditRates(); } }, [tab]);
   useEffect(() => { if (mainTab === "settings" && subTab === "trustid") loadTrustidData(); }, [mainTab, subTab, loadTrustidData]);
+  useEffect(() => { if (mainTab === "trustid-queue") loadTrustidData(); }, [mainTab, loadTrustidData]);
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
   const viewCandidate = async (candidate: Record<string, unknown>) => {
@@ -1124,6 +1129,7 @@ export default function AdminPanel() {
             { key: "candidates" as MainTab, label: "Candidates", icon: <Users size={16} /> },
             { key: "agencies" as MainTab, label: "Agencies & Billing", icon: <DollarSign size={16} /> },
             { key: "compliance" as MainTab, label: "Compliance", icon: <ShieldAlert size={16} /> },
+            { key: "trustid-queue" as MainTab, label: `TrustID Queue${(trustidSummary.pending_admin as number) > 0 ? ` (${trustidSummary.pending_admin})` : ""}`, icon: <Shield size={16} /> },
             { key: "user-management" as MainTab, label: "User Management", icon: <UserPlus size={16} /> },
             { key: "audit-logs" as MainTab, label: "Audit Logs", icon: <History size={16} /> },
             { key: "operations" as MainTab, label: "Operations", icon: <Play size={16} /> },
@@ -1231,12 +1237,17 @@ export default function AdminPanel() {
         {/* Payment Providers Sub-tab under Settings */}
         {mainTab === "settings" && subTab === "payment-providers" && <PaymentProvidersPanel />}
 
-        {/* TrustID Sub-tab under Settings */}
-        {mainTab === "settings" && subTab === "trustid" && (
+        {/* TrustID Queue — Top-Level Tab */}
+        {mainTab === "trustid-queue" && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">TrustID Integration</h2>
-              <button onClick={loadTrustidData} className="text-slate-400 hover:text-white"><RefreshCw size={16} /></button>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Shield size={24} className="text-blue-400" /> TrustID Task Queue
+                {(trustidSummary.pending_admin as number) > 0 && (
+                  <span className="bg-orange-600 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">{String(trustidSummary.pending_admin)} pending</span>
+                )}
+              </h2>
+              <button onClick={loadTrustidData} className="text-slate-400 hover:text-white flex items-center gap-1 text-sm"><RefreshCw size={16} /> Refresh</button>
             </div>
 
             {/* Summary Cards */}
@@ -1253,34 +1264,6 @@ export default function AdminPanel() {
                   <p className={`text-2xl font-bold ${card.color}`}>{String(card.value)}</p>
                 </div>
               ))}
-            </div>
-
-            {/* Mode Toggle Per Check Type */}
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Submission Mode per Check Type</h3>
-              <p className="text-slate-400 text-sm mb-4">Toggle between manual (admin submits via TrustID portal) and API (automated) mode for each check type.</p>
-              <div className="space-y-3">
-                {Object.entries(trustidConfig).map(([checkType, cfg]) => (
-                  <div key={checkType} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-                    <div>
-                      <span className="text-white font-medium">{(cfg.label as string) || checkType.replace(/_/g, " ")}</span>
-                      <span className={`ml-3 text-xs px-2 py-0.5 rounded-full ${cfg.submission_mode === "manual" ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" : "bg-green-500/20 text-green-400 border border-green-500/30"}`}>
-                        {(cfg.submission_mode as string)?.toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleTrustidModeToggle(checkType, "manual")}
-                        className={`px-3 py-1.5 rounded text-xs font-medium ${cfg.submission_mode === "manual" ? "bg-orange-600 text-white" : "bg-slate-600 text-slate-400 hover:text-white"}`}>
-                        Manual
-                      </button>
-                      <button onClick={() => handleTrustidModeToggle(checkType, "api")}
-                        className={`px-3 py-1.5 rounded text-xs font-medium ${cfg.submission_mode === "api" ? "bg-green-600 text-white" : "bg-slate-600 text-slate-400 hover:text-white"}`}>
-                        API
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
 
             {/* Task Queue */}
@@ -1393,6 +1376,43 @@ export default function AdminPanel() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* TrustID Config Sub-tab under Settings (mode toggle only) */}
+        {mainTab === "settings" && subTab === "trustid" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">TrustID Configuration</h2>
+              <button onClick={loadTrustidData} className="text-slate-400 hover:text-white"><RefreshCw size={16} /></button>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">Submission Mode per Check Type</h3>
+              <p className="text-slate-400 text-sm mb-4">Toggle between manual (admin submits via TrustID portal) and API (automated) mode for each check type.</p>
+              <div className="space-y-3">
+                {Object.entries(trustidConfig).map(([checkType, cfg]) => (
+                  <div key={checkType} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
+                    <div>
+                      <span className="text-white font-medium">{(cfg.label as string) || checkType.replace(/_/g, " ")}</span>
+                      <span className={`ml-3 text-xs px-2 py-0.5 rounded-full ${cfg.submission_mode === "manual" ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" : "bg-green-500/20 text-green-400 border border-green-500/30"}`}>
+                        {(cfg.submission_mode as string)?.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleTrustidModeToggle(checkType, "manual")}
+                        className={`px-3 py-1.5 rounded text-xs font-medium ${cfg.submission_mode === "manual" ? "bg-orange-600 text-white" : "bg-slate-600 text-slate-400 hover:text-white"}`}>
+                        Manual
+                      </button>
+                      <button onClick={() => handleTrustidModeToggle(checkType, "api")}
+                        className={`px-3 py-1.5 rounded text-xs font-medium ${cfg.submission_mode === "api" ? "bg-green-600 text-white" : "bg-slate-600 text-slate-400 hover:text-white"}`}>
+                        API
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="text-slate-500 text-sm">Task queue has been moved to the <button onClick={() => { setMainTab("trustid-queue"); setSubTab("tasks"); }} className="text-blue-400 hover:text-blue-300 underline">TrustID Queue</button> tab for easier access.</p>
           </div>
         )}
 

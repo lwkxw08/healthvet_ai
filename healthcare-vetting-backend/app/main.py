@@ -53,6 +53,8 @@ from app.routes import payment_providers
 from app.routes import ai_insights
 from app.routes import documents
 from app.routes import trustid
+from app.routes import sms
+from app.routes import websocket as ws_routes
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.agency_scope import AgencyScopeMiddleware
@@ -127,6 +129,8 @@ app.include_router(payment_providers.router)
 app.include_router(ai_insights.router)
 app.include_router(documents.router)
 app.include_router(trustid.router)
+app.include_router(sms.router)
+app.include_router(ws_routes.router)
 
 
 @app.on_event("startup")
@@ -144,6 +148,9 @@ async def startup():
     # Start the background scheduler for monitoring tasks
     from app.services.scheduler import start_scheduler
     start_scheduler()
+    # Register API v1 versioned routes (mirrors /api/* under /api/v1/*)
+    from app.routes.api_versioning import register_v1_routes
+    register_v1_routes(app)
 
 
 @app.on_event("shutdown")

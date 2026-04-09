@@ -144,6 +144,23 @@ class TrustIDService:
                  now),
             )
 
+            # Create admin notifications for manual tasks requiring attention
+            if status == "pending_admin":
+                pretty_type = check_type.replace("_", " ").title()
+                display_name = candidate_name or "Unknown"
+                # Notify all active admin users
+                admin_rows = db.execute("SELECT id FROM admin_users WHERE is_active=1").fetchall()
+                for admin_row in admin_rows:
+                    db.execute(
+                        """INSERT INTO in_app_notifications
+                           (id, user_id, user_type, title, message, category, severity, is_read, created_at)
+                           VALUES (?, ?, 'admin', ?, ?, 'trustid_task', 'warning', 0, ?)""",
+                        (generate_id(), dict(admin_row)["id"],
+                         f"TrustID Task: {pretty_type}",
+                         f"{display_name} requires manual {pretty_type} via TrustID portal. Please action ASAP.",
+                         now),
+                    )
+
             row = db.execute("SELECT * FROM trustid_checks WHERE id=?", (check_id,)).fetchone()
             return dict(row)
 
