@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi } from "../api/client";
+import NotificationBell from "../components/NotificationBell";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
@@ -728,6 +729,7 @@ export default function AgencyDashboard() {
         </div>
         <div className="flex items-center gap-4">
           <button onClick={loadData} className="text-slate-400 hover:text-white"><RefreshCw size={18} /></button>
+          {token && <span className="text-slate-300"><NotificationBell token={token} /></span>}
           <button onClick={logout} className="text-slate-400 hover:text-red-400 flex items-center gap-1 text-sm">
             <LogOut size={16} /> Sign Out
           </button>

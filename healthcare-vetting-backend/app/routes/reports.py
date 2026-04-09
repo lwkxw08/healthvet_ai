@@ -107,6 +107,60 @@ async def export_compliance_report(agency_id: str = None, user=Depends(get_curre
 
 
 # ============================================================
+# CSV / EXCEL EXPORT ENDPOINTS
+# ============================================================
+
+@router.get("/reports/financial/csv")
+async def export_financial_csv(period: str = "all", date_from: str = None,
+                                date_to: str = None, user=Depends(get_current_user)):
+    """Export financial data as CSV."""
+    from app.services.report_exports import ReportService
+    csv_bytes = ReportService.export_financial_csv(period, date_from, date_to)
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=financial_report_{period}.csv"},
+    )
+
+
+@router.get("/reports/financial/excel")
+async def export_financial_excel(period: str = "all", date_from: str = None,
+                                  date_to: str = None, user=Depends(get_current_user)):
+    """Export financial data as Excel (.xlsx)."""
+    from app.services.report_exports import ReportService
+    xlsx_bytes = ReportService.export_financial_excel(period, date_from, date_to)
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=financial_report_{period}.xlsx"},
+    )
+
+
+@router.get("/reports/compliance/csv")
+async def export_compliance_csv(agency_id: str = None, user=Depends(get_current_user)):
+    """Export compliance data as CSV."""
+    from app.services.report_exports import ReportService
+    csv_bytes = ReportService.export_compliance_csv(agency_id)
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=compliance_report.csv"},
+    )
+
+
+@router.get("/reports/compliance/excel")
+async def export_compliance_excel(agency_id: str = None, user=Depends(get_current_user)):
+    """Export compliance data as Excel (.xlsx)."""
+    from app.services.report_exports import ReportService
+    xlsx_bytes = ReportService.export_compliance_excel(agency_id)
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=compliance_report.xlsx"},
+    )
+
+
+# ============================================================
 # TRAINING CERTIFICATES
 # ============================================================
 

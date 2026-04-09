@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from app.database import get_db
 from app.utils.auth import generate_id
+from app.utils.encryption import encrypt_value, decrypt_value
 
 logger = logging.getLogger(__name__)
 
@@ -70,13 +71,19 @@ class PaymentProviderService:
 
     @staticmethod
     def get_provider(provider: str) -> Optional[dict]:
-        """Get a single provider config (internal — includes raw keys)."""
+        """Get a single provider config (internal — includes decrypted keys)."""
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM payment_provider_config WHERE provider=?",
                 (provider,),
             ).fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            d = dict(row)
+            d["api_key_encrypted"] = decrypt_value(d.get("api_key_encrypted") or "")
+            d["api_secret_encrypted"] = decrypt_value(d.get("api_secret_encrypted") or "")
+            d["webhook_secret"] = decrypt_value(d.get("webhook_secret") or "")
+            return d
 
     @staticmethod
     def connect_provider(provider: str, api_key: str, api_secret: str = "",
@@ -106,7 +113,7 @@ class PaymentProviderService:
                            last_tested_at=?, test_status=?,
                            connected_at=?, updated_at=?
                        WHERE provider=?""",
-                    (api_key, api_secret, webhook_secret,
+                    (encrypt_value(api_key), encrypt_value(api_secret), encrypt_value(webhook_secret),
                      environment, 1 if test_result["success"] else 0,
                      test_result.get("account_id", ""),
                      test_result.get("account_name", ""),
@@ -124,8 +131,8 @@ class PaymentProviderService:
                         account_id, account_name,
                         last_tested_at, test_status, connected_at, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)""",
-                    (pid, provider, display_name, api_key, api_secret,
-                     webhook_secret, environment,
+                    (pid, provider, display_name, encrypt_value(api_key), encrypt_value(api_secret),
+                     encrypt_value(webhook_secret), environment,
                      1 if test_result["success"] else 0,
                      test_result.get("account_id", ""),
                      test_result.get("account_name", ""),

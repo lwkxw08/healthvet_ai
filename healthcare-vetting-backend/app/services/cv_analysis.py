@@ -3,19 +3,50 @@ AI-Powered CV & Document Validation Service
 Uses LLM + rule engine for gap analysis, overlap detection, qualification verification.
 In production, integrate with OpenAI/Anthropic API for deep analysis.
 """
+import io
 import json
+import logging
 import random
 import re
 from datetime import datetime, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
 
+logger = logging.getLogger(__name__)
+
 
 class CVAnalysisService:
     """AI-powered CV analysis with fraud detection and qualification verification."""
 
     @staticmethod
-    def analyse_cv(candidate_id: str, cv_text: str, cv_file_name: str | None = None) -> dict:
+    def extract_text_from_pdf(file_bytes: bytes) -> str:
+        """Extract text from a PDF file using pdfplumber.
+        Falls back to empty string if extraction fails."""
+        try:
+            import pdfplumber
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                pages_text = []
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        pages_text.append(text)
+                return "\n\n".join(pages_text)
+        except ImportError:
+            logger.warning("pdfplumber not installed — cannot extract PDF text")
+            return ""
+        except Exception as e:
+            logger.warning("PDF text extraction failed: %s", e)
+            return ""
+
+    @staticmethod
+    def analyse_cv(candidate_id: str, cv_text: str, cv_file_name: str | None = None,
+                   cv_file_bytes: bytes | None = None) -> dict:
+        # If raw PDF bytes were provided, extract text first
+        if cv_file_bytes and (not cv_text or not cv_text.strip()):
+            extracted = CVAnalysisService.extract_text_from_pdf(cv_file_bytes)
+            if extracted:
+                cv_text = extracted
+                logger.info("Extracted %d chars from PDF for candidate %s", len(cv_text), candidate_id)
         analysis_id = generate_id()
         now = datetime.now(timezone.utc).isoformat()
 

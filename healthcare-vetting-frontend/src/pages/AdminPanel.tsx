@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi } from "../api/client";
+import NotificationBell from "../components/NotificationBell";
 import LeadGenerationPanel from "./LeadGenerationPanel";
 import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
 import EmailTemplatesPanel from "./EmailTemplatesPanel";
@@ -1106,6 +1107,7 @@ export default function AdminPanel() {
         </div>
         <div className="flex items-center gap-4">
           <button onClick={loadData} className="text-slate-400 hover:text-white"><RefreshCw size={18} /></button>
+          {token && <span className="text-slate-300"><NotificationBell token={token} /></span>}
           <button onClick={logout} className="text-slate-400 hover:text-red-400 flex items-center gap-1 text-sm"><LogOut size={16} /> Sign Out</button>
         </div>
       </header>

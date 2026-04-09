@@ -1,9 +1,15 @@
 """
-PDF Report Export Service
-Generate financial reports, compliance summaries, and agency reports.
+Report Export Service
+Generate financial reports, compliance summaries, and agency reports in PDF, CSV, and Excel formats.
 """
+import csv
 import io
+import json
+import logging
 from datetime import datetime, timezone
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -165,6 +171,129 @@ class ReportService:
 
         doc.build(elements)
         return buffer.getvalue()
+
+    # ── CSV / Excel exports ─────────────────────────────────────────
+
+    @staticmethod
+    def export_financial_csv(period: str = "all", date_from: str = None, date_to: str = None) -> bytes:
+        """Export financial data as CSV."""
+        rows = ReportService._get_invoice_rows(date_from, date_to)
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Invoice ID", "Agency", "Check Type", "Description",
+                         "Cost Amount", "Sell Amount", "Status", "Created At"])
+        for r in rows:
+            writer.writerow([
+                r["id"], r["agency_name"], r.get("check_type", ""),
+                r.get("description", ""), r.get("cost_amount", 0),
+                r.get("sell_amount", 0), r.get("status", ""),
+                r.get("created_at", ""),
+            ])
+        return buf.getvalue().encode("utf-8")
+
+    @staticmethod
+    def export_financial_excel(period: str = "all", date_from: str = None, date_to: str = None) -> bytes:
+        """Export financial data as Excel (.xlsx)."""
+        rows = ReportService._get_invoice_rows(date_from, date_to)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Financial Report"
+        headers = ["Invoice ID", "Agency", "Check Type", "Description",
+                    "Cost Amount", "Sell Amount", "Status", "Created At"]
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+        for row_idx, r in enumerate(rows, 2):
+            ws.cell(row=row_idx, column=1, value=r["id"])
+            ws.cell(row=row_idx, column=2, value=r["agency_name"])
+            ws.cell(row=row_idx, column=3, value=r.get("check_type", ""))
+            ws.cell(row=row_idx, column=4, value=r.get("description", ""))
+            ws.cell(row=row_idx, column=5, value=r.get("cost_amount", 0))
+            ws.cell(row=row_idx, column=6, value=r.get("sell_amount", 0))
+            ws.cell(row=row_idx, column=7, value=r.get("status", ""))
+            ws.cell(row=row_idx, column=8, value=r.get("created_at", ""))
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    @staticmethod
+    def export_compliance_csv(agency_id: str = None) -> bytes:
+        """Export compliance data as CSV."""
+        rows = ReportService._get_compliance_rows(agency_id)
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Candidate ID", "Name", "Email", "Profession",
+                         "Compliance Score", "Compliance Status", "Created At"])
+        for r in rows:
+            writer.writerow([
+                r["id"], f"{r.get('first_name', '')} {r.get('last_name', '')}",
+                r.get("email", ""), r.get("profession", ""),
+                r.get("compliance_score", 0), r.get("compliance_status", ""),
+                r.get("created_at", ""),
+            ])
+        return buf.getvalue().encode("utf-8")
+
+    @staticmethod
+    def export_compliance_excel(agency_id: str = None) -> bytes:
+        """Export compliance data as Excel (.xlsx)."""
+        rows = ReportService._get_compliance_rows(agency_id)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Compliance Report"
+        headers = ["Candidate ID", "Name", "Email", "Profession",
+                    "Compliance Score", "Compliance Status", "Created At"]
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+        for row_idx, r in enumerate(rows, 2):
+            ws.cell(row=row_idx, column=1, value=r["id"])
+            ws.cell(row=row_idx, column=2, value=f"{r.get('first_name', '')} {r.get('last_name', '')}")
+            ws.cell(row=row_idx, column=3, value=r.get("email", ""))
+            ws.cell(row=row_idx, column=4, value=r.get("profession", ""))
+            ws.cell(row=row_idx, column=5, value=r.get("compliance_score", 0))
+            ws.cell(row=row_idx, column=6, value=r.get("compliance_status", ""))
+            ws.cell(row=row_idx, column=7, value=r.get("created_at", ""))
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    # ── Shared data retrieval helpers ───────────────────────────────
+
+    @staticmethod
+    def _get_invoice_rows(date_from: str = None, date_to: str = None) -> list:
+        with get_db() as db:
+            query = "SELECT i.*, a.name as agency_name FROM invoices i LEFT JOIN agencies a ON i.agency_id = a.id WHERE 1=1"
+            params: list = []
+            if date_from:
+                query += " AND i.created_at >= ?"
+                params.append(date_from)
+            if date_to:
+                query += " AND i.created_at <= ?"
+                params.append(date_to)
+            query += " ORDER BY i.created_at DESC"
+            rows = db.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def _get_compliance_rows(agency_id: str = None) -> list:
+        with get_db() as db:
+            if agency_id:
+                rows = db.execute(
+                    """SELECT c.* FROM candidates c
+                       JOIN agency_candidates ac ON c.id = ac.candidate_id
+                       WHERE ac.agency_id=?""",
+                    (agency_id,),
+                ).fetchall()
+            else:
+                rows = db.execute("SELECT * FROM candidates").fetchall()
+            return [dict(r) for r in rows]
 
     @staticmethod
     def generate_compliance_summary(agency_id: str = None) -> bytes:

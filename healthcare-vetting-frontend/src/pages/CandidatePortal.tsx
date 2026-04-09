@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { candidatesApi, checksApi, complianceApi, monitoringApi, agencyInvitesApi, trainingApi, trustidApi } from "../api/client";
+import NotificationBell from "../components/NotificationBell";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Upload,
   FileText, UserCheck, Fingerprint, Search, Send, LogOut, RefreshCw, ChevronRight,
@@ -506,6 +507,7 @@ export default function CandidatePortal() {
           <button onClick={() => { loadData(); loadCheckData(); loadTrustidData(); }} className="text-slate-400 hover:text-white">
             <RefreshCw size={18} />
           </button>
+          {token && <span className="text-slate-300"><NotificationBell token={token} /></span>}
           <button onClick={logout} className="text-slate-400 hover:text-red-400 flex items-center gap-1 text-sm">
             <LogOut size={16} /> Sign Out
           </button>

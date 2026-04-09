@@ -1,13 +1,20 @@
 """
 Professional Registration Check Service
-Simulates querying NMC, GMC, HCPC public registers.
-In production, scrape or API-query the actual public registers.
+Queries NMC, GMC, HCPC, GPhC public registers via headless scraping (live mode)
+or simulation (dev/test). Controlled by REGISTRATION_MODE env var.
 """
 import json
+import logging
+import os
 import random
 from datetime import datetime, timedelta, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
+
+logger = logging.getLogger(__name__)
+
+# Set REGISTRATION_MODE=live to use real headless Selenium scrapers
+REGISTRATION_MODE = os.environ.get("REGISTRATION_MODE", "simulate")
 
 
 class RegistrationCheckService:
@@ -41,14 +48,58 @@ class RegistrationCheckService:
     }
 
     @staticmethod
+    def _live_register_check(body: str, registration_number: str) -> dict:
+        """Query the real public register using headless Selenium scrapers."""
+        from app.services.registration_scrapers import scrape_registration
+
+        scrape_result = scrape_registration(body, registration_number)
+
+        is_active = scrape_result.get("registration_status") == "active"
+        sanctions = scrape_result.get("sanctions", [])
+        conditions = scrape_result.get("conditions", [])
+        success = scrape_result.get("success", False)
+        error = scrape_result.get("error")
+
+        if not success:
+            logger.warning(
+                "Live scrape failed for %s/%s: %s — falling back to simulation",
+                body, registration_number, error,
+            )
+            return RegistrationCheckService._simulate_register_check(body, registration_number)
+
+        body_info = RegistrationCheckService.REGISTRATION_BODIES.get(body, {})
+        result_status = "active" if is_active and not sanctions else "review_required"
+
+        return {
+            "status": "completed",
+            "is_active": is_active,
+            "sanctions": sanctions,
+            "conditions": conditions,
+            "result": result_status,
+            "details": {
+                "body": body,
+                "body_name": body_info.get("name", body),
+                "registration_number": registration_number,
+                "register_entry_found": True,
+                "registrant_name": scrape_result.get("registrant_name", ""),
+                "expiry_date": scrape_result.get("expiry_date", ""),
+                "source": "live_scrape",
+                "scraped_at": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+
+    @staticmethod
     def check_registration(candidate_id: str, body: str, registration_number: str) -> dict:
         check_id = generate_id()
         now = datetime.now(timezone.utc).isoformat()
         next_check = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
 
         with get_db() as db:
-            # Simulate register query
-            result = RegistrationCheckService._simulate_register_check(body, registration_number)
+            # Use live scrapers or simulation based on REGISTRATION_MODE
+            if REGISTRATION_MODE == "live":
+                result = RegistrationCheckService._live_register_check(body, registration_number)
+            else:
+                result = RegistrationCheckService._simulate_register_check(body, registration_number)
 
             db.execute(
                 """INSERT INTO registration_checks

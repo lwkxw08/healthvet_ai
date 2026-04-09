@@ -1,9 +1,12 @@
 """GDPR Compliance routes — right to erasure, data export (SAR), consent, DPIAs, retention."""
+import csv
+import io
 import json
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.database import get_db
@@ -559,3 +562,88 @@ async def get_privacy_notice():
         "international_transfers": "Data is stored in UK/EU data centres only. No international transfers.",
         "complaints": "You may lodge a complaint with the ICO: https://ico.org.uk/make-a-complaint/",
     }
+
+
+# ── Downloadable Data Export (CSV) ─────────────────────────────────────────
+
+@router.post("/data-export/download")
+async def download_data_export(
+    request: Request,
+    data: DataExportRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Download all personal data as a CSV file (GDPR Article 20 — data portability)."""
+    user_type = current_user.get("type")
+    candidate_id = data.candidate_id
+
+    if user_type == "candidate" and current_user["sub"] != candidate_id:
+        raise HTTPException(status_code=403, detail="You can only export your own data")
+    if user_type == "agency":
+        raise HTTPException(status_code=403, detail="Agencies cannot export candidate data directly")
+
+    with get_db() as db:
+        candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        c = dict(candidate)
+        c.pop("password_hash", None)
+
+        # Build CSV with all sections
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+
+        # Personal data section
+        writer.writerow(["== Personal Data =="])
+        writer.writerow(list(c.keys()))
+        writer.writerow(list(c.values()))
+        writer.writerow([])
+
+        # Helper to write a section
+        def _write_section(title: str, query: str, params: tuple) -> None:
+            rows = db.execute(query, params).fetchall()
+            writer.writerow([f"== {title} =="])
+            if rows:
+                headers = list(dict(rows[0]).keys())
+                writer.writerow(headers)
+                for r in rows:
+                    writer.writerow(list(dict(r).values()))
+            else:
+                writer.writerow(["No records"])
+            writer.writerow([])
+
+        _write_section("Consent History",
+                       "SELECT * FROM consent_logs WHERE candidate_id=? ORDER BY timestamp DESC", (candidate_id,))
+        _write_section("Identity Checks",
+                       "SELECT * FROM identity_checks WHERE candidate_id=?", (candidate_id,))
+        _write_section("Right to Work Checks",
+                       "SELECT * FROM right_to_work_checks WHERE candidate_id=?", (candidate_id,))
+        _write_section("DBS Checks",
+                       "SELECT * FROM dbs_checks WHERE candidate_id=?", (candidate_id,))
+        _write_section("CV Analyses",
+                       "SELECT * FROM cv_analyses WHERE candidate_id=?", (candidate_id,))
+        _write_section("Registration Checks",
+                       "SELECT * FROM registration_checks WHERE candidate_id=?", (candidate_id,))
+        _write_section("References",
+                       "SELECT * FROM references_ WHERE candidate_id=?", (candidate_id,))
+        _write_section("Employment History",
+                       "SELECT * FROM employment_history WHERE candidate_id=?", (candidate_id,))
+        _write_section("Employment Verifications",
+                       "SELECT * FROM employment_verifications WHERE candidate_id=?", (candidate_id,))
+        _write_section("Compliance Records",
+                       "SELECT * FROM compliance_records WHERE candidate_id=?", (candidate_id,))
+
+        # Audit log
+        now = datetime.now(timezone.utc).isoformat()
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (?, 'candidate', ?, 'gdpr_csv_download', ?, ?, ?)""",
+            (generate_id(), candidate_id, current_user.get("sub", "unknown"),
+             json.dumps({"reason": data.reason, "format": "csv"}), now),
+        )
+
+    csv_bytes = buf.getvalue().encode("utf-8")
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=gdpr_export_{candidate_id[:8]}.csv"},
+    )

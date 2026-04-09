@@ -3,7 +3,7 @@ Scheduled Monitoring Service
 Runs monitoring checks on a configurable schedule and sends email notifications.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -61,8 +61,17 @@ def start_scheduler():
         name="Payment Reminder Checks",
     )
 
+    # Run weekly admin analytics report every Monday at 7 AM
+    scheduler.add_job(
+        run_weekly_admin_report,
+        CronTrigger(day_of_week="mon", hour=7, minute=0),
+        id="weekly_admin_report",
+        replace_existing=True,
+        name="Weekly Admin Analytics Report",
+    )
+
     scheduler.start()
-    logger.info("Monitoring scheduler started with 4 jobs")
+    logger.info("Monitoring scheduler started with 5 jobs")
 
 
 def stop_scheduler():
@@ -265,3 +274,89 @@ def run_fraud_scan():
         logger.info(f"Fraud scan complete: {results.get('total_flags', 0)} flags found")
     except Exception as e:
         logger.error(f"Fraud scan failed: {e}")
+
+
+def run_weekly_admin_report():
+    """Generate and email a weekly analytics summary to all admin users."""
+    from app.database import get_db
+    from app.services.email_service import EmailService
+    from app.config import DASHBOARD_URL
+
+    logger.info("Generating weekly admin analytics report...")
+    try:
+        with get_db() as db:
+            # Gather key metrics
+            total_candidates = db.execute("SELECT COUNT(*) as cnt FROM candidates").fetchone()
+            total_candidates = dict(total_candidates)["cnt"] if total_candidates else 0
+
+            compliant = db.execute(
+                "SELECT COUNT(*) as cnt FROM candidates WHERE compliance_status='compliant'"
+            ).fetchone()
+            compliant = dict(compliant)["cnt"] if compliant else 0
+
+            flagged = db.execute(
+                "SELECT COUNT(*) as cnt FROM candidates WHERE compliance_status IN ('flagged','incomplete')"
+            ).fetchone()
+            flagged = dict(flagged)["cnt"] if flagged else 0
+
+            total_agencies = db.execute("SELECT COUNT(*) as cnt FROM agencies").fetchone()
+            total_agencies = dict(total_agencies)["cnt"] if total_agencies else 0
+
+            # Revenue this week
+            week_revenue = db.execute(
+                "SELECT COALESCE(SUM(sell_amount),0) as total FROM invoices WHERE status='paid' AND created_at >= date('now','-7 days')"
+            ).fetchone()
+            week_revenue = dict(week_revenue)["total"] if week_revenue else 0
+
+            pending_invoices = db.execute(
+                "SELECT COUNT(*) as cnt, COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)),0) as total FROM invoices WHERE status='pending'"
+            ).fetchone()
+            pi = dict(pending_invoices) if pending_invoices else {"cnt": 0, "total": 0}
+
+            # New candidates this week
+            new_candidates = db.execute(
+                "SELECT COUNT(*) as cnt FROM candidates WHERE created_at >= date('now','-7 days')"
+            ).fetchone()
+            new_candidates = dict(new_candidates)["cnt"] if new_candidates else 0
+
+            # Build email content
+            now = datetime.now(timezone.utc)
+            week_start = (now - timedelta(days=7)).strftime("%d %b %Y")
+            week_end = now.strftime("%d %b %Y")
+
+            subject = f"HealthVet AI — Weekly Report ({week_start} - {week_end})"
+            body = (
+                f"Weekly Analytics Summary\n"
+                f"Period: {week_start} — {week_end}\n\n"
+                f"CANDIDATES\n"
+                f"  Total: {total_candidates}\n"
+                f"  Compliant: {compliant}\n"
+                f"  Flagged/Incomplete: {flagged}\n"
+                f"  New this week: {new_candidates}\n\n"
+                f"AGENCIES\n"
+                f"  Total: {total_agencies}\n\n"
+                f"FINANCIALS\n"
+                f"  Revenue this week: \u00a3{week_revenue:,.2f}\n"
+                f"  Pending invoices: {pi['cnt']} (\u00a3{pi['total']:,.2f})\n\n"
+                f"View full dashboard: {DASHBOARD_URL}/admin\n\n"
+                f"— HealthVet AI Compliance Team"
+            )
+
+            # Send to all admin users
+            admins = db.execute("SELECT email FROM admins").fetchall()
+            for admin_row in admins:
+                admin_email = dict(admin_row)["email"]
+                EmailService._store_notification(
+                    recipient_email=admin_email,
+                    recipient_name="Admin",
+                    subject=subject,
+                    body=body,
+                    notification_type="weekly_admin_report",
+                )
+                logger.info(f"Weekly admin report sent to {admin_email}")
+
+            if not admins:
+                logger.info("No admin users found for weekly report")
+
+    except Exception as e:
+        logger.error(f"Weekly admin report generation failed: {e}")

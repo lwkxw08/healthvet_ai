@@ -1,10 +1,16 @@
-"""2.1 Candidate Self-Service Portal: compliance dashboard, document upload, check timeline."""
+"""2.1 Candidate Self-Service Portal: compliance dashboard, document upload, check timeline, SSE."""
+import asyncio
+import json
+import logging
 import os
 import shutil
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from app.database import get_db
 from app.utils.auth import get_current_user, generate_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/candidates/portal", tags=["Candidate Portal"])
 
@@ -315,6 +321,154 @@ async def confirm_pre_notification(notification_id: str, request: Request, curre
         )
 
     return {"confirmed": True, "notification_id": notification_id}
+
+
+@router.post("/documents/bulk")
+async def bulk_upload_documents(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    document_types: str = Form(""),
+    current_user: dict = Depends(get_current_user),
+):
+    """Bulk upload multiple documents (CV, passport, DBS certificate, training certs).
+    document_types is a comma-separated list matching the files order, e.g. 'cv,passport,dbs,training_cert'."""
+    if current_user.get("type") != "candidate":
+        raise HTTPException(status_code=403, detail="Candidate access only")
+
+    candidate_id = current_user["sub"]
+    now = datetime.now(timezone.utc).isoformat()
+    type_list = [t.strip() for t in document_types.split(",")] if document_types else []
+    results = []
+
+    candidate_dir = os.path.join(UPLOAD_DIR, candidate_id)
+    os.makedirs(candidate_dir, exist_ok=True)
+
+    with get_db() as db:
+        db.execute("""CREATE TABLE IF NOT EXISTS candidate_documents (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            document_type TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_size INTEGER,
+            description TEXT,
+            uploaded_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        )""")
+
+        for idx, file in enumerate(files):
+            doc_id = generate_id()
+            doc_type = type_list[idx] if idx < len(type_list) else "other"
+            safe_name = f"{doc_id}_{file.filename}"
+            file_path = os.path.join(candidate_dir, safe_name)
+
+            with open(file_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+
+            file_size = os.path.getsize(file_path)
+            db.execute(
+                "INSERT INTO candidate_documents (id, candidate_id, document_type, file_name, file_path, file_size, description, uploaded_at) VALUES (?,?,?,?,?,?,?,?)",
+                (doc_id, candidate_id, doc_type, file.filename, file_path, file_size, "", now),
+            )
+            results.append({
+                "id": doc_id,
+                "document_type": doc_type,
+                "file_name": file.filename,
+                "file_size": file_size,
+                "uploaded_at": now,
+            })
+
+    return {"uploaded": len(results), "documents": results}
+
+
+# ── SSE: Real-time candidate check status updates ──────────────────────────
+
+@router.get("/status-stream")
+async def candidate_status_stream(request: Request, current_user: dict = Depends(get_current_user)):
+    """Server-Sent Events (SSE) endpoint for real-time candidate check status updates.
+    The client connects and receives JSON events whenever check statuses change."""
+    if current_user.get("type") != "candidate":
+        raise HTTPException(status_code=403, detail="Candidate access only")
+
+    candidate_id = current_user["sub"]
+
+    async def event_generator():
+        """Poll DB for status changes and yield SSE events."""
+        last_snapshot: dict = {}
+        try:
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+
+                current_snapshot = _get_check_snapshot(candidate_id)
+
+                # On first iteration, send full snapshot
+                if not last_snapshot:
+                    yield f"event: snapshot\ndata: {json.dumps(current_snapshot)}\n\n"
+                    last_snapshot = current_snapshot
+                else:
+                    # Detect changes
+                    changes = {}
+                    for check_type, status in current_snapshot.items():
+                        if last_snapshot.get(check_type) != status:
+                            changes[check_type] = {"old": last_snapshot.get(check_type), "new": status}
+                    if changes:
+                        yield f"event: update\ndata: {json.dumps({'changes': changes, 'snapshot': current_snapshot})}\n\n"
+                        last_snapshot = current_snapshot
+
+                # Send heartbeat every cycle to keep connection alive
+                yield f"event: heartbeat\ndata: {json.dumps({'ts': datetime.now(timezone.utc).isoformat()})}\n\n"
+
+                await asyncio.sleep(5)  # Poll every 5 seconds
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _get_check_snapshot(candidate_id: str) -> dict:
+    """Get current status of all check types for a candidate."""
+    snapshot = {}
+    with get_db() as db:
+        for check_type in ["identity", "dbs", "right_to_work", "professional_registration", "training"]:
+            row = db.execute(
+                "SELECT status FROM compliance_checks WHERE candidate_id=? AND check_type=? ORDER BY created_at DESC LIMIT 1",
+                (candidate_id, check_type),
+            ).fetchone()
+            snapshot[check_type] = dict(row)["status"] if row else "not_started"
+
+        # References
+        refs = db.execute(
+            "SELECT status FROM references_ WHERE candidate_id=?",
+            (candidate_id,),
+        ).fetchall()
+        if refs:
+            completed = sum(1 for r in refs if dict(r)["status"] == "completed")
+            snapshot["references"] = f"{completed}/{len(refs)}_completed"
+        else:
+            snapshot["references"] = "not_started"
+
+        # Employment
+        emps = db.execute(
+            "SELECT status FROM employment_verifications WHERE candidate_id=?",
+            (candidate_id,),
+        ).fetchall()
+        if emps:
+            completed = sum(1 for e in emps if dict(e)["status"] == "completed")
+            snapshot["employment"] = f"{completed}/{len(emps)}_completed"
+        else:
+            snapshot["employment"] = "not_started"
+
+    return snapshot
 
 
 def _format_check(row, label: str) -> dict:
