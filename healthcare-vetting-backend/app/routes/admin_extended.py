@@ -566,8 +566,8 @@ async def retrigger_reference_verification(
     # Phase 2: Send email (outside DB context to avoid SQLite lock)
     from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
 
-    base_url = "https://app-wwjesgoe.fly.dev"
-    reference_link = f"{base_url}/verify?token={ref_dict['token']}&type=reference"
+    from app.config import BASE_URL
+    reference_link = f"{BASE_URL}/verify?token={ref_dict['token']}&type=reference"
     verification_code = ref_dict.get("verification_code", "")
 
     email_result = EmailTemplateService.send_email(
@@ -657,8 +657,8 @@ async def retrigger_employment_verification(
     # Phase 2: Send email (outside DB context to avoid SQLite lock)
     from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
 
-    base_url = "https://app-wwjesgoe.fly.dev"
-    verification_link = f"{base_url}/verify?token={ver_dict['token']}&type=employment"
+    from app.config import BASE_URL
+    verification_link = f"{BASE_URL}/verify?token={ver_dict['token']}&type=employment"
     verification_code = ver_dict.get("verification_code", "")
 
     email_result = EmailTemplateService.send_email(

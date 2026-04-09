@@ -7,6 +7,7 @@ Falls back to DB-only storage when no SendGrid API key is set.
 import json
 import logging
 from datetime import datetime, timezone
+from app.config import DASHBOARD_URL
 from app.database import get_db
 from app.utils.auth import generate_id
 
@@ -116,7 +117,7 @@ class EmailService:
                         "alert_count": str(len(affected)),
                         "alert_items_html": alert_items_html,
                         "alert_items_text": alert_items_text,
-                        "dashboard_link": "https://app.healthvet.ai/agency/dashboard",
+                        "dashboard_link": f"{DASHBOARD_URL}/agency/dashboard",
                     }
 
                     fallback_subject = f"HealthVet AI - {len(affected)} New Monitoring Alert(s)"
@@ -163,7 +164,7 @@ class EmailService:
                 "expiry_count": str(len(data["items"])),
                 "expiry_items_html": items_html,
                 "expiry_items_text": items_text,
-                "dashboard_link": "https://app.healthvet.ai/agency/dashboard",
+                "dashboard_link": f"{DASHBOARD_URL}/agency/dashboard",
             }
 
             fallback_subject = f"HealthVet AI - {len(data['items'])} Credential(s) Expiring Soon"
@@ -189,7 +190,7 @@ class EmailService:
                     "credential_type": type_label,
                     "expiry_date": n["expiry_date"],
                     "days_left": str(n["days_left"]),
-                    "portal_link": "https://app.healthvet.ai/candidate/portal",
+                    "portal_link": f"{DASHBOARD_URL}/candidate/portal",
                 }
 
                 fallback_subject = f"HealthVet AI - Your {type_label} Expires in {n['days_left']} Days"
@@ -216,7 +217,7 @@ class EmailService:
             "amount": f"\u00a3{amount:.2f}",
             "description": description,
             "invoice_date": datetime.now(timezone.utc).strftime("%d %B %Y"),
-            "payment_link": "https://app.healthvet.ai/agency/billing",
+            "payment_link": f"{DASHBOARD_URL}/agency/billing",
         }
 
         fallback_subject = f"HealthVet AI - New Invoice #{invoice_id[:8]}"
@@ -242,7 +243,7 @@ class EmailService:
             "credits": "",
             "amount": f"\u00a3{amount:.2f}",
             "expiry_date": "",
-            "dashboard_link": "https://app.healthvet.ai/agency/dashboard",
+            "dashboard_link": f"{DASHBOARD_URL}/agency/dashboard",
         }
 
         fallback_subject = f"HealthVet AI - Subscription Confirmed: {plan_name}"
@@ -274,7 +275,7 @@ class EmailService:
             "description": description,
             "urgency": urgency,
             "urgency_message": urgency_msg,
-            "payment_link": "https://app.healthvet.ai/agency/billing",
+            "payment_link": f"{DASHBOARD_URL}/agency/billing",
         }
 
         fallback_subject = f"HealthVet AI - {urgency}: Invoice #{invoice_id[:8]} Payment Due"

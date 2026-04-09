@@ -7,7 +7,16 @@ from fastapi import HTTPException, Depends, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.database import get_db
 
-SECRET_KEY = os.environ.get("JWT_SECRET", "healthcare-vetting-secret-key-change-in-production")
+SECRET_KEY = os.environ.get("JWT_SECRET", "")
+if not SECRET_KEY:
+    import warnings
+    warnings.warn(
+        "JWT_SECRET environment variable is not set — using an auto-generated key. "
+        "Sessions will NOT survive server restarts. Set JWT_SECRET in production!",
+        stacklevel=2,
+    )
+    import secrets as _secrets
+    SECRET_KEY = _secrets.token_urlsafe(64)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 

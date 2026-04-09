@@ -310,8 +310,8 @@ class ReferenceAutomationService:
                 if agency:
                     agency_name = dict(agency)["name"]
 
-        base_url = "https://app-wwjesgoe.fly.dev"
-        reference_link = f"{base_url}/verify?token={token}&type=reference"
+        from app.config import BASE_URL
+        reference_link = f"{BASE_URL}/verify?token={token}&type=reference"
 
         variables = {
             "candidate_name": candidate_name,
@@ -360,8 +360,8 @@ class ReferenceAutomationService:
                 if agency:
                     agency_name = dict(agency)["name"]
 
-        base_url = "https://app-wwjesgoe.fly.dev"
-        action_link = f"{base_url}/verify?token={token}&type=reference"
+        from app.config import BASE_URL
+        action_link = f"{BASE_URL}/verify?token={token}&type=reference"
 
         variables = {
             "recipient_name": referee_name,

@@ -416,8 +416,8 @@ class EmploymentVerificationService:
                 if agency:
                     agency_name = dict(agency)["name"]
 
-        base_url = "https://app-wwjesgoe.fly.dev"
-        verification_link = f"{base_url}/verify?token={token}&type=employment"
+        from app.config import BASE_URL
+        verification_link = f"{BASE_URL}/verify?token={token}&type=employment"
 
         variables = {
             "candidate_name": candidate_name,
@@ -470,8 +470,8 @@ class EmploymentVerificationService:
                 if agency:
                     agency_name = dict(agency)["name"]
 
-        base_url = "https://app-wwjesgoe.fly.dev"
-        action_link = f"{base_url}/verify?token={token}&type=employment"
+        from app.config import BASE_URL
+        action_link = f"{BASE_URL}/verify?token={token}&type=employment"
 
         variables = {
             "recipient_name": verifier_name,
