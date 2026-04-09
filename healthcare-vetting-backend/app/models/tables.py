@@ -224,6 +224,7 @@ class ComplianceRecord(Base):
     references_verified = Column(Integer, default=0)
     cv_validated = Column(Integer, default=0)
     employment_verified = Column(Integer, default=0)
+    training_compliant = Column(Integer, default=0)
     flags = Column(Text)
     audit_log = Column(Text)
     last_evaluated = Column(String)
