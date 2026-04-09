@@ -34,6 +34,9 @@ COPY app/ ./app/
 COPY alembic/ ./alembic/
 COPY alembic.ini .
 
+# Copy frontend static build (served by FastAPI)
+COPY static/ ./static/
+
 # Create data directory for SQLite (if used)
 RUN mkdir -p /data && chown healthvet:healthvet /data
 
