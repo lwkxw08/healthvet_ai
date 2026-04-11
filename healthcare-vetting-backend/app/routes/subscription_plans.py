@@ -46,14 +46,14 @@ def _sync_industry_pricing(db, industry_template_id: str):
     """Ensure industry_check_pricing has a row for every enabled check in the template.
     Missing checks are auto-populated with defaults from pricing_settings."""
     template_checks = db.execute(
-        "SELECT check_key, check_label FROM industry_template_checks WHERE template_id=? AND is_enabled=1 ORDER BY sort_order",
+        "SELECT check_key, check_label FROM industry_template_checks WHERE template_id=%s AND is_enabled=1 ORDER BY sort_order",
         (industry_template_id,)
     ).fetchall()
     if not template_checks:
         return
 
-    existing_types = {row[0] for row in db.execute(
-        "SELECT check_type FROM industry_check_pricing WHERE industry_template_id=?",
+    existing_types = {row["check_type"] for row in db.execute(
+        "SELECT check_type FROM industry_check_pricing WHERE industry_template_id=%s",
         (industry_template_id,)
     ).fetchall()}
 
@@ -74,7 +74,7 @@ def _sync_industry_pricing(db, industry_template_id: str):
             """INSERT INTO industry_check_pricing
                (id, industry_template_id, check_type, label, credit_value,
                 third_party_cost, sell_price, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (pricing_id, industry_template_id, check_key,
              tc_dict["check_label"],
              1.0,
@@ -151,17 +151,17 @@ async def create_industry_plan_link(data: IndustryPlanLinkCreate, current_user: 
     link_id = generate_id()
     with get_db() as db:
         # Verify tier and template exist
-        tier = db.execute("SELECT * FROM subscription_tier_config WHERE tier_key=?", (data.tier_key,)).fetchone()
+        tier = db.execute("SELECT * FROM subscription_tier_config WHERE tier_key=%s", (data.tier_key,)).fetchone()
         if not tier:
             raise HTTPException(status_code=404, detail=f"Tier '{data.tier_key}' not found")
 
-        template = db.execute("SELECT * FROM industry_templates WHERE id=?", (data.industry_template_id,)).fetchone()
+        template = db.execute("SELECT * FROM industry_templates WHERE id=%s", (data.industry_template_id,)).fetchone()
         if not template:
             raise HTTPException(status_code=404, detail="Industry template not found")
 
         # Check for duplicates
         existing = db.execute(
-            "SELECT id FROM industry_plan_links WHERE tier_key=? AND industry_template_id=?",
+            "SELECT id FROM industry_plan_links WHERE tier_key=%s AND industry_template_id=%s",
             (data.tier_key, data.industry_template_id),
         ).fetchone()
         if existing:
@@ -171,12 +171,12 @@ async def create_industry_plan_link(data: IndustryPlanLinkCreate, current_user: 
             """INSERT INTO industry_plan_links
                (id, tier_key, industry_template_id, custom_monthly_price,
                 custom_per_worker_price, custom_monthly_checks)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (link_id, data.tier_key, data.industry_template_id,
              data.custom_monthly_price, data.custom_per_worker_price, data.custom_monthly_checks),
         )
 
-        row = db.execute("SELECT * FROM industry_plan_links WHERE id=?", (link_id,)).fetchone()
+        row = db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,)).fetchone()
         return dict(row)
 
 
@@ -186,30 +186,30 @@ async def update_industry_plan_link(link_id: str, data: IndustryPlanLinkUpdate, 
     require_admin(current_user)
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM industry_plan_links WHERE id=?", (link_id,)).fetchone()
+        existing = db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Industry-plan link not found")
 
         updates = []
         params = []
         if data.custom_monthly_price is not None:
-            updates.append("custom_monthly_price=?")
+            updates.append("custom_monthly_price=%s")
             params.append(data.custom_monthly_price)
         if data.custom_per_worker_price is not None:
-            updates.append("custom_per_worker_price=?")
+            updates.append("custom_per_worker_price=%s")
             params.append(data.custom_per_worker_price)
         if data.custom_monthly_checks is not None:
-            updates.append("custom_monthly_checks=?")
+            updates.append("custom_monthly_checks=%s")
             params.append(data.custom_monthly_checks)
         if data.is_active is not None:
-            updates.append("is_active=?")
+            updates.append("is_active=%s")
             params.append(1 if data.is_active else 0)
 
         if updates:
             params.append(link_id)
-            db.execute(f"UPDATE industry_plan_links SET {', '.join(updates)} WHERE id=?", params)
+            db.execute(f"UPDATE industry_plan_links SET {', '.join(updates)} WHERE id=%s", params)
 
-        row = db.execute("SELECT * FROM industry_plan_links WHERE id=?", (link_id,)).fetchone()
+        row = db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,)).fetchone()
         return dict(row)
 
 
@@ -219,10 +219,10 @@ async def delete_industry_plan_link(link_id: str, current_user: dict = Depends(g
     require_admin(current_user)
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM industry_plan_links WHERE id=?", (link_id,)).fetchone()
+        existing = db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Industry-plan link not found")
-        db.execute("DELETE FROM industry_plan_links WHERE id=?", (link_id,))
+        db.execute("DELETE FROM industry_plan_links WHERE id=%s", (link_id,))
         return {"deleted": True}
 
 
@@ -246,7 +246,7 @@ async def list_industry_check_pricing(
                 SELECT icp.*, it.name as industry_name
                 FROM industry_check_pricing icp
                 LEFT JOIN industry_templates it ON icp.industry_template_id = it.id
-                WHERE icp.industry_template_id=?
+                WHERE icp.industry_template_id=%s
                 ORDER BY icp.check_type
             """, (industry_template_id,)).fetchall()
         else:
@@ -268,12 +268,12 @@ async def create_industry_check_pricing(data: IndustryCheckPricingCreate, curren
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        template = db.execute("SELECT * FROM industry_templates WHERE id=?", (data.industry_template_id,)).fetchone()
+        template = db.execute("SELECT * FROM industry_templates WHERE id=%s", (data.industry_template_id,)).fetchone()
         if not template:
             raise HTTPException(status_code=404, detail="Industry template not found")
 
         existing = db.execute(
-            "SELECT id FROM industry_check_pricing WHERE industry_template_id=? AND check_type=?",
+            "SELECT id FROM industry_check_pricing WHERE industry_template_id=%s AND check_type=%s",
             (data.industry_template_id, data.check_type),
         ).fetchone()
         if existing:
@@ -283,13 +283,13 @@ async def create_industry_check_pricing(data: IndustryCheckPricingCreate, curren
             """INSERT INTO industry_check_pricing
                (id, industry_template_id, check_type, label, credit_value,
                 third_party_cost, sell_price, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (pricing_id, data.industry_template_id, data.check_type,
              data.label or data.check_type.replace("_", " ").title(),
              data.credit_value, data.third_party_cost, data.sell_price, now),
         )
 
-        row = db.execute("SELECT * FROM industry_check_pricing WHERE id=?", (pricing_id,)).fetchone()
+        row = db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,)).fetchone()
         return dict(row)
 
 
@@ -300,32 +300,32 @@ async def update_industry_check_pricing(pricing_id: str, data: IndustryCheckPric
 
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        existing = db.execute("SELECT * FROM industry_check_pricing WHERE id=?", (pricing_id,)).fetchone()
+        existing = db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Pricing not found")
 
-        updates = ["updated_at=?"]
+        updates = ["updated_at=%s"]
         params = [now]
         if data.label is not None:
-            updates.append("label=?")
+            updates.append("label=%s")
             params.append(data.label)
         if data.credit_value is not None:
-            updates.append("credit_value=?")
+            updates.append("credit_value=%s")
             params.append(data.credit_value)
         if data.third_party_cost is not None:
-            updates.append("third_party_cost=?")
+            updates.append("third_party_cost=%s")
             params.append(data.third_party_cost)
         if data.sell_price is not None:
-            updates.append("sell_price=?")
+            updates.append("sell_price=%s")
             params.append(data.sell_price)
         if data.is_active is not None:
-            updates.append("is_active=?")
+            updates.append("is_active=%s")
             params.append(1 if data.is_active else 0)
 
         params.append(pricing_id)
-        db.execute(f"UPDATE industry_check_pricing SET {', '.join(updates)} WHERE id=?", params)
+        db.execute(f"UPDATE industry_check_pricing SET {', '.join(updates)} WHERE id=%s", params)
 
-        row = db.execute("SELECT * FROM industry_check_pricing WHERE id=?", (pricing_id,)).fetchone()
+        row = db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,)).fetchone()
         return dict(row)
 
 
@@ -335,10 +335,10 @@ async def delete_industry_check_pricing(pricing_id: str, current_user: dict = De
     require_admin(current_user)
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM industry_check_pricing WHERE id=?", (pricing_id,)).fetchone()
+        existing = db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Pricing not found")
-        db.execute("DELETE FROM industry_check_pricing WHERE id=?", (pricing_id,))
+        db.execute("DELETE FROM industry_check_pricing WHERE id=%s", (pricing_id,))
         return {"deleted": True}
 
 
@@ -351,7 +351,7 @@ async def bulk_set_industry_pricing(data: BulkIndustryPricingRequest, current_us
     results = []
 
     with get_db() as db:
-        template = db.execute("SELECT * FROM industry_templates WHERE id=?", (data.industry_template_id,)).fetchone()
+        template = db.execute("SELECT * FROM industry_templates WHERE id=%s", (data.industry_template_id,)).fetchone()
         if not template:
             raise HTTPException(status_code=404, detail="Industry template not found")
 
@@ -361,7 +361,7 @@ async def bulk_set_industry_pricing(data: BulkIndustryPricingRequest, current_us
                 continue
 
             existing = db.execute(
-                "SELECT id FROM industry_check_pricing WHERE industry_template_id=? AND check_type=?",
+                "SELECT id FROM industry_check_pricing WHERE industry_template_id=%s AND check_type=%s",
                 (data.industry_template_id, check_type),
             ).fetchone()
 
@@ -369,8 +369,8 @@ async def bulk_set_industry_pricing(data: BulkIndustryPricingRequest, current_us
                 # Update
                 db.execute(
                     """UPDATE industry_check_pricing
-                       SET label=?, credit_value=?, third_party_cost=?, sell_price=?, updated_at=?
-                       WHERE id=?""",
+                       SET label=%s, credit_value=%s, third_party_cost=%s, sell_price=%s, updated_at=%s
+                       WHERE id=%s""",
                     (item.get("label", check_type.replace("_", " ").title()),
                      float(item.get("credit_value", 1.0)),
                      float(item.get("third_party_cost", 0)),
@@ -385,7 +385,7 @@ async def bulk_set_industry_pricing(data: BulkIndustryPricingRequest, current_us
                     """INSERT INTO industry_check_pricing
                        (id, industry_template_id, check_type, label, credit_value,
                         third_party_cost, sell_price, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (pricing_id, data.industry_template_id, check_type,
                      item.get("label", check_type.replace("_", " ").title()),
                      float(item.get("credit_value", 1.0)),
@@ -420,19 +420,19 @@ async def get_plans_by_industry(current_user: dict = Depends(get_current_user)):
                           stc.per_worker_price as base_per_worker_price, stc.monthly_checks as base_monthly_checks
                    FROM industry_plan_links ipl
                    LEFT JOIN subscription_tier_config stc ON ipl.tier_key = stc.tier_key
-                   WHERE ipl.industry_template_id=? AND ipl.is_active=1""",
+                   WHERE ipl.industry_template_id=%s AND ipl.is_active=1""",
                 (industry_id,),
             ).fetchall()
 
             # Get per-element pricing for this industry
             check_pricing = db.execute(
-                "SELECT * FROM industry_check_pricing WHERE industry_template_id=? AND is_active=1 ORDER BY check_type",
+                "SELECT * FROM industry_check_pricing WHERE industry_template_id=%s AND is_active=1 ORDER BY check_type",
                 (industry_id,),
             ).fetchall()
 
             # Get template checks
             template_checks = db.execute(
-                "SELECT * FROM industry_template_checks WHERE template_id=? ORDER BY sort_order",
+                "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order",
                 (industry_id,),
             ).fetchall()
 

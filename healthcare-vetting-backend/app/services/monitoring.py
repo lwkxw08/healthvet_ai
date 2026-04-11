@@ -47,7 +47,7 @@ class MonitoringService:
                     db.execute(
                         """INSERT INTO monitoring_alerts
                            (id, candidate_id, alert_type, severity, message, details, created_at)
-                           VALUES (?, ?, 'dbs_update_change', 'critical', ?, ?, ?)""",
+                           VALUES (%s, %s, 'dbs_update_change', 'critical', %s, %s, %s)""",
                         (
                             alert_id, check_dict["candidate_id"],
                             f"DBS Update Service reports change for {check_dict['first_name']} {check_dict['last_name']}",
@@ -99,7 +99,7 @@ class MonitoringService:
                 # Check if alert already exists
                 existing = db.execute(
                     """SELECT id FROM monitoring_alerts
-                       WHERE candidate_id=? AND alert_type='visa_expiry'
+                       WHERE candidate_id=%s AND alert_type='visa_expiry'
                        AND is_resolved=0""",
                     (check_dict["candidate_id"],),
                 ).fetchone()
@@ -109,7 +109,7 @@ class MonitoringService:
                     db.execute(
                         """INSERT INTO monitoring_alerts
                            (id, candidate_id, alert_type, severity, message, details, created_at)
-                           VALUES (?, ?, 'visa_expiry', ?, ?, ?, ?)""",
+                           VALUES (%s, %s, 'visa_expiry', %s, %s, %s, %s)""",
                         (
                             alert_id, check_dict["candidate_id"],
                             severity, message,
@@ -154,7 +154,7 @@ class MonitoringService:
                     db.execute(
                         """INSERT INTO monitoring_alerts
                            (id, candidate_id, alert_type, severity, message, details, created_at)
-                           VALUES (?, ?, 'registration_renewal', 'high', ?, ?, ?)""",
+                           VALUES (%s, %s, 'registration_renewal', 'high', %s, %s, %s)""",
                         (
                             alert_id, check_dict["candidate_id"],
                             f"{check_dict['body']} registration check due for {check_dict['first_name']} {check_dict['last_name']}",
@@ -195,7 +195,7 @@ class MonitoringService:
                     db.execute(
                         """INSERT INTO monitoring_alerts
                            (id, candidate_id, alert_type, severity, message, details, created_at)
-                           VALUES (?, ?, 'new_sanction', 'critical', ?, ?, ?)""",
+                           VALUES (%s, %s, 'new_sanction', 'critical', %s, %s, %s)""",
                         (
                             alert_id, check_dict["candidate_id"],
                             f"New sanction detected for {check_dict['first_name']} {check_dict['last_name']} on {check_dict['body']} register",
@@ -223,7 +223,7 @@ class MonitoringService:
 
             conditions = []
             if candidate_id:
-                conditions.append("candidate_id=?")
+                conditions.append("candidate_id=%s")
                 params.append(candidate_id)
             if unresolved_only:
                 conditions.append("is_resolved=0")
@@ -241,7 +241,7 @@ class MonitoringService:
         if not candidate_ids:
             return []
         with get_db() as db:
-            placeholders = ",".join("?" for _ in candidate_ids)
+            placeholders = ",".join("%s" for _ in candidate_ids)
             query = f"SELECT * FROM monitoring_alerts WHERE candidate_id IN ({placeholders})"
             if unresolved_only:
                 query += " AND is_resolved=0"
@@ -254,10 +254,10 @@ class MonitoringService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             db.execute(
-                "UPDATE monitoring_alerts SET is_resolved=1, resolved_at=? WHERE id=?",
+                "UPDATE monitoring_alerts SET is_resolved=1, resolved_at=%s WHERE id=%s",
                 (now, alert_id),
             )
-            row = db.execute("SELECT * FROM monitoring_alerts WHERE id=?", (alert_id,)).fetchone()
+            row = db.execute("SELECT * FROM monitoring_alerts WHERE id=%s", (alert_id,)).fetchone()
             if not row:
                 return None
             return dict(row)
@@ -269,7 +269,7 @@ class MonitoringService:
                 candidates = db.execute(
                     """SELECT c.* FROM candidates c
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
-                       WHERE ac.agency_id=?""",
+                       WHERE ac.agency_id=%s""",
                     (agency_id,),
                 ).fetchall()
             else:

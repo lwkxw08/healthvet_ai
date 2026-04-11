@@ -302,12 +302,12 @@ async def submit_imposter_declaration(
 
     with get_db() as db:
         # Look up agency email from the database
-        agency_row = db.execute("SELECT email FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        agency_row = db.execute("SELECT email FROM agencies WHERE id=%s", (agency_id,)).fetchone()
         agency_email = dict(agency_row)["email"] if agency_row else "unknown"
 
         # Check if declaration already exists (non-editable - only one allowed)
         existing = db.execute(
-            "SELECT id FROM imposter_declarations WHERE candidate_id=? AND agency_id=?",
+            "SELECT id FROM imposter_declarations WHERE candidate_id=%s AND agency_id=%s",
             (data.candidate_id, agency_id),
         ).fetchone()
         if existing:
@@ -320,7 +320,7 @@ async def submit_imposter_declaration(
             """INSERT INTO imposter_declarations
                (id, candidate_id, agency_id, declared_by_user_id, declared_by_email,
                 declaration_text, documents_verified, ip_address, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 declaration_id, data.candidate_id, agency_id,
                 agency_id, agency_email,
@@ -331,7 +331,7 @@ async def submit_imposter_declaration(
         # Immutable audit log entry
         db.execute(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-               VALUES (?, 'imposter_declaration', ?, 'submitted', ?, ?, ?)""",
+               VALUES (%s, 'imposter_declaration', %s, 'submitted', %s, %s, %s)""",
             (
                 generate_id(), data.candidate_id, agency_email,
                 json.dumps({
@@ -347,7 +347,7 @@ async def submit_imposter_declaration(
             ),
         )
 
-        row = db.execute("SELECT * FROM imposter_declarations WHERE id=?", (declaration_id,)).fetchone()
+        row = db.execute("SELECT * FROM imposter_declarations WHERE id=%s", (declaration_id,)).fetchone()
 
     # Re-evaluate compliance now that declaration is in place
     ComplianceEngine.evaluate_candidate(data.candidate_id)
@@ -360,7 +360,7 @@ async def get_imposter_declarations(candidate_id: str, current_user: dict = Depe
     verify_agency_owns_candidate(current_user, candidate_id)
     with get_db() as db:
         rows = db.execute(
-            "SELECT * FROM imposter_declarations WHERE candidate_id=? ORDER BY created_at DESC",
+            "SELECT * FROM imposter_declarations WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         ).fetchall()
         return [dict(r) for r in rows]

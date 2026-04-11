@@ -57,7 +57,7 @@ def recover_stale_scrape_jobs():
             ).fetchall()
             for row in stale:
                 db.execute(
-                    "UPDATE scrape_jobs SET status='failed', error_message=?, completed_at=? WHERE id=?",
+                    "UPDATE scrape_jobs SET status='failed', error_message=%s, completed_at=%s WHERE id=%s",
                     ("Server restarted — job did not complete. Please retry.", now, row["id"]),
                 )
             if stale:
@@ -77,7 +77,7 @@ def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: 
     # Mark job as running
     with get_db() as db:
         db.execute(
-            "UPDATE scrape_jobs SET status='running', started_at=? WHERE id=?",
+            "UPDATE scrape_jobs SET status='running', started_at=%s WHERE id=%s",
             (now, job_id),
         )
 
@@ -91,7 +91,7 @@ def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: 
             for lead in leads:
                 # Check for duplicates
                 existing = db.execute(
-                    "SELECT id FROM leads WHERE agency_name=? AND source=?",
+                    "SELECT id FROM leads WHERE agency_name=%s AND source=%s",
                     (lead["name"], source),
                 ).fetchone()
                 if existing:
@@ -103,7 +103,7 @@ def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: 
                        agency_name, description, website, email, phone, location, coverage,
                        employment_types, salary_range, source_url, verified, social_links, extra,
                        status, scraped_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s)""",
                     (
                         lead_id, job_id, source,
                         lead.get("industry", industry),
@@ -127,7 +127,7 @@ def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: 
                 inserted += 1
 
             db.execute(
-                "UPDATE scrape_jobs SET status='completed', completed_at=?, results_count=? WHERE id=?",
+                "UPDATE scrape_jobs SET status='completed', completed_at=%s, results_count=%s WHERE id=%s",
                 (completed_at, inserted, job_id),
             )
 
@@ -138,7 +138,7 @@ def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: 
         logger.error(f"Scrape job {job_id} failed: {error_msg}")
         with get_db() as db:
             db.execute(
-                "UPDATE scrape_jobs SET status='failed', error_message=?, completed_at=? WHERE id=?",
+                "UPDATE scrape_jobs SET status='failed', error_message=%s, completed_at=%s WHERE id=%s",
                 (error_msg, datetime.now(timezone.utc).isoformat(), job_id),
             )
 
@@ -170,7 +170,7 @@ async def trigger_scrape(data: ScrapeJobRequest, current_user: dict = Depends(ge
     with get_db() as db:
         db.execute(
             """INSERT INTO scrape_jobs (id, source, industry, industry_slug, config, status, created_at)
-               VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
+               VALUES (%s, %s, %s, %s, %s, 'pending', %s)""",
             (job_id, data.source, data.industry or "", data.industry_slug or "", json.dumps(config), now),
         )
 
@@ -192,7 +192,7 @@ async def retry_scrape_job(job_id: str, current_user: dict = Depends(get_current
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        job = db.execute("SELECT * FROM scrape_jobs WHERE id=?", (job_id,)).fetchone()
+        job = db.execute("SELECT * FROM scrape_jobs WHERE id=%s", (job_id,)).fetchone()
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         job_dict = dict(job)
@@ -201,7 +201,7 @@ async def retry_scrape_job(job_id: str, current_user: dict = Depends(get_current
 
         # Reset job status
         db.execute(
-            "UPDATE scrape_jobs SET status='pending', error_message=NULL, started_at=NULL, completed_at=NULL, results_count=0 WHERE id=?",
+            "UPDATE scrape_jobs SET status='pending', error_message=NULL, started_at=NULL, completed_at=NULL, results_count=0 WHERE id=%s",
             (job_id,),
         )
 
@@ -230,12 +230,12 @@ async def list_scrape_jobs(
     query = "SELECT * FROM scrape_jobs WHERE 1=1"
     params = []
     if source:
-        query += " AND source=?"
+        query += " AND source=%s"
         params.append(source)
     if status:
-        query += " AND status=?"
+        query += " AND status=%s"
         params.append(status)
-    query += " ORDER BY created_at DESC LIMIT ?"
+    query += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
 
     with get_db() as db:
@@ -250,7 +250,7 @@ async def get_scrape_job(job_id: str, current_user: dict = Depends(get_current_u
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        row = db.execute("SELECT * FROM scrape_jobs WHERE id=?", (job_id,)).fetchone()
+        row = db.execute("SELECT * FROM scrape_jobs WHERE id=%s", (job_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Scrape job not found")
         return dict(row)
@@ -275,23 +275,23 @@ async def list_leads(
         raise HTTPException(status_code=403, detail="Admin only")
 
     query = "SELECT * FROM leads WHERE 1=1"
-    count_query = "SELECT COUNT(*) FROM leads WHERE 1=1"
+    count_query = "SELECT COUNT(*) AS cnt FROM leads WHERE 1=1"
     params = []
     count_params = []
 
     if source:
-        query += " AND source=?"
-        count_query += " AND source=?"
+        query += " AND source=%s"
+        count_query += " AND source=%s"
         params.append(source)
         count_params.append(source)
     if industry:
-        query += " AND (industry LIKE ? OR industry_slug LIKE ?)"
-        count_query += " AND (industry LIKE ? OR industry_slug LIKE ?)"
+        query += " AND (industry LIKE %s OR industry_slug LIKE %s)"
+        count_query += " AND (industry LIKE %s OR industry_slug LIKE %s)"
         params.extend([f"%{industry}%", f"%{industry}%"])
         count_params.extend([f"%{industry}%", f"%{industry}%"])
     if status:
-        query += " AND status=?"
-        count_query += " AND status=?"
+        query += " AND status=%s"
+        count_query += " AND status=%s"
         params.append(status)
         count_params.append(status)
     if has_email:
@@ -301,16 +301,16 @@ async def list_leads(
         query += " AND phone IS NOT NULL AND phone != ''"
         count_query += " AND phone IS NOT NULL AND phone != ''"
     if search:
-        query += " AND (agency_name LIKE ? OR description LIKE ? OR location LIKE ?)"
-        count_query += " AND (agency_name LIKE ? OR description LIKE ? OR location LIKE ?)"
+        query += " AND (agency_name LIKE %s OR description LIKE %s OR location LIKE %s)"
+        count_query += " AND (agency_name LIKE %s OR description LIKE %s OR location LIKE %s)"
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
         count_params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
 
-    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
     params.extend([limit, offset])
 
     with get_db() as db:
-        total = db.execute(count_query, count_params).fetchone()[0]
+        total = db.execute(count_query, count_params).fetchone()["cnt"]
         rows = db.execute(query, params).fetchall()
         return {
             "total": total,
@@ -327,9 +327,9 @@ async def get_lead_stats(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        total = db.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
-        with_email = db.execute("SELECT COUNT(*) FROM leads WHERE email IS NOT NULL AND email != ''").fetchone()[0]
-        with_phone = db.execute("SELECT COUNT(*) FROM leads WHERE phone IS NOT NULL AND phone != ''").fetchone()[0]
+        total = db.execute("SELECT COUNT(*) AS cnt FROM leads").fetchone()["cnt"]
+        with_email = db.execute("SELECT COUNT(*) AS cnt FROM leads WHERE email IS NOT NULL AND email != ''").fetchone()["cnt"]
+        with_phone = db.execute("SELECT COUNT(*) AS cnt FROM leads WHERE phone IS NOT NULL AND phone != ''").fetchone()["cnt"]
 
         by_source = {}
         for row in db.execute("SELECT source, COUNT(*) as cnt FROM leads GROUP BY source").fetchall():
@@ -360,24 +360,24 @@ async def update_lead(lead_id: str, data: LeadUpdateRequest, current_user: dict 
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+        existing = db.execute("SELECT * FROM leads WHERE id=%s", (lead_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Lead not found")
 
         updates = []
         params = []
         if data.status is not None:
-            updates.append("status=?")
+            updates.append("status=%s")
             params.append(data.status)
         if data.notes is not None:
-            updates.append("notes=?")
+            updates.append("notes=%s")
             params.append(data.notes)
 
         if updates:
             params.append(lead_id)
-            db.execute(f"UPDATE leads SET {', '.join(updates)} WHERE id=?", params)
+            db.execute(f"UPDATE leads SET {', '.join(updates)} WHERE id=%s", params)
 
-        row = db.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+        row = db.execute("SELECT * FROM leads WHERE id=%s", (lead_id,)).fetchone()
         return dict(row)
 
 
@@ -388,10 +388,10 @@ async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+        existing = db.execute("SELECT * FROM leads WHERE id=%s", (lead_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Lead not found")
-        db.execute("DELETE FROM leads WHERE id=?", (lead_id,))
+        db.execute("DELETE FROM leads WHERE id=%s", (lead_id,))
         return {"message": "Lead deleted"}
 
 
@@ -407,7 +407,7 @@ async def bulk_delete_leads(data: BulkDeleteRequest, current_user: dict = Depend
     deleted = 0
     with get_db() as db:
         for lead_id in data.lead_ids:
-            result = db.execute("DELETE FROM leads WHERE id=?", (lead_id,))
+            result = db.execute("DELETE FROM leads WHERE id=%s", (lead_id,))
             deleted += result.rowcount
 
     return {"message": f"{deleted} leads deleted", "deleted_count": deleted}
@@ -427,13 +427,13 @@ async def export_leads(
     query = "SELECT * FROM leads WHERE 1=1"
     params = []
     if source:
-        query += " AND source=?"
+        query += " AND source=%s"
         params.append(source)
     if industry:
-        query += " AND (industry LIKE ? OR industry_slug LIKE ?)"
+        query += " AND (industry LIKE %s OR industry_slug LIKE %s)"
         params.extend([f"%{industry}%", f"%{industry}%"])
     if status:
-        query += " AND status=?"
+        query += " AND status=%s"
         params.append(status)
     query += " ORDER BY created_at DESC"
 
@@ -546,7 +546,7 @@ async def scrape_professional_registration(data: RegistrationScrapeRequest, curr
                (id, candidate_id, body, registration_number, scrape_source,
                 registrant_name, registration_status, expiry_date,
                 sanctions, conditions, raw_data, scraped_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 scrape_id, data.candidate_id, data.body, data.registration_number,
                 result.get("scrape_source", ""),
@@ -564,12 +564,12 @@ async def scrape_professional_registration(data: RegistrationScrapeRequest, curr
         if result.get("success") and result.get("registration_status") != "unknown":
             # Find the latest registration check for this candidate
             check = db.execute(
-                "SELECT id FROM registration_checks WHERE candidate_id=? AND body=? ORDER BY last_checked DESC LIMIT 1",
+                "SELECT id FROM registration_checks WHERE candidate_id=%s AND body=%s ORDER BY last_checked DESC LIMIT 1",
                 (data.candidate_id, data.body),
             ).fetchone()
             if check:
                 db.execute(
-                    "UPDATE registration_scrape_results SET registration_check_id=? WHERE id=?",
+                    "UPDATE registration_scrape_results SET registration_check_id=%s WHERE id=%s",
                     (check["id"], scrape_id),
                 )
 
@@ -592,7 +592,7 @@ async def get_registration_scrapes(candidate_id: str, current_user: dict = Depen
     """Get all registration scrape results for a candidate."""
     with get_db() as db:
         rows = db.execute(
-            "SELECT * FROM registration_scrape_results WHERE candidate_id=? ORDER BY scraped_at DESC",
+            "SELECT * FROM registration_scrape_results WHERE candidate_id=%s ORDER BY scraped_at DESC",
             (candidate_id,),
         ).fetchall()
         return [dict(r) for r in rows]

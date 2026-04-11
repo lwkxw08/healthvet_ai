@@ -22,7 +22,7 @@ async def onfido_webhook(request: Request):
     with get_db() as db:
         db.execute(
             """INSERT INTO webhook_events (id, source, event_type, payload, status, created_at)
-               VALUES (?, 'onfido', ?, ?, 'received', ?)""",
+               VALUES (%s, 'onfido', %s, %s, 'received', %s)""",
             (event_id, payload.get("event", "unknown"), json.dumps(payload), now),
         )
 
@@ -32,8 +32,8 @@ async def onfido_webhook(request: Request):
             result = payload.get("result", {})
             db.execute(
                 """UPDATE identity_checks SET
-                   status=?, result=?, details=?, completed_at=?
-                   WHERE id=?""",
+                   status=%s, result=%s, details=%s, completed_at=%s
+                   WHERE id=%s""",
                 (
                     "completed",
                     result.get("result", "unknown"),
@@ -44,12 +44,12 @@ async def onfido_webhook(request: Request):
             )
 
             # Get candidate_id and re-evaluate compliance
-            check = db.execute("SELECT candidate_id FROM identity_checks WHERE id=?", (check_id,)).fetchone()
+            check = db.execute("SELECT candidate_id FROM identity_checks WHERE id=%s", (check_id,)).fetchone()
             if check:
                 ComplianceEngine.evaluate_candidate(dict(check)["candidate_id"])
 
         db.execute(
-            "UPDATE webhook_events SET status='processed', processed_at=? WHERE id=?",
+            "UPDATE webhook_events SET status='processed', processed_at=%s WHERE id=%s",
             (now, event_id),
         )
 
@@ -66,7 +66,7 @@ async def dbs_provider_webhook(request: Request):
     with get_db() as db:
         db.execute(
             """INSERT INTO webhook_events (id, source, event_type, payload, status, created_at)
-               VALUES (?, 'dbs_provider', ?, ?, 'received', ?)""",
+               VALUES (%s, 'dbs_provider', %s, %s, 'received', %s)""",
             (event_id, payload.get("event", "status_update"), json.dumps(payload), now),
         )
 
@@ -75,8 +75,8 @@ async def dbs_provider_webhook(request: Request):
             result = payload.get("result", {})
             db.execute(
                 """UPDATE dbs_checks SET
-                   status=?, certificate_number=?, result=?, details=?, completed_at=?
-                   WHERE application_ref=?""",
+                   status=%s, certificate_number=%s, result=%s, details=%s, completed_at=%s
+                   WHERE application_ref=%s""",
                 (
                     "completed",
                     result.get("certificate_number"),
@@ -88,14 +88,14 @@ async def dbs_provider_webhook(request: Request):
             )
 
             check = db.execute(
-                "SELECT candidate_id FROM dbs_checks WHERE application_ref=?",
+                "SELECT candidate_id FROM dbs_checks WHERE application_ref=%s",
                 (application_ref,),
             ).fetchone()
             if check:
                 ComplianceEngine.evaluate_candidate(dict(check)["candidate_id"])
 
         db.execute(
-            "UPDATE webhook_events SET status='processed', processed_at=? WHERE id=?",
+            "UPDATE webhook_events SET status='processed', processed_at=%s WHERE id=%s",
             (now, event_id),
         )
 
@@ -112,12 +112,12 @@ async def home_office_webhook(request: Request):
     with get_db() as db:
         db.execute(
             """INSERT INTO webhook_events (id, source, event_type, payload, status, created_at)
-               VALUES (?, 'home_office', ?, ?, 'received', ?)""",
+               VALUES (%s, 'home_office', %s, %s, 'received', %s)""",
             (event_id, payload.get("event", "status_change"), json.dumps(payload), now),
         )
 
         db.execute(
-            "UPDATE webhook_events SET status='processed', processed_at=? WHERE id=?",
+            "UPDATE webhook_events SET status='processed', processed_at=%s WHERE id=%s",
             (now, event_id),
         )
 
@@ -151,7 +151,7 @@ async def stripe_webhook(request: Request):
     with get_db() as db:
         db.execute(
             """INSERT INTO webhook_events (id, source, event_type, payload, status, created_at)
-               VALUES (?, 'stripe', ?, ?, 'received', ?)""",
+               VALUES (%s, 'stripe', %s, %s, 'received', %s)""",
             (event_id, event_type, json.dumps(payload), now),
         )
 
@@ -166,14 +166,14 @@ async def stripe_webhook(request: Request):
 
             # Update payment transaction
             db.execute(
-                "UPDATE payment_transactions SET status='completed', completed_at=? WHERE provider_payment_id=?",
+                "UPDATE payment_transactions SET status='completed', completed_at=%s WHERE provider_payment_id=%s",
                 (now, session_id),
             )
 
             # Mark invoice as paid
             if invoice_id:
                 db.execute(
-                    "UPDATE invoices SET status='paid', paid_at=?, payment_method='stripe', stripe_payment_intent_id=?, stripe_session_id=? WHERE id=?",
+                    "UPDATE invoices SET status='paid', paid_at=%s, payment_method='stripe', stripe_payment_intent_id=%s, stripe_session_id=%s WHERE id=%s",
                     (now, payment_intent, session_id, invoice_id),
                 )
 
@@ -191,13 +191,13 @@ async def stripe_webhook(request: Request):
             elif agency_id and invoice_id:
                 # Check if this invoice is for a credit_pack purchase
                 inv_row = db.execute(
-                    "SELECT check_type, description FROM invoices WHERE id=?", (invoice_id,)
+                    "SELECT check_type, description FROM invoices WHERE id=%s", (invoice_id,)
                 ).fetchone()
                 if inv_row and dict(inv_row).get("check_type") == "credit_pack":
                     # Invoice is a credit pack — look up agency's pending subscription
                     pending_sub = db.execute(
                         """SELECT * FROM agency_subscriptions
-                           WHERE agency_id=? AND status='active'
+                           WHERE agency_id=%s AND status='active'
                            ORDER BY created_at DESC LIMIT 1""",
                         (agency_id,),
                     ).fetchone()
@@ -222,7 +222,7 @@ async def stripe_webhook(request: Request):
         elif event_type == "payment_intent.succeeded":
             pi_id = data_obj.get("id", "")
             db.execute(
-                "UPDATE payment_transactions SET status='completed', completed_at=? WHERE provider_payment_id=?",
+                "UPDATE payment_transactions SET status='completed', completed_at=%s WHERE provider_payment_id=%s",
                 (now, pi_id),
             )
             logger.info("Stripe payment_intent succeeded: %s", pi_id)
@@ -234,13 +234,13 @@ async def stripe_webhook(request: Request):
         elif event_type == "payment_intent.payment_failed":
             pi_id = data_obj.get("id", "")
             db.execute(
-                "UPDATE payment_transactions SET status='failed' WHERE provider_payment_id=?",
+                "UPDATE payment_transactions SET status='failed' WHERE provider_payment_id=%s",
                 (pi_id,),
             )
             logger.warning("Stripe payment failed: %s", pi_id)
 
         db.execute(
-            "UPDATE webhook_events SET status='processed', processed_at=? WHERE id=?",
+            "UPDATE webhook_events SET status='processed', processed_at=%s WHERE id=%s",
             (now, event_id),
         )
 
@@ -252,7 +252,7 @@ async def list_webhook_events(limit: int = 50):
     """List recent webhook events for debugging."""
     with get_db() as db:
         rows = db.execute(
-            "SELECT * FROM webhook_events ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM webhook_events ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]

@@ -1,56 +1,105 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
+import psycopg2.pool
 import os
 from contextlib import contextmanager
 
-# Use /data/app.db for persistent storage in deployment, local otherwise
-DB_PATH = os.environ.get("DATABASE_PATH", "/data/app.db" if os.path.isdir("/data") else "app.db")
+# PostgreSQL connection via DATABASE_URL (Railway provides this)
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://healthvet:healthvet@localhost:5432/healthvet_db",
+)
+
+# Connection pool for efficiency
+_pool = None
 
 
-def get_db_path():
-    return DB_PATH
+def _get_pool():
+    global _pool
+    if _pool is None:
+        _pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=DATABASE_URL,
+        )
+    return _pool
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    pool = _get_pool()
+    conn = pool.getconn()
+    conn.autocommit = False
     return conn
+
+
+def _return_connection(conn):
+    try:
+        _get_pool().putconn(conn)
+    except Exception:
+        pass
 
 
 @contextmanager
 def get_db():
+    """Yield a *cursor* (RealDictCursor) with auto-commit/rollback.
+
+    The old SQLite version yielded a connection whose .execute() returned a
+    cursor-like object.  psycopg2 connections also have .execute() but the
+    semantics differ.  By yielding a cursor directly every call-site that does
+    ``db.execute(…)`` / ``db.fetchone()`` / ``db.fetchall()`` keeps working
+    without changes.
+    """
     conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        yield conn
+        yield cursor
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
-        conn.close()
+        cursor.close()
+        _return_connection(conn)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for migration
+# ---------------------------------------------------------------------------
+
+def _column_exists(cursor, table, column):
+    cursor.execute(
+        "SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+        (table, column),
+    )
+    return cursor.fetchone() is not None
+
+
+def _table_exists(cursor, table):
+    cursor.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = %s AND table_schema = 'public'",
+        (table,),
+    )
+    return cursor.fetchone() is not None
+
+
+def _add_column_if_missing(cursor, table, column, col_type):
+    if not _column_exists(cursor, table, column):
+        cursor.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {col_type}')
 
 
 def migrate_db():
     """Run database migrations for schema changes."""
     conn = get_connection()
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
     cursor = conn.cursor()
     # Add new columns to right_to_work_checks if they don't exist
-    existing_cols = {row[1] for row in cursor.execute("PRAGMA table_info(right_to_work_checks)").fetchall()}
-    new_cols = {
-        "verification_method": "TEXT DEFAULT 'share_code'",
-        "nationality": "TEXT",
-        "document_type": "TEXT",
-        "document_reference": "TEXT",
-        "ni_number": "TEXT",
-    }
-    for col, col_type in new_cols.items():
-        if col not in existing_cols:
-            cursor.execute(f"ALTER TABLE right_to_work_checks ADD COLUMN {col} {col_type}")
+    _add_column_if_missing(cursor, "right_to_work_checks", "verification_method", "TEXT DEFAULT 'share_code'")
+    _add_column_if_missing(cursor, "right_to_work_checks", "nationality", "TEXT")
+    _add_column_if_missing(cursor, "right_to_work_checks", "document_type", "TEXT")
+    _add_column_if_missing(cursor, "right_to_work_checks", "document_reference", "TEXT")
+    _add_column_if_missing(cursor, "right_to_work_checks", "ni_number", "TEXT")
     # Also create new tables if they don't exist (for existing databases)
-    try:
-        cursor.execute("SELECT 1 FROM employment_history LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "employment_history"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS employment_history (
             id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,
@@ -66,12 +115,10 @@ def migrate_db():
             verifier_email TEXT,
             verifier_job_title TEXT,
             source TEXT DEFAULT 'cv_extracted',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         )""")
-    try:
-        cursor.execute("SELECT 1 FROM employment_verifications LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "employment_verifications"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS employment_verifications (
             id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,
@@ -90,15 +137,13 @@ def migrate_db():
             ip_address TEXT,
             domain_verified INTEGER DEFAULT 0,
             reminder_count INTEGER DEFAULT 0,
-            sent_at TEXT DEFAULT (datetime('now')),
+            sent_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id),
             FOREIGN KEY (employment_id) REFERENCES employment_history(id)
         )""")
     # Create agency_invites table if it doesn't exist
-    try:
-        cursor.execute("SELECT 1 FROM agency_invites LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "agency_invites"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS agency_invites (
             id TEXT PRIMARY KEY,
             agency_id TEXT NOT NULL,
@@ -106,87 +151,47 @@ def migrate_db():
             invite_code TEXT UNIQUE NOT NULL,
             status TEXT DEFAULT 'pending',
             candidate_id TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             accepted_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         )""")
     # Add employment_status column to agency_candidates if missing
-    try:
-        existing_ac_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_candidates)").fetchall()}
-        if "employment_status" not in existing_ac_cols:
-            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN employment_status TEXT DEFAULT 'vetting'")
-        if "employment_status_updated_at" not in existing_ac_cols:
-            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN employment_status_updated_at TEXT")
-        if "annual_monitoring" not in existing_ac_cols:
-            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN annual_monitoring INTEGER DEFAULT 0")
-        if "vetting_cost_accepted" not in existing_ac_cols:
-            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN vetting_cost_accepted REAL DEFAULT 0")
-        if "monitoring_cost_accepted" not in existing_ac_cols:
-            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN monitoring_cost_accepted REAL DEFAULT 0")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agency_candidates", "employment_status", "TEXT DEFAULT 'vetting'")
+    _add_column_if_missing(cursor, "agency_candidates", "employment_status_updated_at", "TEXT")
+    _add_column_if_missing(cursor, "agency_candidates", "annual_monitoring", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_candidates", "vetting_cost_accepted", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_candidates", "monitoring_cost_accepted", "REAL DEFAULT 0")
     # Add include_monitoring and cost columns to agency_invites if missing
-    try:
-        existing_inv_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_invites)").fetchall()}
-        if "include_monitoring" not in existing_inv_cols:
-            cursor.execute("ALTER TABLE agency_invites ADD COLUMN include_monitoring INTEGER DEFAULT 0")
-        if "vetting_cost" not in existing_inv_cols:
-            cursor.execute("ALTER TABLE agency_invites ADD COLUMN vetting_cost REAL DEFAULT 0")
-        if "monitoring_cost" not in existing_inv_cols:
-            cursor.execute("ALTER TABLE agency_invites ADD COLUMN monitoring_cost REAL DEFAULT 0")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agency_invites", "include_monitoring", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_invites", "vetting_cost", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_invites", "monitoring_cost", "REAL DEFAULT 0")
     # Add discount_percent and billing_mode columns to agencies if missing
-    try:
-        existing_ag_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agencies)").fetchall()}
-        if "discount_percent" not in existing_ag_cols:
-            cursor.execute("ALTER TABLE agencies ADD COLUMN discount_percent REAL DEFAULT 0")
-        if "billing_mode" not in existing_ag_cols:
-            cursor.execute("ALTER TABLE agencies ADD COLUMN billing_mode TEXT DEFAULT 'manual_invoicing'")
-        if "stripe_customer_id" not in existing_ag_cols:
-            cursor.execute("ALTER TABLE agencies ADD COLUMN stripe_customer_id TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agencies", "discount_percent", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "billing_mode", "TEXT DEFAULT 'manual_invoicing'")
+    _add_column_if_missing(cursor, "agencies", "stripe_customer_id", "TEXT")
     # Add adjusted_amount, adjustment_notes, payment_method, stripe_session_id columns to invoices if missing
-    try:
-        existing_inv2_cols = {row[1] for row in cursor.execute("PRAGMA table_info(invoices)").fetchall()}
-        if "adjusted_amount" not in existing_inv2_cols:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN adjusted_amount REAL")
-        if "adjustment_notes" not in existing_inv2_cols:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN adjustment_notes TEXT")
-        if "candidate_email" not in existing_inv2_cols:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN candidate_email TEXT")
-        if "payment_method" not in existing_inv2_cols:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN payment_method TEXT DEFAULT 'manual'")
-        if "stripe_session_id" not in existing_inv2_cols:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN stripe_session_id TEXT")
-        if "stripe_payment_intent_id" not in existing_inv2_cols:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN stripe_payment_intent_id TEXT")
-        if "due_date" not in existing_inv2_cols:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN due_date TEXT")
-        if "reminder_sent_at" not in existing_inv2_cols:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN reminder_sent_at TEXT")
-        if "reminder_count" not in existing_inv2_cols:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN reminder_count INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "invoices", "adjusted_amount", "REAL")
+    _add_column_if_missing(cursor, "invoices", "adjustment_notes", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "candidate_email", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "payment_method", "TEXT DEFAULT 'manual'")
+    _add_column_if_missing(cursor, "invoices", "stripe_session_id", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "stripe_payment_intent_id", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "due_date", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "reminder_sent_at", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "reminder_count", "INTEGER DEFAULT 0")
     # Create pricing_settings table if it doesn't exist
-    try:
-        cursor.execute("SELECT 1 FROM pricing_settings LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "pricing_settings"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS pricing_settings (
             id TEXT PRIMARY KEY,
             check_type TEXT UNIQUE NOT NULL,
             label TEXT NOT NULL,
             cost_price REAL DEFAULT 0.0,
             sell_price REAL DEFAULT 0.0,
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (NOW()::text)
         )""")
     # Create invoices table if it doesn't exist
-    try:
-        cursor.execute("SELECT 1 FROM invoices LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "invoices"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS invoices (
             id TEXT PRIMARY KEY,
             agency_id TEXT NOT NULL,
@@ -196,73 +201,36 @@ def migrate_db():
             cost_amount REAL DEFAULT 0.0,
             sell_amount REAL DEFAULT 0.0,
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             paid_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         )""")
     # Add employment_verified column to compliance_records if missing
-    try:
-        existing_cr_cols = {row[1] for row in cursor.execute("PRAGMA table_info(compliance_records)").fetchall()}
-        if "employment_verified" not in existing_cr_cols:
-            cursor.execute("ALTER TABLE compliance_records ADD COLUMN employment_verified INTEGER DEFAULT 0")
-        if "training_compliant" not in existing_cr_cols:
-            cursor.execute("ALTER TABLE compliance_records ADD COLUMN training_compliant INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "compliance_records", "employment_verified", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "compliance_records", "training_compliant", "INTEGER DEFAULT 0")
     # Add cv_file_name column to cv_analyses if missing
-    try:
-        existing_cv_cols = {row[1] for row in cursor.execute("PRAGMA table_info(cv_analyses)").fetchall()}
-        if "cv_file_name" not in existing_cv_cols:
-            cursor.execute("ALTER TABLE cv_analyses ADD COLUMN cv_file_name TEXT")
-        if "employment_entries" not in existing_cv_cols:
-            cursor.execute("ALTER TABLE cv_analyses ADD COLUMN employment_entries TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "cv_analyses", "cv_file_name", "TEXT")
+    _add_column_if_missing(cursor, "cv_analyses", "employment_entries", "TEXT")
     # Add monthly_checks and checks_used columns to agency_subscriptions if missing
-    try:
-        existing_sub_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_subscriptions)").fetchall()}
-        if "monthly_checks" not in existing_sub_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN monthly_checks INTEGER DEFAULT 0")
-        if "checks_used" not in existing_sub_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN checks_used INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agency_subscriptions", "monthly_checks", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "checks_used", "INTEGER DEFAULT 0")
     # Add monthly_checks and new columns to subscription_tier_config if missing
-    try:
-        existing_stc_cols = {row[1] for row in cursor.execute("PRAGMA table_info(subscription_tier_config)").fetchall()}
-        if "monthly_checks" not in existing_stc_cols:
-            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN monthly_checks INTEGER DEFAULT 0")
-        if "overage_rate" not in existing_stc_cols:
-            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN overage_rate REAL DEFAULT 0")
-        if "allow_rollover" not in existing_stc_cols:
-            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN allow_rollover INTEGER DEFAULT 0")
-        if "monitoring_included" not in existing_stc_cols:
-            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN monitoring_included INTEGER DEFAULT 0")
-        if "monitoring_cap" not in existing_stc_cols:
-            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN monitoring_cap INTEGER DEFAULT 0")
-        if "monitoring_addon_rate" not in existing_stc_cols:
-            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN monitoring_addon_rate REAL DEFAULT 0")
-        if "is_active" not in existing_stc_cols:
-            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN is_active INTEGER DEFAULT 1")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "subscription_tier_config", "monthly_checks", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "overage_rate", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "allow_rollover", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "monitoring_included", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "monitoring_cap", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "monitoring_addon_rate", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "is_active", "INTEGER DEFAULT 1")
     # Add rollover and credit columns to agency_subscriptions if missing
-    try:
-        existing_sub_cols2 = {row[1] for row in cursor.execute("PRAGMA table_info(agency_subscriptions)").fetchall()}
-        if "credits_total" not in existing_sub_cols2:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN credits_total REAL DEFAULT 0")
-        if "credits_used" not in existing_sub_cols2:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN credits_used REAL DEFAULT 0")
-        if "rollover_credits" not in existing_sub_cols2:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN rollover_credits REAL DEFAULT 0")
-        if "allow_rollover" not in existing_sub_cols2:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN allow_rollover INTEGER DEFAULT 0")
-        if "overage_rate" not in existing_sub_cols2:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN overage_rate REAL DEFAULT 0")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agency_subscriptions", "credits_total", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "credits_used", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "rollover_credits", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "allow_rollover", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "overage_rate", "REAL DEFAULT 0")
     # Seed default pricing if table is empty
-    count = cursor.execute("SELECT COUNT(*) FROM pricing_settings").fetchone()[0]
+    cursor.execute("SELECT COUNT(*) AS cnt FROM pricing_settings")
+    count = cursor.fetchone()["cnt"]
     if count == 0:
         defaults = [
             ("identity", "Identity Verification", 2.0, 15.0),
@@ -277,7 +245,7 @@ def migrate_db():
         for check_type, label, cost, sell in defaults:
             from app.utils.auth import generate_id
             cursor.execute(
-                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s)",
                 (generate_id(), check_type, label, cost, sell),
             )
 
@@ -297,16 +265,18 @@ def migrate_db():
         ("sanctions_check", "Sanctions & Barred List Check", 5.0, 20.0),
     ]
     for check_type, label, cost, sell in expanded_checks:
-        existing = cursor.execute("SELECT id FROM pricing_settings WHERE check_type=?", (check_type,)).fetchone()
+        cursor.execute("SELECT id FROM pricing_settings WHERE check_type=%s", (check_type,))
+        existing = cursor.fetchone()
         if not existing:
             cursor.execute(
-                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s)",
                 (_gid_expand(), check_type, label, cost, sell),
             )
 
     # Seed default partial credit rates if table is empty
     try:
-        pcr_count = cursor.execute("SELECT COUNT(*) FROM partial_credit_rates").fetchone()[0]
+        cursor.execute("SELECT COUNT(*) AS cnt FROM partial_credit_rates")
+        pcr_count = cursor.fetchone()["cnt"]
     except Exception:
         pcr_count = 0
     if pcr_count == 0:
@@ -322,13 +292,14 @@ def migrate_db():
         ]
         for ct, lbl, cv, cost in pcr_defaults:
             cursor.execute(
-                "INSERT INTO partial_credit_rates (id, check_type, label, credit_value, third_party_cost) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO partial_credit_rates (id, check_type, label, credit_value, third_party_cost) VALUES (%s, %s, %s, %s, %s)",
                 (_gid(), ct, lbl, cv, cost),
             )
 
     # Seed default subscription tier config if table is empty
     try:
-        stc_count = cursor.execute("SELECT COUNT(*) FROM subscription_tier_config").fetchone()[0]
+        cursor.execute("SELECT COUNT(*) AS cnt FROM subscription_tier_config")
+        stc_count = cursor.fetchone()["cnt"]
     except Exception:
         stc_count = 0
     if stc_count == 0:
@@ -350,51 +321,29 @@ def migrate_db():
                 """INSERT INTO subscription_tier_config
                    (id, tier_key, name, monthly_price, per_worker_price, max_workers, monthly_checks,
                     overage_rate, allow_rollover, monitoring_included, monitoring_cap, monitoring_addon_rate, features, is_active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)""",
                 (_gid2(), tier_key, name, mp, pwp, mw, mc, ovr, ar, mi, mcap, mar, feats),
             )
 
     # Add industry_template_id column to agencies if missing
-    try:
-        existing_ag2_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agencies)").fetchall()}
-        if "industry_template_id" not in existing_ag2_cols:
-            cursor.execute("ALTER TABLE agencies ADD COLUMN industry_template_id TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agencies", "industry_template_id", "TEXT")
 
     # Add industry_template_id column to agency_sub_accounts if missing
-    try:
-        existing_sa_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_sub_accounts)").fetchall()}
-        if "industry_template_id" not in existing_sa_cols:
-            cursor.execute("ALTER TABLE agency_sub_accounts ADD COLUMN industry_template_id TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agency_sub_accounts", "industry_template_id", "TEXT")
 
     # Add invited_by_sub_account_id column to agency_candidates if missing
-    try:
-        existing_ac_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_candidates)").fetchall()}
-        if "invited_by_sub_account_id" not in existing_ac_cols:
-            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN invited_by_sub_account_id TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agency_candidates", "invited_by_sub_account_id", "TEXT")
 
     # Add sub_account_id column to agency_invites if missing
-    try:
-        existing_ai_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_invites)").fetchall()}
-        if "sub_account_id" not in existing_ai_cols:
-            cursor.execute("ALTER TABLE agency_invites ADD COLUMN sub_account_id TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agency_invites", "sub_account_id", "TEXT")
 
     # Create industry_templates and seed defaults if needed
-    try:
-        cursor.execute("SELECT 1 FROM industry_templates LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "industry_templates"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS industry_templates (
             id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT,
             compliance_label TEXT DEFAULT 'Compliant', compliance_threshold REAL DEFAULT 95.0,
             is_default INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now')), updated_at TEXT
+            created_at TEXT DEFAULT (NOW()::text), updated_at TEXT
         )""")
         cursor.execute("""CREATE TABLE IF NOT EXISTS industry_template_checks (
             id TEXT PRIMARY KEY, template_id TEXT NOT NULL, check_key TEXT NOT NULL,
@@ -405,7 +354,8 @@ def migrate_db():
 
     # Seed default industry templates if table is empty
     try:
-        tmpl_count = cursor.execute("SELECT COUNT(*) FROM industry_templates").fetchone()[0]
+        tmpl_cursor.execute("SELECT COUNT(*) AS cnt FROM industry_templates")
+    count = cursor.fetchone()["cnt"]
     except Exception:
         tmpl_count = 0
     if tmpl_count == 0:
@@ -487,19 +437,19 @@ def migrate_db():
             tid = _tid()
             cursor.execute(
                 """INSERT INTO industry_templates (id, name, description, compliance_label, compliance_threshold, is_default, is_active)
-                   VALUES (?, ?, ?, ?, ?, ?, 1)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 1)""",
                 (tid, tname, tdesc, tlabel, tthresh, tdefault),
             )
             for ck, cl, creq, cen, cw, ccfg, csort in tchecks:
                 cursor.execute(
                     """INSERT INTO industry_template_checks (id, template_id, check_key, check_label, is_required, is_enabled, weight, config, sort_order)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (_tid(), tid, ck, cl, creq, cen, cw, ccfg, csort),
                 )
 
     # Seed expanded pricing elements if not present
     try:
-        existing_pricing_types = {row[0] for row in cursor.execute("SELECT check_type FROM pricing_settings").fetchall()}
+        existing_pricing_types = {row["check_type"] for row in cursor.execute("SELECT check_type FROM pricing_settings").fetchall()}
     except Exception:
         existing_pricing_types = set()
     expanded_pricing = [
@@ -515,14 +465,12 @@ def migrate_db():
         if ct not in existing_pricing_types:
             from app.utils.auth import generate_id as _pid
             cursor.execute(
-                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s)",
                 (_pid(), ct, lbl, cost, sell),
             )
 
     # Create imposter_declarations table if it doesn't exist (migration for existing DBs)
-    try:
-        cursor.execute("SELECT 1 FROM imposter_declarations LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "imposter_declarations"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS imposter_declarations (
             id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,
@@ -538,9 +486,7 @@ def migrate_db():
         )""")
 
     # Create lead generation tables if they don't exist
-    try:
-        cursor.execute("SELECT 1 FROM scrape_jobs LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "scrape_jobs"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS scrape_jobs (
             id TEXT PRIMARY KEY,
             source TEXT NOT NULL,
@@ -552,11 +498,9 @@ def migrate_db():
             completed_at TEXT,
             results_count INTEGER DEFAULT 0,
             error_message TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
         )""")
-    try:
-        cursor.execute("SELECT 1 FROM leads LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "leads"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS leads (
             id TEXT PRIMARY KEY,
             scrape_job_id TEXT,
@@ -578,15 +522,13 @@ def migrate_db():
             extra TEXT DEFAULT '{}',
             status TEXT DEFAULT 'new',
             notes TEXT,
-            scraped_at TEXT DEFAULT (datetime('now')),
-            created_at TEXT DEFAULT (datetime('now')),
+            scraped_at TEXT DEFAULT (NOW()::text),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (scrape_job_id) REFERENCES scrape_jobs(id)
         )""")
 
     # Create registration_scrape_results table for real professional register scraping
-    try:
-        cursor.execute("SELECT 1 FROM registration_scrape_results LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "registration_scrape_results"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS registration_scrape_results (
             id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,
@@ -600,14 +542,12 @@ def migrate_db():
             sanctions TEXT DEFAULT '[]',
             conditions TEXT DEFAULT '[]',
             raw_data TEXT DEFAULT '{}',
-            scraped_at TEXT DEFAULT (datetime('now')),
+            scraped_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         )""")
 
     # Create industry_plan_links table (Option A: Industry-Specific Plans)
-    try:
-        cursor.execute("SELECT 1 FROM industry_plan_links LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "industry_plan_links"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS industry_plan_links (
             id TEXT PRIMARY KEY,
             tier_key TEXT NOT NULL,
@@ -616,15 +556,13 @@ def migrate_db():
             custom_per_worker_price REAL,
             custom_monthly_checks INTEGER,
             is_active INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
             UNIQUE(tier_key, industry_template_id)
         )""")
 
     # Create industry_check_pricing table (Option C: Per-Element Industry Pricing)
-    try:
-        cursor.execute("SELECT 1 FROM industry_check_pricing LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "industry_check_pricing"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS industry_check_pricing (
             id TEXT PRIMARY KEY,
             industry_template_id TEXT NOT NULL,
@@ -634,52 +572,29 @@ def migrate_db():
             third_party_cost REAL DEFAULT 0,
             sell_price REAL DEFAULT 0,
             is_active INTEGER DEFAULT 1,
-            updated_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
             UNIQUE(industry_template_id, check_type)
         )""")
 
     # Add industry_template_id column to subscription_tier_config if missing
-    try:
-        existing_stc_cols = {row[1] for row in cursor.execute("PRAGMA table_info(subscription_tier_config)").fetchall()}
-        if "industry_template_id" not in existing_stc_cols:
-            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN industry_template_id TEXT")
-        if "industry_name" not in existing_stc_cols:
-            cursor.execute("ALTER TABLE subscription_tier_config ADD COLUMN industry_name TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "subscription_tier_config", "industry_template_id", "TEXT")
+    _add_column_if_missing(cursor, "subscription_tier_config", "industry_name", "TEXT")
 
     # Add industry_template_id column to agency_subscriptions if missing
-    try:
-        existing_as_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_subscriptions)").fetchall()}
-        if "industry_template_id" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN industry_template_id TEXT")
-        if "credits_total" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN credits_total REAL DEFAULT 0")
-        if "credits_used" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN credits_used REAL DEFAULT 0")
-        if "rollover_credits" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN rollover_credits REAL DEFAULT 0")
-        if "allow_rollover" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN allow_rollover INTEGER DEFAULT 0")
-        if "overage_rate" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN overage_rate REAL DEFAULT 0")
-        # 12-month credit pack model columns
-        if "expires_at" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN expires_at TEXT")
-        if "auto_topup" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN auto_topup INTEGER DEFAULT 0")
-        if "auto_topup_tier" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN auto_topup_tier TEXT")
-        if "pack_name" not in existing_as_cols:
-            cursor.execute("ALTER TABLE agency_subscriptions ADD COLUMN pack_name TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agency_subscriptions", "industry_template_id", "TEXT")
+    _add_column_if_missing(cursor, "agency_subscriptions", "credits_total", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "credits_used", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "rollover_credits", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "allow_rollover", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "overage_rate", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "expires_at", "TEXT")
+    _add_column_if_missing(cursor, "agency_subscriptions", "auto_topup", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "auto_topup_tier", "TEXT")
+    _add_column_if_missing(cursor, "agency_subscriptions", "pack_name", "TEXT")
 
     # Create email_templates table if it doesn't exist
-    try:
-        cursor.execute("SELECT 1 FROM email_templates LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "email_templates"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS email_templates (
             id TEXT PRIMARY KEY,
             template_key TEXT UNIQUE NOT NULL,
@@ -691,14 +606,12 @@ def migrate_db():
             category TEXT DEFAULT 'general',
             variables TEXT,
             is_active INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT DEFAULT (NOW()::text)
         )""")
 
     # Create email_send_log table if it doesn't exist
-    try:
-        cursor.execute("SELECT 1 FROM email_send_log LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "email_send_log"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS email_send_log (
             id TEXT PRIMARY KEY,
             template_key TEXT,
@@ -711,14 +624,12 @@ def migrate_db():
             provider_message_id TEXT,
             error_message TEXT,
             variables_used TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             sent_at TEXT
         )""")
 
     # Create email_rules table if it doesn't exist
-    try:
-        cursor.execute("SELECT 1 FROM email_rules LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "email_rules"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS email_rules (
             id TEXT PRIMARY KEY,
             action_trigger TEXT NOT NULL,
@@ -729,18 +640,16 @@ def migrate_db():
             conditions TEXT DEFAULT '{}',
             priority INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT DEFAULT (NOW()::text)
         )""")
 
     # Create system_settings table for admin-configurable settings (email provider, API keys, etc.)
-    try:
-        cursor.execute("SELECT 1 FROM system_settings LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "system_settings"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS system_settings (
             setting_key TEXT PRIMARY KEY,
             setting_value TEXT,
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (NOW()::text)
         )""")
 
     # Add verification_code column to employment_verifications
@@ -767,7 +676,7 @@ def migrate_db():
         failed_login_attempts INTEGER DEFAULT 0,
         locked_until TEXT,
         last_login_at TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT (NOW()::text),
         updated_at TEXT
     )""")
 
@@ -778,7 +687,7 @@ def migrate_db():
         user_type TEXT NOT NULL,
         ip_address TEXT,
         success INTEGER NOT NULL,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT (NOW()::text)
     )""")
 
     # Create password_reset_tokens table
@@ -789,7 +698,7 @@ def migrate_db():
         token_hash TEXT UNIQUE NOT NULL,
         expires_at TEXT NOT NULL,
         used_at TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT (NOW()::text)
     )""")
 
     # Create token_blacklist table for revoked JWT tokens
@@ -798,32 +707,18 @@ def migrate_db():
         token_jti TEXT UNIQUE NOT NULL,
         user_id TEXT NOT NULL,
         expires_at TEXT NOT NULL,
-        revoked_at TEXT DEFAULT (datetime('now'))
+        revoked_at TEXT DEFAULT (NOW()::text)
     )""")
 
     # Add failed_login_attempts and locked_until to agencies
-    try:
-        existing_ag3_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agencies)").fetchall()}
-        if "failed_login_attempts" not in existing_ag3_cols:
-            cursor.execute("ALTER TABLE agencies ADD COLUMN failed_login_attempts INTEGER DEFAULT 0")
-        if "locked_until" not in existing_ag3_cols:
-            cursor.execute("ALTER TABLE agencies ADD COLUMN locked_until TEXT")
-        if "last_login_at" not in existing_ag3_cols:
-            cursor.execute("ALTER TABLE agencies ADD COLUMN last_login_at TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agencies", "failed_login_attempts", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "locked_until", "TEXT")
+    _add_column_if_missing(cursor, "agencies", "last_login_at", "TEXT")
 
     # Add failed_login_attempts and locked_until to candidates
-    try:
-        existing_cand_cols = {row[1] for row in cursor.execute("PRAGMA table_info(candidates)").fetchall()}
-        if "failed_login_attempts" not in existing_cand_cols:
-            cursor.execute("ALTER TABLE candidates ADD COLUMN failed_login_attempts INTEGER DEFAULT 0")
-        if "locked_until" not in existing_cand_cols:
-            cursor.execute("ALTER TABLE candidates ADD COLUMN locked_until TEXT")
-        if "last_login_at" not in existing_cand_cols:
-            cursor.execute("ALTER TABLE candidates ADD COLUMN last_login_at TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "candidates", "failed_login_attempts", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "candidates", "locked_until", "TEXT")
+    _add_column_if_missing(cursor, "candidates", "last_login_at", "TEXT")
 
     # ── 2.3 Candidate Pre-Notification ─────────────────────────────────────────
     # Create candidate_pre_notifications table
@@ -838,7 +733,7 @@ def migrate_db():
         sent_at TEXT,
         candidate_confirmed_at TEXT,
         verification_request_id TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT (NOW()::text),
         FOREIGN KEY (candidate_id) REFERENCES candidates(id)
     )""")
 
@@ -854,7 +749,7 @@ def migrate_db():
         ip_address TEXT,
         prev_hash TEXT,
         chain_hash TEXT NOT NULL,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT (NOW()::text)
     )""")
 
     # Data access log for GDPR SAR compliance
@@ -866,17 +761,12 @@ def migrate_db():
         accessor_type TEXT DEFAULT 'user',
         purpose TEXT,
         ip_address TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT (NOW()::text)
     )""")
 
     # ── 3.3 Webhook delivery enhancements ──────────────────────────────────────
     # Add next_retry_at column to webhook_deliveries if not present
-    try:
-        wd_cols = {row[1] for row in cursor.execute("PRAGMA table_info(webhook_deliveries)").fetchall()}
-        if "next_retry_at" not in wd_cols:
-            cursor.execute("ALTER TABLE webhook_deliveries ADD COLUMN next_retry_at TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "webhook_deliveries", "next_retry_at", "TEXT")
 
     # ── 3.5 Background Jobs (enhanced) ─────────────────────────────────────────
     cursor.execute("""CREATE TABLE IF NOT EXISTS background_jobs (
@@ -895,7 +785,7 @@ def migrate_db():
         scheduled_at TEXT,
         started_at TEXT,
         completed_at TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT (NOW()::text)
     )""")
 
     # ── 3.2 Scheduled reports ──────────────────────────────────────────────────
@@ -908,7 +798,7 @@ def migrate_db():
         last_sent_at TEXT,
         next_send_at TEXT,
         is_active INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT (NOW()::text),
         FOREIGN KEY (agency_id) REFERENCES agencies(id)
     )""")
 
@@ -930,7 +820,7 @@ def migrate_db():
         last_tested_at TEXT,
         test_status TEXT,
         connected_at TEXT,
-        updated_at TEXT DEFAULT (datetime('now'))
+        updated_at TEXT DEFAULT (NOW()::text)
     )""")
 
     cursor.execute("""CREATE TABLE IF NOT EXISTS payment_routing (
@@ -941,7 +831,7 @@ def migrate_db():
         fallback_provider TEXT,
         is_enabled INTEGER DEFAULT 1,
         description TEXT,
-        updated_at TEXT DEFAULT (datetime('now'))
+        updated_at TEXT DEFAULT (NOW()::text)
     )""")
 
     cursor.execute("""CREATE TABLE IF NOT EXISTS payment_transactions (
@@ -958,13 +848,14 @@ def migrate_db():
         provider_session_url TEXT,
         error_message TEXT,
         metadata_json TEXT DEFAULT '{}',
-        created_at TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT (NOW()::text),
         completed_at TEXT,
         FOREIGN KEY (agency_id) REFERENCES agencies(id)
     )""")
 
     # Seed default payment routing if empty
-    routing_count = cursor.execute("SELECT COUNT(*) FROM payment_routing").fetchone()[0]
+    routing_cursor.execute("SELECT COUNT(*) AS cnt FROM payment_routing")
+    count = cursor.fetchone()["cnt"]
     if routing_count == 0:
         from app.utils.auth import generate_id as _gen_id
         default_routes = [
@@ -977,18 +868,19 @@ def migrate_db():
         for ptype, label, desc in default_routes:
             cursor.execute(
                 """INSERT INTO payment_routing (id, payment_type, label, description)
-                   VALUES (?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s)""",
                 (_gen_id(), ptype, label, desc),
             )
 
     # Seed default provider entries if empty
-    ppc_count = cursor.execute("SELECT COUNT(*) FROM payment_provider_config").fetchone()[0]
+    ppc_cursor.execute("SELECT COUNT(*) AS cnt FROM payment_provider_config")
+    count = cursor.fetchone()["cnt"]
     if ppc_count == 0:
         from app.utils.auth import generate_id as _gen_id2
         for provider, name in [("stripe", "Stripe"), ("gocardless", "GoCardless")]:
             cursor.execute(
                 """INSERT INTO payment_provider_config (id, provider, display_name)
-                   VALUES (?, ?, ?)""",
+                   VALUES (%s, %s, %s)""",
                 (_gen_id2(), provider, name),
             )
 
@@ -1001,7 +893,7 @@ def migrate_db():
         api_key TEXT,
         api_secret TEXT,
         environment TEXT DEFAULT 'production',
-        updated_at TEXT DEFAULT (datetime('now'))
+        updated_at TEXT DEFAULT (NOW()::text)
     )""")
 
     cursor.execute("""CREATE TABLE IF NOT EXISTS trustid_checks (
@@ -1023,15 +915,16 @@ def migrate_db():
         admin_notes TEXT,
         notes TEXT,
         raw_response TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT (NOW()::text),
+        updated_at TEXT DEFAULT (NOW()::text),
         completed_at TEXT,
         FOREIGN KEY (candidate_id) REFERENCES candidates(id)
     )""")
 
     # Seed default TrustID config if empty
     try:
-        tid_count = cursor.execute("SELECT COUNT(*) FROM trustid_config").fetchone()[0]
+        tid_cursor.execute("SELECT COUNT(*) AS cnt FROM trustid_config")
+    count = cursor.fetchone()["cnt"]
     except Exception:
         tid_count = 0
     if tid_count == 0:
@@ -1043,7 +936,7 @@ def migrate_db():
         ]:
             cursor.execute(
                 """INSERT INTO trustid_config (id, check_type, label, submission_mode)
-                   VALUES (?, ?, ?, 'manual')""",
+                   VALUES (%s, %s, %s, 'manual')""",
                 (_tid_gen(), ct, label),
             )
 
@@ -1059,11 +952,12 @@ def migrate_db():
         provider TEXT DEFAULT 'console',
         status TEXT DEFAULT 'pending',
         provider_response TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT (NOW()::text)
     )""")
 
     # Seed default admin user if admin_users table is empty
-    admin_count = cursor.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0]
+    cursor.execute("SELECT COUNT(*) AS cnt FROM admin_users")
+    admin_count = cursor.fetchone()["cnt"]
     if admin_count == 0:
         import os
         from app.utils.auth import generate_id, hash_password
@@ -1071,13 +965,13 @@ def migrate_db():
         admin_pw = os.environ.get("ADMIN_PASSWORD", "Password123!")
         cursor.execute(
             """INSERT INTO admin_users (id, email, password_hash, display_name, role)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (generate_id(), admin_email, hash_password(admin_pw),
              "System Administrator", "super_admin"),
         )
 
     conn.commit()
-    conn.close()
+    _return_connection(conn)
 
 
 def init_db():
@@ -1085,7 +979,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.executescript("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS candidates (
             id TEXT PRIMARY KEY,
             email TEXT UNIQUE NOT NULL,
@@ -1105,8 +999,8 @@ def init_db():
             status TEXT DEFAULT 'pending',
             compliance_score REAL DEFAULT 0.0,
             compliance_status TEXT DEFAULT 'incomplete',
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS agencies (
@@ -1118,13 +1012,13 @@ def init_db():
             phone TEXT,
             plan TEXT DEFAULT 'standard',
             monthly_fee REAL DEFAULT 300.0,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS agency_candidates (
             agency_id TEXT NOT NULL,
             candidate_id TEXT NOT NULL,
-            assigned_at TEXT DEFAULT (datetime('now')),
+            assigned_at TEXT DEFAULT (NOW()::text),
             employment_status TEXT DEFAULT 'vetting',
             employment_status_updated_at TEXT,
             PRIMARY KEY (agency_id, candidate_id),
@@ -1144,7 +1038,7 @@ def init_db():
             address_verified INTEGER DEFAULT 0,
             result TEXT,
             details TEXT,
-            started_at TEXT DEFAULT (datetime('now')),
+            started_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -1165,7 +1059,7 @@ def init_db():
             verified INTEGER DEFAULT 0,
             result TEXT,
             details TEXT,
-            checked_at TEXT DEFAULT (datetime('now')),
+            checked_at TEXT DEFAULT (NOW()::text),
             next_check_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -1183,7 +1077,7 @@ def init_db():
             details TEXT,
             update_service_registered INTEGER DEFAULT 0,
             next_renewal TEXT,
-            submitted_at TEXT DEFAULT (datetime('now')),
+            submitted_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -1201,7 +1095,7 @@ def init_db():
             ai_summary TEXT,
             employment_entries TEXT,
             status TEXT DEFAULT 'pending',
-            analysed_at TEXT DEFAULT (datetime('now')),
+            analysed_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
 
@@ -1214,7 +1108,7 @@ def init_db():
             is_active INTEGER,
             sanctions TEXT,
             conditions TEXT,
-            last_checked TEXT DEFAULT (datetime('now')),
+            last_checked TEXT DEFAULT (NOW()::text),
             next_check TEXT,
             result TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
@@ -1237,7 +1131,7 @@ def init_db():
             ip_address TEXT,
             domain_verified INTEGER DEFAULT 0,
             reminder_count INTEGER DEFAULT 0,
-            sent_at TEXT DEFAULT (datetime('now')),
+            sent_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -1257,7 +1151,7 @@ def init_db():
             training_compliant INTEGER DEFAULT 0,
             flags TEXT,
             audit_log TEXT,
-            last_evaluated TEXT DEFAULT (datetime('now')),
+            last_evaluated TEXT DEFAULT (NOW()::text),
             cqc_ready INTEGER DEFAULT 0,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -1271,7 +1165,7 @@ def init_db():
             details TEXT,
             is_read INTEGER DEFAULT 0,
             is_resolved INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             resolved_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -1283,7 +1177,7 @@ def init_db():
             payload TEXT,
             status TEXT DEFAULT 'received',
             processed_at TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS audit_logs (
@@ -1293,7 +1187,7 @@ def init_db():
             action TEXT NOT NULL,
             actor TEXT,
             details TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS employment_history (
@@ -1311,7 +1205,7 @@ def init_db():
             verifier_email TEXT,
             verifier_job_title TEXT,
             source TEXT DEFAULT 'cv_extracted',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
 
@@ -1333,7 +1227,7 @@ def init_db():
             ip_address TEXT,
             domain_verified INTEGER DEFAULT 0,
             reminder_count INTEGER DEFAULT 0,
-            sent_at TEXT DEFAULT (datetime('now')),
+            sent_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id),
             FOREIGN KEY (employment_id) REFERENCES employment_history(id)
@@ -1346,7 +1240,7 @@ def init_db():
             invite_code TEXT UNIQUE NOT NULL,
             status TEXT DEFAULT 'pending',
             candidate_id TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             accepted_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
@@ -1358,7 +1252,7 @@ def init_db():
             label TEXT NOT NULL,
             cost_price REAL DEFAULT 0.0,
             sell_price REAL DEFAULT 0.0,
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS invoices (
@@ -1370,7 +1264,7 @@ def init_db():
             cost_amount REAL DEFAULT 0.0,
             sell_amount REAL DEFAULT 0.0,
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             paid_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
@@ -1384,7 +1278,7 @@ def init_db():
             notification_type TEXT,
             related_id TEXT,
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS training_certificates (
@@ -1398,7 +1292,7 @@ def init_db():
             certificate_ref TEXT,
             file_name TEXT,
             status TEXT DEFAULT 'valid',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             updated_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -1413,7 +1307,7 @@ def init_db():
             is_resolved INTEGER DEFAULT 0,
             resolved_by TEXT,
             resolved_at TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
 
@@ -1421,7 +1315,7 @@ def init_db():
             id TEXT PRIMARY KEY,
             setting_key TEXT UNIQUE NOT NULL,
             setting_value INTEGER NOT NULL,
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS agency_subscriptions (
@@ -1441,7 +1335,7 @@ def init_db():
             current_period_end TEXT,
             next_billing_date TEXT,
             cancelled_at TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
 
@@ -1459,7 +1353,7 @@ def init_db():
             submitted_at TEXT,
             processing_started_at TEXT,
             processing_completed_at TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
 
@@ -1470,7 +1364,7 @@ def init_db():
             section TEXT NOT NULL,
             data TEXT NOT NULL,
             completed INTEGER DEFAULT 0,
-            updated_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (submission_id) REFERENCES candidate_submissions(id)
         );
 
@@ -1496,7 +1390,7 @@ def init_db():
             token TEXT UNIQUE NOT NULL,
             status TEXT DEFAULT 'pending',
             submission_id TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
@@ -1526,7 +1420,7 @@ def init_db():
             label TEXT NOT NULL,
             credit_value REAL DEFAULT 1.0,
             third_party_cost REAL DEFAULT 0,
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS imposter_declarations (
@@ -1556,7 +1450,7 @@ def init_db():
             is_overage INTEGER DEFAULT 0,
             is_rollover INTEGER DEFAULT 0,
             description TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
 
@@ -1567,7 +1461,7 @@ def init_db():
             requested_by TEXT NOT NULL,
             reason TEXT NOT NULL,
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -1582,7 +1476,7 @@ def init_db():
             mitigations TEXT,
             status TEXT DEFAULT 'draft',
             created_by TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             updated_at TEXT
         );
 
@@ -1593,7 +1487,7 @@ def init_db():
             legal_basis TEXT NOT NULL,
             description TEXT,
             auto_delete INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             updated_at TEXT
         );
 
@@ -1608,7 +1502,7 @@ def init_db():
             is_active INTEGER DEFAULT 1,
             last_used_at TEXT,
             expires_at TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
 
@@ -1622,7 +1516,7 @@ def init_db():
             is_active INTEGER DEFAULT 1,
             failure_count INTEGER DEFAULT 0,
             last_triggered_at TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
 
@@ -1637,7 +1531,7 @@ def init_db():
             attempt INTEGER DEFAULT 1,
             status TEXT DEFAULT 'pending',
             next_retry_at TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             delivered_at TEXT,
             FOREIGN KEY (subscription_id) REFERENCES webhook_subscriptions(id)
         );
@@ -1650,7 +1544,7 @@ def init_db():
             status TEXT DEFAULT 'pending',
             result TEXT,
             error TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             started_at TEXT,
             completed_at TEXT
         );
@@ -1668,7 +1562,7 @@ def init_db():
             metadata TEXT,
             is_read INTEGER DEFAULT 0,
             read_at TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
         );
 
         -- Agency Sub-Accounts
@@ -1683,7 +1577,7 @@ def init_db():
             industry_template_id TEXT,
             is_active INTEGER DEFAULT 1,
             last_login_at TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
 
@@ -1696,7 +1590,7 @@ def init_db():
             compliance_threshold REAL DEFAULT 95.0,
             is_default INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             updated_at TEXT
         );
 
@@ -1727,7 +1621,7 @@ def init_db():
             completed_at TEXT,
             results_count INTEGER DEFAULT 0,
             error_message TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
         );
 
         -- Lead Generation: Leads
@@ -1752,8 +1646,8 @@ def init_db():
             extra TEXT DEFAULT '{}',
             status TEXT DEFAULT 'new',
             notes TEXT,
-            scraped_at TEXT DEFAULT (datetime('now')),
-            created_at TEXT DEFAULT (datetime('now')),
+            scraped_at TEXT DEFAULT (NOW()::text),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (scrape_job_id) REFERENCES scrape_jobs(id)
         );
 
@@ -1771,7 +1665,7 @@ def init_db():
             sanctions TEXT DEFAULT '[]',
             conditions TEXT DEFAULT '[]',
             raw_data TEXT DEFAULT '{}',
-            scraped_at TEXT DEFAULT (datetime('now')),
+            scraped_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
 
@@ -1784,7 +1678,7 @@ def init_db():
             custom_per_worker_price REAL,
             custom_monthly_checks INTEGER,
             is_active INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
             UNIQUE(tier_key, industry_template_id)
         );
@@ -1799,7 +1693,7 @@ def init_db():
             third_party_cost REAL DEFAULT 0,
             sell_price REAL DEFAULT 0,
             is_active INTEGER DEFAULT 1,
-            updated_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
             UNIQUE(industry_template_id, check_type)
         );
@@ -1813,7 +1707,7 @@ def init_db():
             api_key TEXT,
             api_secret TEXT,
             environment TEXT DEFAULT 'production',
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (NOW()::text)
         );
 
         -- TrustID Checks (individual check submissions)
@@ -1836,12 +1730,12 @@ def init_db():
             admin_notes TEXT,
             notes TEXT,
             raw_response TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
     """)
 
     conn.commit()
-    conn.close()
+    _return_connection(conn)

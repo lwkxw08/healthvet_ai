@@ -282,7 +282,7 @@ def store_document_record(
                (id, owner_id, owner_type, agency_id, candidate_id, file_name, content_type,
                 file_size, storage_key, category, thumbnail_key, checksum_sha256,
                 virus_scan_status, retention_expires_at, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (doc_id, owner_id, owner_type, agency_id, candidate_id, file_name,
              content_type, file_size, storage_key, cat, thumbnail_key, checksum,
              "pending", retention, now, now),
@@ -299,7 +299,7 @@ def store_document_record(
 def get_document(doc_id: str) -> dict | None:
     _ensure_table()
     with get_db() as db:
-        row = db.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
+        row = db.execute("SELECT * FROM documents WHERE id=%s", (doc_id,)).fetchone()
         return dict(row) if row else None
 
 
@@ -311,15 +311,15 @@ def list_documents(owner_id: str | None = None, candidate_id: str | None = None,
         clauses = []
         params: list = []
         if owner_id:
-            clauses.append("owner_id=?"); params.append(owner_id)
+            clauses.append("owner_id=%s"); params.append(owner_id)
         if candidate_id:
-            clauses.append("candidate_id=?"); params.append(candidate_id)
+            clauses.append("candidate_id=%s"); params.append(candidate_id)
         if agency_id:
-            clauses.append("agency_id=?"); params.append(agency_id)
+            clauses.append("agency_id=%s"); params.append(agency_id)
         if category:
-            clauses.append("category=?"); params.append(category)
+            clauses.append("category=%s"); params.append(category)
         where = " AND ".join(clauses) if clauses else "1=1"
-        rows = db.execute(f"SELECT * FROM documents WHERE {where} ORDER BY created_at DESC LIMIT ?", (*params, limit)).fetchall()
+        rows = db.execute(f"SELECT * FROM documents WHERE {where} ORDER BY created_at DESC LIMIT %s", (*params, limit)).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -333,7 +333,7 @@ def delete_document(doc_id: str) -> bool:
     if doc.get("thumbnail_key"):
         storage.delete(doc["thumbnail_key"])
     with get_db() as db:
-        db.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+        db.execute("DELETE FROM documents WHERE id=%s", (doc_id,))
     return True
 
 
@@ -341,7 +341,7 @@ def update_virus_scan(doc_id: str, status: str):
     _ensure_table()
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        db.execute("UPDATE documents SET virus_scan_status=?, virus_scan_at=?, updated_at=? WHERE id=?",
+        db.execute("UPDATE documents SET virus_scan_status=%s, virus_scan_at=%s, updated_at=%s WHERE id=%s",
                     (status, now, now, doc_id))
 
 
@@ -352,7 +352,7 @@ def enforce_retention_policy() -> int:
     storage = get_storage_backend()
     with get_db() as db:
         expired = db.execute(
-            "SELECT id, storage_key, thumbnail_key FROM documents WHERE retention_expires_at < ?", (now,)
+            "SELECT id, storage_key, thumbnail_key FROM documents WHERE retention_expires_at < %s", (now,)
         ).fetchall()
         count = 0
         for row in expired:
@@ -360,7 +360,7 @@ def enforce_retention_policy() -> int:
                 storage.delete(row["storage_key"])
                 if row["thumbnail_key"]:
                     storage.delete(row["thumbnail_key"])
-                db.execute("DELETE FROM documents WHERE id=?", (row["id"],))
+                db.execute("DELETE FROM documents WHERE id=%s", (row["id"],))
                 count += 1
             except Exception:
                 pass

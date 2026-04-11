@@ -84,7 +84,7 @@ async def request_data_export(
 
     with get_db() as db:
         # Personal data
-        candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
         c = dict(candidate)
@@ -93,63 +93,63 @@ async def request_data_export(
 
         # Consent logs
         consents = db.execute(
-            "SELECT * FROM consent_logs WHERE candidate_id=? ORDER BY timestamp DESC",
+            "SELECT * FROM consent_logs WHERE candidate_id=%s ORDER BY timestamp DESC",
             (candidate_id,),
         ).fetchall()
         export["sections"]["consent_history"] = [dict(r) for r in consents]
 
         # Identity checks
         identity = db.execute(
-            "SELECT * FROM identity_checks WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM identity_checks WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["identity_checks"] = [dict(r) for r in identity]
 
         # Right to work
         rtw = db.execute(
-            "SELECT * FROM right_to_work_checks WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM right_to_work_checks WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["right_to_work_checks"] = [dict(r) for r in rtw]
 
         # DBS checks
         dbs = db.execute(
-            "SELECT * FROM dbs_checks WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM dbs_checks WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["dbs_checks"] = [dict(r) for r in dbs]
 
         # CV analyses
         cv = db.execute(
-            "SELECT * FROM cv_analyses WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM cv_analyses WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["cv_analyses"] = [dict(r) for r in cv]
 
         # Registration checks
         reg = db.execute(
-            "SELECT * FROM registration_checks WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM registration_checks WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["registration_checks"] = [dict(r) for r in reg]
 
         # References
         refs = db.execute(
-            "SELECT * FROM references_ WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM references_ WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["references"] = [dict(r) for r in refs]
 
         # Employment history
         emp = db.execute(
-            "SELECT * FROM employment_history WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["employment_history"] = [dict(r) for r in emp]
 
         # Employment verifications
         emp_v = db.execute(
-            "SELECT * FROM employment_verifications WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["employment_verifications"] = [dict(r) for r in emp_v]
 
         # Training certificates
         try:
             training = db.execute(
-                "SELECT * FROM training_certificates WHERE candidate_id=?", (candidate_id,),
+                "SELECT * FROM training_certificates WHERE candidate_id=%s", (candidate_id,),
             ).fetchall()
             export["sections"]["training_certificates"] = [dict(r) for r in training]
         except Exception:
@@ -157,32 +157,32 @@ async def request_data_export(
 
         # Compliance records
         comp = db.execute(
-            "SELECT * FROM compliance_records WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["compliance_records"] = [dict(r) for r in comp]
 
         # Submissions
         subs = db.execute(
-            "SELECT * FROM candidate_submissions WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM candidate_submissions WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["submissions"] = [dict(r) for r in subs]
 
         # Imposter declarations
         imp = db.execute(
-            "SELECT * FROM imposter_declarations WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM imposter_declarations WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["imposter_declarations"] = [dict(r) for r in imp]
 
         # Monitoring alerts
         alerts = db.execute(
-            "SELECT * FROM monitoring_alerts WHERE candidate_id=?", (candidate_id,),
+            "SELECT * FROM monitoring_alerts WHERE candidate_id=%s", (candidate_id,),
         ).fetchall()
         export["sections"]["monitoring_alerts"] = [dict(r) for r in alerts]
 
         # Audit log for this export
         db.execute(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-               VALUES (?, 'candidate', ?, 'gdpr_data_export', ?, ?, ?)""",
+               VALUES (%s, 'candidate', %s, 'gdpr_data_export', %s, %s, %s)""",
             (generate_id(), candidate_id, current_user.get("sub", "unknown"),
              json.dumps({"reason": data.reason, "sections_exported": list(export["sections"].keys())}),
              now),
@@ -216,7 +216,7 @@ async def request_erasure(
     erasure_id = generate_id()
 
     with get_db() as db:
-        candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -224,7 +224,7 @@ async def request_erasure(
         db.execute(
             """INSERT INTO gdpr_erasure_requests
                (id, candidate_id, requested_by, reason, status, created_at)
-               VALUES (?, ?, ?, ?, 'processing', ?)""",
+               VALUES (%s, %s, %s, %s, 'processing', %s)""",
             (erasure_id, candidate_id, current_user.get("sub", "unknown"), data.reason, now),
         )
 
@@ -232,12 +232,12 @@ async def request_erasure(
         anon_email = f"erased-{candidate_id[:8]}@anonymised.healthvet"
         db.execute(
             """UPDATE candidates SET
-               email=?, first_name='[ERASED]', last_name='[ERASED]',
+               email=%s, first_name='[ERASED]', last_name='[ERASED]',
                phone=NULL, date_of_birth=NULL,
                address_line1=NULL, address_line2=NULL, city=NULL, postcode=NULL,
                profession=NULL, registration_number=NULL, registration_body=NULL,
-               password_hash='[ERASED]', status='erased', updated_at=?
-               WHERE id=?""",
+               password_hash='[ERASED]', status='erased', updated_at=%s
+               WHERE id=%s""",
             (anon_email, now, candidate_id),
         )
 
@@ -247,7 +247,7 @@ async def request_erasure(
                referee_name='[ERASED]', referee_email='[ERASED]',
                referee_phone=NULL, referee_organisation='[ERASED]',
                responses=NULL, ip_address=NULL
-               WHERE candidate_id=?""",
+               WHERE candidate_id=%s""",
             (candidate_id,),
         )
 
@@ -256,19 +256,19 @@ async def request_erasure(
             """UPDATE employment_verifications SET
                verifier_name='[ERASED]', verifier_email='[ERASED]',
                additional_comments=NULL, ip_address=NULL
-               WHERE candidate_id=?""",
+               WHERE candidate_id=%s""",
             (candidate_id,),
         )
 
         # Clear CV text (keep fraud scores for regulatory compliance)
         db.execute(
-            "UPDATE cv_analyses SET cv_text=NULL, ai_summary=NULL WHERE candidate_id=?",
+            "UPDATE cv_analyses SET cv_text=NULL, ai_summary=NULL WHERE candidate_id=%s",
             (candidate_id,),
         )
 
         # Remove draft data
         db.execute(
-            "DELETE FROM candidate_draft_data WHERE candidate_id=?",
+            "DELETE FROM candidate_draft_data WHERE candidate_id=%s",
             (candidate_id,),
         )
 
@@ -288,20 +288,20 @@ async def request_erasure(
                     except Exception as e:
                         logger.warning("Failed to delete storage file %s: %s", doc.get("storage_key"), e)
                 # Remove document metadata records
-                db.execute("DELETE FROM documents WHERE candidate_id=?", (candidate_id,))
+                db.execute("DELETE FROM documents WHERE candidate_id=%s", (candidate_id,))
         except Exception as e:
             logger.warning("Document cleanup during erasure failed: %s", e)
 
         # Mark erasure as completed
         db.execute(
-            "UPDATE gdpr_erasure_requests SET status='completed', completed_at=? WHERE id=?",
+            "UPDATE gdpr_erasure_requests SET status='completed', completed_at=%s WHERE id=%s",
             (now, erasure_id),
         )
 
         # Audit log
         db.execute(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-               VALUES (?, 'candidate', ?, 'gdpr_erasure_completed', ?, ?, ?)""",
+               VALUES (%s, 'candidate', %s, 'gdpr_erasure_completed', %s, %s, %s)""",
             (generate_id(), candidate_id, current_user.get("sub", "unknown"),
              json.dumps({"reason": data.reason, "erasure_id": erasure_id}), now),
         )
@@ -338,7 +338,7 @@ async def record_consent(
             """INSERT INTO consent_logs
                (id, candidate_id, consent_type, consent_given, ip_address, user_agent,
                 privacy_policy_version, terms_version, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (consent_id, candidate_id, data.consent_type, int(data.consent_given),
              ip, user_agent, data.privacy_policy_version, data.terms_version, now),
         )
@@ -358,7 +358,7 @@ async def get_consent_history(
 
     with get_db() as db:
         rows = db.execute(
-            "SELECT * FROM consent_logs WHERE candidate_id=? ORDER BY timestamp DESC",
+            "SELECT * FROM consent_logs WHERE candidate_id=%s ORDER BY timestamp DESC",
             (candidate_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -378,7 +378,7 @@ async def withdraw_consent(
 
     with get_db() as db:
         existing = db.execute(
-            "SELECT * FROM consent_logs WHERE id=? AND candidate_id=?",
+            "SELECT * FROM consent_logs WHERE id=%s AND candidate_id=%s",
             (consent_id, candidate_id),
         ).fetchone()
         if not existing:
@@ -390,7 +390,7 @@ async def withdraw_consent(
             """INSERT INTO consent_logs
                (id, candidate_id, consent_type, consent_given, ip_address,
                 privacy_policy_version, terms_version, timestamp)
-               VALUES (?, ?, ?, 0, 'withdrawal', ?, ?, ?)""",
+               VALUES (%s, %s, %s, 0, 'withdrawal', %s, %s, %s)""",
             (withdrawal_id, candidate_id, dict(existing)["consent_type"],
              dict(existing).get("privacy_policy_version", "1.0"),
              dict(existing).get("terms_version", "1.0"), now),
@@ -420,7 +420,7 @@ async def get_consent_summary(
         for consent_type in required_consent_types:
             row = db.execute(
                 """SELECT * FROM consent_logs
-                   WHERE candidate_id=? AND consent_type=?
+                   WHERE candidate_id=%s AND consent_type=%s
                    ORDER BY timestamp DESC LIMIT 1""",
                 (candidate_id, consent_type),
             ).fetchone()
@@ -467,7 +467,7 @@ async def verify_consent(
     with get_db() as db:
         row = db.execute(
             """SELECT consent_given, timestamp FROM consent_logs
-               WHERE candidate_id=? AND consent_type=?
+               WHERE candidate_id=%s AND consent_type=%s
                ORDER BY timestamp DESC LIMIT 1""",
             (candidate_id, consent_type),
         ).fetchone()
@@ -515,7 +515,7 @@ async def create_dpia(
             """INSERT INTO gdpr_dpias
                (id, title, description, data_types, processing_purpose,
                 risk_level, mitigations, status, created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (dpia_id, data.title, data.description, data.data_types,
              data.processing_purpose, data.risk_level, data.mitigations,
              data.status, current_user.get("sub", "admin"), now, now),
@@ -534,15 +534,15 @@ async def update_dpia(
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        existing = db.execute("SELECT id FROM gdpr_dpias WHERE id=?", (dpia_id,)).fetchone()
+        existing = db.execute("SELECT id FROM gdpr_dpias WHERE id=%s", (dpia_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="DPIA not found")
 
         db.execute(
             """UPDATE gdpr_dpias SET
-               title=?, description=?, data_types=?, processing_purpose=?,
-               risk_level=?, mitigations=?, status=?, updated_at=?
-               WHERE id=?""",
+               title=%s, description=%s, data_types=%s, processing_purpose=%s,
+               risk_level=%s, mitigations=%s, status=%s, updated_at=%s
+               WHERE id=%s""",
             (data.title, data.description, data.data_types, data.processing_purpose,
              data.risk_level, data.mitigations, data.status, now, dpia_id),
         )
@@ -573,7 +573,7 @@ async def create_retention_policy(
 
     with get_db() as db:
         existing = db.execute(
-            "SELECT id FROM gdpr_retention_policies WHERE data_category=?",
+            "SELECT id FROM gdpr_retention_policies WHERE data_category=%s",
             (data.data_category,),
         ).fetchone()
         if existing:
@@ -583,7 +583,7 @@ async def create_retention_policy(
             """INSERT INTO gdpr_retention_policies
                (id, data_category, retention_period_days, legal_basis,
                 description, auto_delete, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (policy_id, data.data_category, data.retention_period_days,
              data.legal_basis, data.description, int(data.auto_delete), now),
         )
@@ -601,15 +601,15 @@ async def update_retention_policy(
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        existing = db.execute("SELECT id FROM gdpr_retention_policies WHERE id=?", (policy_id,)).fetchone()
+        existing = db.execute("SELECT id FROM gdpr_retention_policies WHERE id=%s", (policy_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Retention policy not found")
 
         db.execute(
             """UPDATE gdpr_retention_policies SET
-               data_category=?, retention_period_days=?, legal_basis=?,
-               description=?, auto_delete=?, updated_at=?
-               WHERE id=?""",
+               data_category=%s, retention_period_days=%s, legal_basis=%s,
+               description=%s, auto_delete=%s, updated_at=%s
+               WHERE id=%s""",
             (data.data_category, data.retention_period_days, data.legal_basis,
              data.description, int(data.auto_delete), now, policy_id),
         )
@@ -624,10 +624,10 @@ async def delete_retention_policy(
 ):
     """Delete a retention policy."""
     with get_db() as db:
-        existing = db.execute("SELECT id FROM gdpr_retention_policies WHERE id=?", (policy_id,)).fetchone()
+        existing = db.execute("SELECT id FROM gdpr_retention_policies WHERE id=%s", (policy_id,)).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Retention policy not found")
-        db.execute("DELETE FROM gdpr_retention_policies WHERE id=?", (policy_id,))
+        db.execute("DELETE FROM gdpr_retention_policies WHERE id=%s", (policy_id,))
     return {"deleted": True}
 
 
@@ -697,7 +697,7 @@ async def download_data_export(
         raise HTTPException(status_code=403, detail="Agencies cannot export candidate data directly")
 
     with get_db() as db:
-        candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
         c = dict(candidate)
@@ -727,31 +727,31 @@ async def download_data_export(
             writer.writerow([])
 
         _write_section("Consent History",
-                       "SELECT * FROM consent_logs WHERE candidate_id=? ORDER BY timestamp DESC", (candidate_id,))
+                       "SELECT * FROM consent_logs WHERE candidate_id=%s ORDER BY timestamp DESC", (candidate_id,))
         _write_section("Identity Checks",
-                       "SELECT * FROM identity_checks WHERE candidate_id=?", (candidate_id,))
+                       "SELECT * FROM identity_checks WHERE candidate_id=%s", (candidate_id,))
         _write_section("Right to Work Checks",
-                       "SELECT * FROM right_to_work_checks WHERE candidate_id=?", (candidate_id,))
+                       "SELECT * FROM right_to_work_checks WHERE candidate_id=%s", (candidate_id,))
         _write_section("DBS Checks",
-                       "SELECT * FROM dbs_checks WHERE candidate_id=?", (candidate_id,))
+                       "SELECT * FROM dbs_checks WHERE candidate_id=%s", (candidate_id,))
         _write_section("CV Analyses",
-                       "SELECT * FROM cv_analyses WHERE candidate_id=?", (candidate_id,))
+                       "SELECT * FROM cv_analyses WHERE candidate_id=%s", (candidate_id,))
         _write_section("Registration Checks",
-                       "SELECT * FROM registration_checks WHERE candidate_id=?", (candidate_id,))
+                       "SELECT * FROM registration_checks WHERE candidate_id=%s", (candidate_id,))
         _write_section("References",
-                       "SELECT * FROM references_ WHERE candidate_id=?", (candidate_id,))
+                       "SELECT * FROM references_ WHERE candidate_id=%s", (candidate_id,))
         _write_section("Employment History",
-                       "SELECT * FROM employment_history WHERE candidate_id=?", (candidate_id,))
+                       "SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,))
         _write_section("Employment Verifications",
-                       "SELECT * FROM employment_verifications WHERE candidate_id=?", (candidate_id,))
+                       "SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,))
         _write_section("Compliance Records",
-                       "SELECT * FROM compliance_records WHERE candidate_id=?", (candidate_id,))
+                       "SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,))
 
         # Audit log
         now = datetime.now(timezone.utc).isoformat()
         db.execute(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-               VALUES (?, 'candidate', ?, 'gdpr_csv_download', ?, ?, ?)""",
+               VALUES (%s, 'candidate', %s, 'gdpr_csv_download', %s, %s, %s)""",
             (generate_id(), candidate_id, current_user.get("sub", "unknown"),
              json.dumps({"reason": data.reason, "format": "csv"}), now),
         )
@@ -782,7 +782,7 @@ async def data_portability_package(
     zip_buffer = io.BytesIO()
 
     with get_db() as db:
-        candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
         c = dict(candidate)
@@ -795,32 +795,32 @@ async def data_portability_package(
         sections = {
             "personal_data": c,
             "consent_history": _fetch_section(
-                "SELECT * FROM consent_logs WHERE candidate_id=? ORDER BY timestamp DESC", (candidate_id,)),
+                "SELECT * FROM consent_logs WHERE candidate_id=%s ORDER BY timestamp DESC", (candidate_id,)),
             "identity_checks": _fetch_section(
-                "SELECT * FROM identity_checks WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM identity_checks WHERE candidate_id=%s", (candidate_id,)),
             "right_to_work_checks": _fetch_section(
-                "SELECT * FROM right_to_work_checks WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM right_to_work_checks WHERE candidate_id=%s", (candidate_id,)),
             "dbs_checks": _fetch_section(
-                "SELECT * FROM dbs_checks WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM dbs_checks WHERE candidate_id=%s", (candidate_id,)),
             "cv_analyses": _fetch_section(
-                "SELECT * FROM cv_analyses WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM cv_analyses WHERE candidate_id=%s", (candidate_id,)),
             "registration_checks": _fetch_section(
-                "SELECT * FROM registration_checks WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM registration_checks WHERE candidate_id=%s", (candidate_id,)),
             "references": _fetch_section(
-                "SELECT * FROM references_ WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM references_ WHERE candidate_id=%s", (candidate_id,)),
             "employment_history": _fetch_section(
-                "SELECT * FROM employment_history WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,)),
             "employment_verifications": _fetch_section(
-                "SELECT * FROM employment_verifications WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,)),
             "compliance_records": _fetch_section(
-                "SELECT * FROM compliance_records WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,)),
             "submissions": _fetch_section(
-                "SELECT * FROM candidate_submissions WHERE candidate_id=?", (candidate_id,)),
+                "SELECT * FROM candidate_submissions WHERE candidate_id=%s", (candidate_id,)),
         }
 
         # Get documents metadata
         doc_rows = _fetch_section(
-            "SELECT * FROM documents WHERE candidate_id=?", (candidate_id,))
+            "SELECT * FROM documents WHERE candidate_id=%s", (candidate_id,))
         sections["documents_metadata"] = doc_rows
 
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -863,7 +863,7 @@ async def data_portability_package(
         # Audit log
         db.execute(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-               VALUES (?, 'candidate', ?, 'gdpr_portability_package', ?, ?, ?)""",
+               VALUES (%s, 'candidate', %s, 'gdpr_portability_package', %s, %s, %s)""",
             (generate_id(), candidate_id, current_user.get("sub", "unknown"),
              json.dumps({"format": "zip", "sections": list(sections.keys())}), now),
         )

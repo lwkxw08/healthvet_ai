@@ -207,7 +207,7 @@ class FraudDetectionService:
                     ("cv_analyses", "analysed_at"),
                 ]:
                     row = db.execute(
-                        f"SELECT {col} FROM {table} WHERE candidate_id=? AND {col} IS NOT NULL ORDER BY {col} DESC LIMIT 1",
+                        f"SELECT {col} FROM {table} WHERE candidate_id=%s AND {col} IS NOT NULL ORDER BY {col} DESC LIMIT 1",
                         (cid,),
                     ).fetchone()
                     if row:
@@ -299,7 +299,7 @@ class FraudDetectionService:
         with get_db() as db:
             if candidate_id:
                 rows = db.execute(
-                    """SELECT * FROM fraud_flags WHERE candidate_id=?
+                    """SELECT * FROM fraud_flags WHERE candidate_id=%s
                        ORDER BY created_at DESC""",
                     (candidate_id,),
                 ).fetchall()
@@ -339,7 +339,7 @@ def _create_fraud_alert(db, flag: dict, timestamp: str):
     # Check if similar flag already exists
     existing = db.execute(
         """SELECT id FROM fraud_flags
-           WHERE flag_type=? AND candidate_id=? AND is_resolved=0""",
+           WHERE flag_type=%s AND candidate_id=%s AND is_resolved=0""",
         (flag["type"], candidate_id),
     ).fetchone()
 
@@ -347,7 +347,7 @@ def _create_fraud_alert(db, flag: dict, timestamp: str):
         db.execute(
             """INSERT INTO fraud_flags
                (id, candidate_id, flag_type, severity, message, details, is_resolved, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 0, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 0, %s)""",
             (generate_id(), candidate_id, flag["type"], flag["severity"],
              flag["message"], json.dumps(flag), timestamp),
         )

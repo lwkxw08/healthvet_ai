@@ -25,7 +25,7 @@ def detect_anomalies(agency_id: Optional[str] = None) -> dict:
                 FROM employment_verifications ev
                 LEFT JOIN candidates c ON c.id = ev.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = ev.candidate_id
-                WHERE ac.agency_id = ?
+                WHERE ac.agency_id = %s
                 ORDER BY ev.sent_at DESC
             """, (agency_id,)).fetchall()
         else:
@@ -46,7 +46,7 @@ def detect_anomalies(agency_id: Optional[str] = None) -> dict:
                 FROM references_ r
                 LEFT JOIN candidates c ON c.id = r.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = r.candidate_id
-                WHERE ac.agency_id = ?
+                WHERE ac.agency_id = %s
                 ORDER BY r.created_at DESC
             """, (agency_id,)).fetchall()
         else:
@@ -256,7 +256,7 @@ def detect_anomalies(agency_id: Optional[str] = None) -> dict:
             created_at TEXT NOT NULL
         )""")
         db.execute(
-            "INSERT INTO ai_anomaly_scans (id, agency_id, total_scanned, anomalies_found, high_severity, medium_severity, low_severity, result_json, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO ai_anomaly_scans (id, agency_id, total_scanned, anomalies_found, high_severity, medium_severity, low_severity, result_json, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 scan_id, agency_id,
                 stats["total_verifications_scanned"] + stats["total_references_scanned"],
@@ -284,12 +284,12 @@ def get_anomaly_history(agency_id: Optional[str] = None, limit: int = 20) -> lis
         try:
             if agency_id:
                 rows = db.execute(
-                    "SELECT id, agency_id, total_scanned, anomalies_found, high_severity, medium_severity, low_severity, created_at FROM ai_anomaly_scans WHERE agency_id=? ORDER BY created_at DESC LIMIT ?",
+                    "SELECT id, agency_id, total_scanned, anomalies_found, high_severity, medium_severity, low_severity, created_at FROM ai_anomaly_scans WHERE agency_id=%s ORDER BY created_at DESC LIMIT %s",
                     (agency_id, limit),
                 ).fetchall()
             else:
                 rows = db.execute(
-                    "SELECT id, agency_id, total_scanned, anomalies_found, high_severity, medium_severity, low_severity, created_at FROM ai_anomaly_scans ORDER BY created_at DESC LIMIT ?",
+                    "SELECT id, agency_id, total_scanned, anomalies_found, high_severity, medium_severity, low_severity, created_at FROM ai_anomaly_scans ORDER BY created_at DESC LIMIT %s",
                     (limit,),
                 ).fetchall()
             return [dict(r) for r in rows]

@@ -15,7 +15,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
     with get_db() as db:
         # Get compliance record
         comp = db.execute(
-            "SELECT * FROM compliance_records WHERE candidate_id=? ORDER BY last_evaluated DESC LIMIT 1",
+            "SELECT * FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
             (candidate_id,),
         ).fetchone()
 
@@ -76,7 +76,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
 
         # Check DBS expiry
         dbs = db.execute(
-            "SELECT next_renewal FROM dbs_checks WHERE candidate_id=? ORDER BY submitted_at DESC LIMIT 1",
+            "SELECT next_renewal FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC LIMIT 1",
             (candidate_id,),
         ).fetchone()
         if dbs and dict(dbs).get("next_renewal"):
@@ -94,7 +94,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
 
         # Check visa expiry
         rtw = db.execute(
-            "SELECT visa_expiry FROM right_to_work_checks WHERE candidate_id=? ORDER BY checked_at DESC LIMIT 1",
+            "SELECT visa_expiry FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC LIMIT 1",
             (candidate_id,),
         ).fetchone()
         if rtw and dict(rtw).get("visa_expiry"):
@@ -112,7 +112,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
 
         # Check training certificate expiries
         training_certs = db.execute(
-            "SELECT certificate_name, expiry_date, status FROM training_certificates WHERE candidate_id=?",
+            "SELECT certificate_name, expiry_date, status FROM training_certificates WHERE candidate_id=%s",
             (candidate_id,),
         ).fetchall()
         for cert in training_certs:
@@ -149,7 +149,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
 
         # Get candidate employment status from agency
         emp_status_row = db.execute(
-            "SELECT employment_status FROM agency_candidates WHERE candidate_id=? LIMIT 1",
+            "SELECT employment_status FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
             (candidate_id,),
         ).fetchone()
         employment_status = dict(emp_status_row)["employment_status"] if emp_status_row else "unknown"
@@ -189,7 +189,7 @@ async def get_agency_readiness_overview(current_user: dict = Depends(get_current
                FROM candidates c
                JOIN agency_candidates ac ON c.id = ac.candidate_id
                LEFT JOIN compliance_records cr ON c.id = cr.candidate_id
-               WHERE ac.agency_id=?
+               WHERE ac.agency_id=%s
                ORDER BY c.last_name, c.first_name""",
             (agency_id,),
         ).fetchall()

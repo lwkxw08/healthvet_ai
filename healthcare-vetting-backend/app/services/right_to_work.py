@@ -73,7 +73,7 @@ class RightToWorkService:
             db.execute(
                 """INSERT INTO right_to_work_checks
                    (id, candidate_id, share_code, verification_method, status, checked_at)
-                   VALUES (?, ?, ?, 'share_code', 'processing', ?)""",
+                   VALUES (%s, %s, %s, 'share_code', 'processing', %s)""",
                 (check_id, candidate_id, share_code, now),
             )
 
@@ -87,9 +87,9 @@ class RightToWorkService:
 
             db.execute(
                 """UPDATE right_to_work_checks SET
-                   status=?, visa_type=?, visa_expiry=?, work_restrictions=?,
-                   verified=?, result=?, details=?, next_check_at=?
-                   WHERE id=?""",
+                   status=%s, visa_type=%s, visa_expiry=%s, work_restrictions=%s,
+                   verified=%s, result=%s, details=%s, next_check_at=%s
+                   WHERE id=%s""",
                 (
                     result["status"],
                     result["visa_type"],
@@ -105,11 +105,11 @@ class RightToWorkService:
 
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'rtw_check', ?, 'completed', 'system', ?, ?)""",
+                   VALUES (%s, 'rtw_check', %s, 'completed', 'system', %s, %s)""",
                 (generate_id(), check_id, json.dumps(result), now),
             )
 
-            row = db.execute("SELECT * FROM right_to_work_checks WHERE id=?", (check_id,)).fetchone()
+            row = db.execute("SELECT * FROM right_to_work_checks WHERE id=%s", (check_id,)).fetchone()
             return dict(row)
 
     @staticmethod
@@ -151,7 +151,7 @@ class RightToWorkService:
                 """INSERT INTO right_to_work_checks
                    (id, candidate_id, verification_method, nationality, document_type,
                     document_reference, ni_number, status, checked_at)
-                   VALUES (?, ?, 'uk_citizen', ?, ?, ?, ?, 'processing', ?)""",
+                   VALUES (%s, %s, 'uk_citizen', %s, %s, %s, %s, 'processing', %s)""",
                 (check_id, candidate_id, nationality, document_type,
                  document_reference, ni_number, now),
             )
@@ -163,9 +163,9 @@ class RightToWorkService:
 
             db.execute(
                 """UPDATE right_to_work_checks SET
-                   status=?, visa_type=?, visa_expiry=?, work_restrictions=?,
-                   verified=?, result=?, details=?
-                   WHERE id=?""",
+                   status=%s, visa_type=%s, visa_expiry=%s, work_restrictions=%s,
+                   verified=%s, result=%s, details=%s
+                   WHERE id=%s""",
                 (
                     result["status"],
                     result["visa_type"],
@@ -180,11 +180,11 @@ class RightToWorkService:
 
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'rtw_check', ?, 'completed', 'system', ?, ?)""",
+                   VALUES (%s, 'rtw_check', %s, 'completed', 'system', %s, %s)""",
                 (generate_id(), check_id, json.dumps(result), now),
             )
 
-            row = db.execute("SELECT * FROM right_to_work_checks WHERE id=?", (check_id,)).fetchone()
+            row = db.execute("SELECT * FROM right_to_work_checks WHERE id=%s", (check_id,)).fetchone()
             return dict(row)
 
     @staticmethod
@@ -269,7 +269,7 @@ class RightToWorkService:
     @staticmethod
     def get_check(check_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM right_to_work_checks WHERE id=?", (check_id,)).fetchone()
+            row = db.execute("SELECT * FROM right_to_work_checks WHERE id=%s", (check_id,)).fetchone()
             if not row:
                 return None
             return dict(row)
@@ -278,7 +278,7 @@ class RightToWorkService:
     def get_checks_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM right_to_work_checks WHERE candidate_id=? ORDER BY checked_at DESC",
+                "SELECT * FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC",
                 (candidate_id,),
             ).fetchall()
             return [dict(r) for r in rows]

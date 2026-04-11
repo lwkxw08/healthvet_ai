@@ -22,23 +22,23 @@ async def get_notifications(
     user_type = current_user["type"]
 
     with get_db() as db:
-        query = "SELECT * FROM in_app_notifications WHERE user_id=? AND user_type=?"
+        query = "SELECT * FROM in_app_notifications WHERE user_id=%s AND user_type=%s"
         params = [user_id, user_type]
 
         if unread_only:
             query += " AND is_read=0"
         if category:
-            query += " AND category=?"
+            query += " AND category=%s"
             params.append(category)
 
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        query += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
         rows = db.execute(query, params).fetchall()
 
         # Get unread count
         unread_count = db.execute(
-            "SELECT COUNT(*) as cnt FROM in_app_notifications WHERE user_id=? AND user_type=? AND is_read=0",
+            "SELECT COUNT(*) as cnt FROM in_app_notifications WHERE user_id=%s AND user_type=%s AND is_read=0",
             (user_id, user_type),
         ).fetchone()
 
@@ -57,7 +57,7 @@ async def get_unread_count(current_user: dict = Depends(get_current_user)):
 
     with get_db() as db:
         row = db.execute(
-            "SELECT COUNT(*) as cnt FROM in_app_notifications WHERE user_id=? AND user_type=? AND is_read=0",
+            "SELECT COUNT(*) as cnt FROM in_app_notifications WHERE user_id=%s AND user_type=%s AND is_read=0",
             (user_id, user_type),
         ).fetchone()
         return {"unread_count": dict(row)["cnt"] if row else 0}
@@ -72,14 +72,14 @@ async def mark_notification_read(notification_id: str, current_user: dict = Depe
 
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM in_app_notifications WHERE id=? AND user_id=? AND user_type=?",
+            "SELECT * FROM in_app_notifications WHERE id=%s AND user_id=%s AND user_type=%s",
             (notification_id, user_id, user_type),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Notification not found")
 
         db.execute(
-            "UPDATE in_app_notifications SET is_read=1, read_at=? WHERE id=?",
+            "UPDATE in_app_notifications SET is_read=1, read_at=%s WHERE id=%s",
             (now, notification_id),
         )
         return {"status": "read"}
@@ -94,7 +94,7 @@ async def mark_all_read(current_user: dict = Depends(get_current_user)):
 
     with get_db() as db:
         db.execute(
-            "UPDATE in_app_notifications SET is_read=1, read_at=? WHERE user_id=? AND user_type=? AND is_read=0",
+            "UPDATE in_app_notifications SET is_read=1, read_at=%s WHERE user_id=%s AND user_type=%s AND is_read=0",
             (now, user_id, user_type),
         )
         return {"status": "all_read"}
@@ -108,13 +108,13 @@ async def delete_notification(notification_id: str, current_user: dict = Depends
 
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM in_app_notifications WHERE id=? AND user_id=? AND user_type=?",
+            "SELECT * FROM in_app_notifications WHERE id=%s AND user_id=%s AND user_type=%s",
             (notification_id, user_id, user_type),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Notification not found")
 
-        db.execute("DELETE FROM in_app_notifications WHERE id=?", (notification_id,))
+        db.execute("DELETE FROM in_app_notifications WHERE id=%s", (notification_id,))
         return {"status": "deleted"}
 
 
@@ -138,7 +138,7 @@ def create_notification(
         db.execute(
             """INSERT INTO in_app_notifications
                (id, user_id, user_type, title, message, category, severity, link, metadata, is_read, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s)""",
             (notif_id, user_id, user_type, title, message, category, severity,
              link, json.dumps(metadata) if metadata else None, now),
         )
@@ -163,7 +163,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
                 """SELECT c.id, c.first_name, c.last_name
                    FROM candidates c
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
-                   WHERE ac.agency_id=?""",
+                   WHERE ac.agency_id=%s""",
                 (user_id,),
             ).fetchall()
 
@@ -173,7 +173,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
 
                 # Check DBS expiry
                 dbs = db.execute(
-                    "SELECT next_renewal FROM dbs_checks WHERE candidate_id=? ORDER BY submitted_at DESC LIMIT 1",
+                    "SELECT next_renewal FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC LIMIT 1",
                     (cd["id"],),
                 ).fetchone()
                 if dbs and dict(dbs).get("next_renewal"):
@@ -195,7 +195,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
 
                 # Check compliance status
                 comp = db.execute(
-                    "SELECT overall_status, score FROM compliance_records WHERE candidate_id=? ORDER BY last_evaluated DESC LIMIT 1",
+                    "SELECT overall_status, score FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
                     (cd["id"],),
                 ).fetchone()
                 if comp:
@@ -219,7 +219,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
 
             # Payment notifications
             pending_invoices = db.execute(
-                "SELECT COUNT(*) as cnt, COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)), 0) as total FROM invoices WHERE agency_id=? AND status='pending'",
+                "SELECT COUNT(*) as cnt, COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)), 0) as total FROM invoices WHERE agency_id=%s AND status='pending'",
                 (user_id,),
             ).fetchone()
             if pending_invoices:
@@ -236,7 +236,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
         elif user_type == "candidate":
             # Check own compliance
             comp = db.execute(
-                "SELECT overall_status, score, flags FROM compliance_records WHERE candidate_id=? ORDER BY last_evaluated DESC LIMIT 1",
+                "SELECT overall_status, score, flags FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
                 (user_id,),
             ).fetchone()
             if comp:

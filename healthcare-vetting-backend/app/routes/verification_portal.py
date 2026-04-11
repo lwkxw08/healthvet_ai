@@ -62,7 +62,7 @@ def _lookup_by_code(code: str) -> tuple:
     with get_db() as db:
         # Try employment_verifications first
         row = db.execute(
-            "SELECT * FROM employment_verifications WHERE verification_code=?",
+            "SELECT * FROM employment_verifications WHERE verification_code=%s",
             (normalized,),
         ).fetchone()
         if row:
@@ -70,7 +70,7 @@ def _lookup_by_code(code: str) -> tuple:
 
         # Try references_
         row = db.execute(
-            "SELECT * FROM references_ WHERE verification_code=?",
+            "SELECT * FROM references_ WHERE verification_code=%s",
             (normalized,),
         ).fetchone()
         if row:
@@ -203,10 +203,10 @@ async def submit_employment_verification(body: EmploymentSubmission, request: Re
     with get_db() as db:
         db.execute(
             """UPDATE employment_verifications SET
-               status=?, job_title_confirmed=?, dates_confirmed=?,
-               reason_for_leaving_confirmed=?, additional_comments=?,
-               fraud_flags=?, ip_address=?, completed_at=?
-               WHERE verification_code=?""",
+               status=%s, job_title_confirmed=%s, dates_confirmed=%s,
+               reason_for_leaving_confirmed=%s, additional_comments=%s,
+               fraud_flags=%s, ip_address=%s, completed_at=%s
+               WHERE verification_code=%s""",
             (
                 status,
                 1 if body.job_title_confirmed else 0,
@@ -223,7 +223,7 @@ async def submit_employment_verification(body: EmploymentSubmission, request: Re
         # Audit log
         db.execute(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-               VALUES (?, 'employment_verification', ?, 'portal_submitted', 'verifier', ?, ?)""",
+               VALUES (%s, 'employment_verification', %s, 'portal_submitted', 'verifier', %s, %s)""",
             (
                 generate_id(), record["id"],
                 json.dumps({
@@ -241,7 +241,7 @@ async def submit_employment_verification(body: EmploymentSubmission, request: Re
             db.execute(
                 """INSERT INTO monitoring_alerts
                    (id, candidate_id, alert_type, severity, message, details, created_at)
-                   VALUES (?, ?, 'employment_verification_fraud', 'high', ?, ?, ?)""",
+                   VALUES (%s, %s, 'employment_verification_fraud', 'high', %s, %s, %s)""",
                 (
                     generate_id(), record["candidate_id"],
                     "Employment verification fraud flags detected via portal",
@@ -325,9 +325,9 @@ async def submit_reference_verification(body: ReferenceSubmission, request: Requ
     with get_db() as db:
         db.execute(
             """UPDATE references_ SET
-               status=?, responses=?, sentiment_score=?,
-               fraud_flags=?, ip_address=?, completed_at=?
-               WHERE verification_code=?""",
+               status=%s, responses=%s, sentiment_score=%s,
+               fraud_flags=%s, ip_address=%s, completed_at=%s
+               WHERE verification_code=%s""",
             (
                 status,
                 json.dumps(responses),
@@ -342,7 +342,7 @@ async def submit_reference_verification(body: ReferenceSubmission, request: Requ
         # Audit log
         db.execute(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-               VALUES (?, 'reference', ?, 'portal_submitted', 'referee', ?, ?)""",
+               VALUES (%s, 'reference', %s, 'portal_submitted', 'referee', %s, %s)""",
             (
                 generate_id(), record["id"],
                 json.dumps({
@@ -359,7 +359,7 @@ async def submit_reference_verification(body: ReferenceSubmission, request: Requ
             db.execute(
                 """INSERT INTO monitoring_alerts
                    (id, candidate_id, alert_type, severity, message, details, created_at)
-                   VALUES (?, ?, 'reference_fraud', 'high', ?, ?, ?)""",
+                   VALUES (%s, %s, 'reference_fraud', 'high', %s, %s, %s)""",
                 (
                     generate_id(), record["candidate_id"],
                     f"Reference fraud flags detected via portal for {record.get('referee_name', 'unknown')}",
@@ -389,7 +389,7 @@ def _get_candidate_name(candidate_id: str) -> str:
     try:
         with get_db() as db:
             row = db.execute(
-                "SELECT first_name, last_name FROM candidates WHERE id=?",
+                "SELECT first_name, last_name FROM candidates WHERE id=%s",
                 (candidate_id,),
             ).fetchone()
             if row:
@@ -405,7 +405,7 @@ def _get_employment_job_title(employment_id: str) -> str:
     try:
         with get_db() as db:
             row = db.execute(
-                "SELECT job_title FROM employment_history WHERE id=?",
+                "SELECT job_title FROM employment_history WHERE id=%s",
                 (employment_id,),
             ).fetchone()
             if row:
@@ -421,7 +421,7 @@ def _get_employment_dates(employment_id: str, field: str) -> str:
     try:
         with get_db() as db:
             row = db.execute(
-                f"SELECT {field} FROM employment_history WHERE id=?",
+                f"SELECT {field} FROM employment_history WHERE id=%s",
                 (employment_id,),
             ).fetchone()
             if row:

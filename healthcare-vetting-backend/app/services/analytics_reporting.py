@@ -23,24 +23,24 @@ class AnalyticsReportingService:
         with get_db() as db:
             # Total candidates
             total = db.execute(
-                "SELECT COUNT(*) FROM agency_candidates WHERE agency_id=?",
+                "SELECT COUNT(*) AS cnt FROM agency_candidates WHERE agency_id=%s",
                 (agency_id,),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
 
             # Compliance status breakdown
             compliant = db.execute(
                 """SELECT COUNT(DISTINCT ac.candidate_id) FROM agency_candidates ac
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
-                   WHERE ac.agency_id=? AND cr.overall_status='compliant'""",
+                   WHERE ac.agency_id=%s AND cr.overall_status='compliant'""",
                 (agency_id,),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
 
             non_compliant = db.execute(
                 """SELECT COUNT(DISTINCT ac.candidate_id) FROM agency_candidates ac
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
-                   WHERE ac.agency_id=? AND cr.overall_status='non_compliant'""",
+                   WHERE ac.agency_id=%s AND cr.overall_status='non_compliant'""",
                 (agency_id,),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
 
             pending = total - compliant - non_compliant
 
@@ -48,18 +48,18 @@ class AnalyticsReportingService:
             avg_score_row = db.execute(
                 """SELECT AVG(cr.overall_score) FROM agency_candidates ac
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
-                   WHERE ac.agency_id=?""",
+                   WHERE ac.agency_id=%s""",
                 (agency_id,),
             ).fetchone()
-            avg_score = round(avg_score_row[0] or 0, 1)
+            avg_score = round(list(avg_score_row.values())[0] or 0, 1)
 
             # Active alerts
             active_alerts = db.execute(
-                """SELECT COUNT(*) FROM monitoring_alerts ma
+                """SELECT COUNT(*) AS cnt FROM monitoring_alerts ma
                    JOIN agency_candidates ac ON ma.candidate_id = ac.candidate_id
-                   WHERE ac.agency_id=? AND ma.is_resolved=0""",
+                   WHERE ac.agency_id=%s AND ma.is_resolved=0""",
                 (agency_id,),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
 
             # Checks completed this month
             month_start = datetime.now(timezone.utc).replace(day=1).strftime("%Y-%m-%d")
@@ -68,11 +68,11 @@ class AnalyticsReportingService:
                 try:
                     col = "completed_at" if table != "right_to_work_checks" else "checked_at"
                     count = db.execute(
-                        f"""SELECT COUNT(*) FROM {table} t
+                        f"""SELECT COUNT(*) AS cnt FROM {table} t
                             JOIN agency_candidates ac ON t.candidate_id = ac.candidate_id
-                            WHERE ac.agency_id=? AND t.{col} >= ?""",
+                            WHERE ac.agency_id=%s AND t.{col} >= %s""",
                         (agency_id, month_start),
-                    ).fetchone()[0]
+                    ).fetchone()["cnt"]
                     checks_this_month += count
                 except Exception:
                     pass
@@ -97,7 +97,7 @@ class AnalyticsReportingService:
             agency_filter = ""
             params = []
             if agency_id:
-                agency_filter = "JOIN agency_candidates ac ON t.candidate_id = ac.candidate_id WHERE ac.agency_id=? AND"
+                agency_filter = "JOIN agency_candidates ac ON t.candidate_id = ac.candidate_id WHERE ac.agency_id=%s AND"
                 params = [agency_id]
             else:
                 agency_filter = "WHERE"
@@ -108,20 +108,20 @@ class AnalyticsReportingService:
             ]:
                 try:
                     row = db.execute(
-                        f"""SELECT AVG(julianday({end_col}) - julianday({start_col})) as avg_days,
-                                   MIN(julianday({end_col}) - julianday({start_col})) as min_days,
-                                   MAX(julianday({end_col}) - julianday({start_col})) as max_days,
-                                   COUNT(*) as total
+                        f"""SELECT AVG(EXTRACT(EPOCH FROM ({end_col}::timestamp - {start_col}::timestamp)) / 86400.0) as avg_days,
+                                   MIN(EXTRACT(EPOCH FROM ({end_col}::timestamp - {start_col}::timestamp)) / 86400.0) as min_days,
+                                   MAX(EXTRACT(EPOCH FROM ({end_col}::timestamp - {start_col}::timestamp)) / 86400.0) as max_days,
+                                   COUNT(*) AS total
                             FROM {table} t
                             {agency_filter} t.{end_col} IS NOT NULL AND t.{start_col} IS NOT NULL""",
                         tuple(params),
                     ).fetchone()
                     if row:
                         results[check_type] = {
-                            "avg_days": round(row[0] or 0, 1),
-                            "min_days": round(row[1] or 0, 1),
-                            "max_days": round(row[2] or 0, 1),
-                            "total_completed": row[3] or 0,
+                            "avg_days": round(row["avg_days"] or 0, 1),
+                            "min_days": round(row["min_days"] or 0, 1),
+                            "max_days": round(row["max_days"] or 0, 1),
+                            "total_completed": row["total"] or 0,
                         }
                 except Exception:
                     results[check_type] = {"avg_days": 0, "min_days": 0, "max_days": 0, "total_completed": 0}
@@ -129,19 +129,19 @@ class AnalyticsReportingService:
             # Employment verifications
             try:
                 row = db.execute(
-                    f"""SELECT AVG(julianday(completed_at) - julianday(sent_at)) as avg_days,
-                               MIN(julianday(completed_at) - julianday(sent_at)) as min_days,
-                               MAX(julianday(completed_at) - julianday(sent_at)) as max_days,
-                               COUNT(*) as total
+                    f"""SELECT AVG(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as avg_days,
+                               MIN(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as min_days,
+                               MAX(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as max_days,
+                               COUNT(*) AS total
                         FROM employment_verifications
                         WHERE completed_at IS NOT NULL AND sent_at IS NOT NULL""",
                 ).fetchone()
                 if row:
                     results["employment_verification"] = {
-                        "avg_days": round(row[0] or 0, 1),
-                        "min_days": round(row[1] or 0, 1),
-                        "max_days": round(row[2] or 0, 1),
-                        "total_completed": row[3] or 0,
+                        "avg_days": round(row["avg_days"] or 0, 1),
+                        "min_days": round(row["min_days"] or 0, 1),
+                        "max_days": round(row["max_days"] or 0, 1),
+                        "total_completed": row["total"] or 0,
                     }
             except Exception:
                 results["employment_verification"] = {"avg_days": 0, "min_days": 0, "max_days": 0, "total_completed": 0}
@@ -149,19 +149,19 @@ class AnalyticsReportingService:
             # References
             try:
                 row = db.execute(
-                    """SELECT AVG(julianday(completed_at) - julianday(created_at)) as avg_days,
-                              MIN(julianday(completed_at) - julianday(created_at)) as min_days,
-                              MAX(julianday(completed_at) - julianday(created_at)) as max_days,
-                              COUNT(*) as total
+                    """SELECT AVG(EXTRACT(EPOCH FROM (completed_at::timestamp - created_at::timestamp)) / 86400.0) as avg_days,
+                              MIN(EXTRACT(EPOCH FROM (completed_at::timestamp - created_at::timestamp)) / 86400.0) as min_days,
+                              MAX(EXTRACT(EPOCH FROM (completed_at::timestamp - created_at::timestamp)) / 86400.0) as max_days,
+                              COUNT(*) AS total
                        FROM references_
                        WHERE completed_at IS NOT NULL AND created_at IS NOT NULL""",
                 ).fetchone()
                 if row:
                     results["references"] = {
-                        "avg_days": round(row[0] or 0, 1),
-                        "min_days": round(row[1] or 0, 1),
-                        "max_days": round(row[2] or 0, 1),
-                        "total_completed": row[3] or 0,
+                        "avg_days": round(row["avg_days"] or 0, 1),
+                        "min_days": round(row["min_days"] or 0, 1),
+                        "max_days": round(row["max_days"] or 0, 1),
+                        "total_completed": row["total"] or 0,
                     }
             except Exception:
                 results["references"] = {"avg_days": 0, "min_days": 0, "max_days": 0, "total_completed": 0}
@@ -176,10 +176,10 @@ class AnalyticsReportingService:
 
             # Employment verifications
             try:
-                total_ev = db.execute("SELECT COUNT(*) FROM employment_verifications WHERE sent_at IS NOT NULL").fetchone()[0]
-                completed_ev = db.execute("SELECT COUNT(*) FROM employment_verifications WHERE status IN ('verified', 'completed')").fetchone()[0]
-                disputed_ev = db.execute("SELECT COUNT(*) FROM employment_verifications WHERE status='disputed'").fetchone()[0]
-                pending_ev = db.execute("SELECT COUNT(*) FROM employment_verifications WHERE status='sent'").fetchone()[0]
+                total_ev = db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE sent_at IS NOT NULL").fetchone()["cnt"]
+                completed_ev = db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status IN ('verified', 'completed')").fetchone()["cnt"]
+                disputed_ev = db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status='disputed'").fetchone()["cnt"]
+                pending_ev = db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status='sent'").fetchone()["cnt"]
                 rates["employment_verification"] = {
                     "total_sent": total_ev,
                     "completed": completed_ev,
@@ -192,9 +192,9 @@ class AnalyticsReportingService:
 
             # References
             try:
-                total_ref = db.execute("SELECT COUNT(*) FROM references_ WHERE created_at IS NOT NULL").fetchone()[0]
-                completed_ref = db.execute("SELECT COUNT(*) FROM references_ WHERE status='completed'").fetchone()[0]
-                pending_ref = db.execute("SELECT COUNT(*) FROM references_ WHERE status IN ('sent', 'pending')").fetchone()[0]
+                total_ref = db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE created_at IS NOT NULL").fetchone()["cnt"]
+                completed_ref = db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE status='completed'").fetchone()["cnt"]
+                pending_ref = db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE status IN ('sent', 'pending')").fetchone()["cnt"]
                 rates["references"] = {
                     "total_sent": total_ref,
                     "completed": completed_ref,
@@ -222,11 +222,11 @@ class AnalyticsReportingService:
                     """SELECT r.candidate_id, c.first_name, c.last_name, r.visa_expiry
                        FROM right_to_work_checks r
                        JOIN candidates c ON r.candidate_id = c.id
-                       WHERE r.visa_expiry IS NOT NULL AND r.visa_expiry BETWEEN ? AND ?
+                       WHERE r.visa_expiry IS NOT NULL AND r.visa_expiry BETWEEN %s AND %s
                        ORDER BY r.visa_expiry ASC""",
                     (now_iso, cutoff),
                 ).fetchall()
-                forecasts["visa"] = [{"candidate_id": r[0], "name": f"{r[1]} {r[2]}", "expiry": r[3]} for r in rows]
+                forecasts["visa"] = [{"candidate_id": r["candidate_id"], "name": f'{r["first_name"]} {r["last_name"]}', "expiry": r["visa_expiry"]} for r in rows]
             except Exception:
                 pass
 
@@ -236,11 +236,11 @@ class AnalyticsReportingService:
                     """SELECT d.candidate_id, c.first_name, c.last_name, d.next_renewal
                        FROM dbs_checks d
                        JOIN candidates c ON d.candidate_id = c.id
-                       WHERE d.next_renewal IS NOT NULL AND d.next_renewal BETWEEN ? AND ?
+                       WHERE d.next_renewal IS NOT NULL AND d.next_renewal BETWEEN %s AND %s
                        ORDER BY d.next_renewal ASC""",
                     (now_iso, cutoff),
                 ).fetchall()
-                forecasts["dbs"] = [{"candidate_id": r[0], "name": f"{r[1]} {r[2]}", "expiry": r[3]} for r in rows]
+                forecasts["dbs"] = [{"candidate_id": r["candidate_id"], "name": f'{r["first_name"]} {r["last_name"]}', "expiry": r["next_renewal"]} for r in rows]
             except Exception:
                 pass
 
@@ -250,11 +250,11 @@ class AnalyticsReportingService:
                     """SELECT r.candidate_id, c.first_name, c.last_name, r.next_check, r.body
                        FROM registration_checks r
                        JOIN candidates c ON r.candidate_id = c.id
-                       WHERE r.next_check IS NOT NULL AND r.next_check BETWEEN ? AND ? AND r.is_active=1
+                       WHERE r.next_check IS NOT NULL AND r.next_check BETWEEN %s AND %s AND r.is_active=1
                        ORDER BY r.next_check ASC""",
                     (now_iso, cutoff),
                 ).fetchall()
-                forecasts["registration"] = [{"candidate_id": r[0], "name": f"{r[1]} {r[2]}", "expiry": r[3], "body": r[4]} for r in rows]
+                forecasts["registration"] = [{"candidate_id": r["candidate_id"], "name": f'{r["first_name"]} {r["last_name"]}', "expiry": r["next_check"], "body": r["body"]} for r in rows]
             except Exception:
                 pass
 
@@ -264,11 +264,11 @@ class AnalyticsReportingService:
                     """SELECT t.candidate_id, c.first_name, c.last_name, t.expiry_date, t.certificate_name
                        FROM training_certificates t
                        JOIN candidates c ON t.candidate_id = c.id
-                       WHERE t.expiry_date IS NOT NULL AND t.expiry_date BETWEEN ? AND ? AND t.status='valid'
+                       WHERE t.expiry_date IS NOT NULL AND t.expiry_date BETWEEN %s AND %s AND t.status='valid'
                        ORDER BY t.expiry_date ASC""",
                     (now_iso, cutoff),
                 ).fetchall()
-                forecasts["training"] = [{"candidate_id": r[0], "name": f"{r[1]} {r[2]}", "expiry": r[3], "certificate": r[4]} for r in rows]
+                forecasts["training"] = [{"candidate_id": r["candidate_id"], "name": f'{r["first_name"]} {r["last_name"]}', "expiry": r["expiry_date"], "certificate": r["certificate_name"]} for r in rows]
             except Exception:
                 pass
 
@@ -297,7 +297,7 @@ class AnalyticsReportingService:
                        FROM candidates c
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
                        LEFT JOIN compliance_records cr ON c.id = cr.candidate_id
-                       WHERE ac.agency_id=?
+                       WHERE ac.agency_id=%s
                        ORDER BY c.last_name""",
                     (agency_id,),
                 ).fetchall()
@@ -311,10 +311,7 @@ class AnalyticsReportingService:
                 ).fetchall()
 
             for row in rows:
-                r = dict(row) if hasattr(row, "keys") else {"id": row[0], "first_name": row[1], "last_name": row[2],
-                                                             "email": row[3], "profession": row[4],
-                                                             "overall_status": row[5], "overall_score": row[6],
-                                                             "details": row[7], "last_evaluated": row[8]}
+                r = dict(row)
                 details = {}
                 if r.get("details"):
                     try:
@@ -369,9 +366,9 @@ class AnalyticsReportingService:
                 ]:
                     try:
                         count = db.execute(
-                            f"SELECT COUNT(*) FROM {table} WHERE {col} >= ? AND {col} < ?",
+                            f"SELECT COUNT(*) AS cnt FROM {table} WHERE {col} >= %s AND {col} < %s",
                             (start_str, end_str),
-                        ).fetchone()[0]
+                        ).fetchone()["cnt"]
                         total += count
                     except Exception:
                         pass

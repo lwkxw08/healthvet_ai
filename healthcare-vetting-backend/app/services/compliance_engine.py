@@ -30,7 +30,7 @@ class ComplianceEngine:
         Returns (rules_dict, template_config, compliance_label, compliance_threshold)."""
         # Find the agency (and possibly sub-account) this candidate belongs to
         agency_link = db.execute(
-            "SELECT agency_id, invited_by_sub_account_id FROM agency_candidates WHERE candidate_id=? LIMIT 1",
+            "SELECT agency_id, invited_by_sub_account_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
             (candidate_id,),
         ).fetchone()
 
@@ -44,7 +44,7 @@ class ComplianceEngine:
         sub_account_id = agency_link_data.get("invited_by_sub_account_id")
         if sub_account_id:
             sub_acc = db.execute(
-                "SELECT industry_template_id FROM agency_sub_accounts WHERE id=? AND is_active=1",
+                "SELECT industry_template_id FROM agency_sub_accounts WHERE id=%s AND is_active=1",
                 (sub_account_id,),
             ).fetchone()
             if sub_acc and dict(sub_acc).get("industry_template_id"):
@@ -53,7 +53,7 @@ class ComplianceEngine:
         # 2. Fall back to agency-level template
         if not template_id:
             agency = db.execute(
-                "SELECT industry_template_id FROM agencies WHERE id=?",
+                "SELECT industry_template_id FROM agencies WHERE id=%s",
                 (agency_link_data["agency_id"],),
             ).fetchone()
             if agency and dict(agency).get("industry_template_id"):
@@ -74,7 +74,7 @@ class ComplianceEngine:
         # Load the template
         if template_data is None:
             template_row = db.execute(
-                "SELECT * FROM industry_templates WHERE id=? AND is_active=1",
+                "SELECT * FROM industry_templates WHERE id=%s AND is_active=1",
                 (template_id,),
             ).fetchone()
             if not template_row:
@@ -83,7 +83,7 @@ class ComplianceEngine:
 
         # Load checks for this template
         checks = db.execute(
-            "SELECT * FROM industry_template_checks WHERE template_id=? AND is_enabled=1 ORDER BY sort_order ASC",
+            "SELECT * FROM industry_template_checks WHERE template_id=%s AND is_enabled=1 ORDER BY sort_order ASC",
             (template_id,),
         ).fetchall()
 
@@ -124,32 +124,32 @@ class ComplianceEngine:
 
             # Gather all check results
             identity = db.execute(
-                "SELECT * FROM identity_checks WHERE candidate_id=? ORDER BY started_at DESC LIMIT 1",
+                "SELECT * FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC LIMIT 1",
                 (candidate_id,),
             ).fetchone()
 
             rtw = db.execute(
-                "SELECT * FROM right_to_work_checks WHERE candidate_id=? ORDER BY checked_at DESC LIMIT 1",
+                "SELECT * FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC LIMIT 1",
                 (candidate_id,),
             ).fetchone()
 
             dbs = db.execute(
-                "SELECT * FROM dbs_checks WHERE candidate_id=? ORDER BY submitted_at DESC LIMIT 1",
+                "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC LIMIT 1",
                 (candidate_id,),
             ).fetchone()
 
             reg = db.execute(
-                "SELECT * FROM registration_checks WHERE candidate_id=? ORDER BY last_checked DESC LIMIT 1",
+                "SELECT * FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC LIMIT 1",
                 (candidate_id,),
             ).fetchone()
 
             refs = db.execute(
-                "SELECT * FROM references_ WHERE candidate_id=? AND status='completed'",
+                "SELECT * FROM references_ WHERE candidate_id=%s AND status='completed'",
                 (candidate_id,),
             ).fetchall()
 
             cv = db.execute(
-                "SELECT * FROM cv_analyses WHERE candidate_id=? ORDER BY analysed_at DESC LIMIT 1",
+                "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC LIMIT 1",
                 (candidate_id,),
             ).fetchone()
 
@@ -179,7 +179,7 @@ class ComplianceEngine:
                 rtw_check_pass = rtw and dict(rtw).get("verified") == 1
                 if requires_imposter:
                     imposter_decl = db.execute(
-                        "SELECT * FROM imposter_declarations WHERE candidate_id=? ORDER BY created_at DESC LIMIT 1",
+                        "SELECT * FROM imposter_declarations WHERE candidate_id=%s ORDER BY created_at DESC LIMIT 1",
                         (candidate_id,),
                     ).fetchone()
                     imposter_pass = imposter_decl is not None
@@ -304,7 +304,7 @@ class ComplianceEngine:
                 ])
                 try:
                     training_certs = db.execute(
-                        "SELECT * FROM training_certificates WHERE candidate_id=?",
+                        "SELECT * FROM training_certificates WHERE candidate_id=%s",
                         (candidate_id,),
                     ).fetchall()
                     cert_map = {dict(c)["certificate_name"]: dict(c) for c in training_certs}
@@ -354,11 +354,11 @@ class ComplianceEngine:
             # Employment Verification
             if "employment_verified" in rules:
                 emp_verifications = db.execute(
-                    "SELECT * FROM employment_verifications WHERE candidate_id=? AND status IN ('completed', 'verified')",
+                    "SELECT * FROM employment_verifications WHERE candidate_id=%s AND status IN ('completed', 'verified')",
                     (candidate_id,),
                 ).fetchall()
                 emp_entries = db.execute(
-                    "SELECT COUNT(*) as cnt FROM employment_history WHERE candidate_id=?",
+                    "SELECT COUNT(*) as cnt FROM employment_history WHERE candidate_id=%s",
                     (candidate_id,),
                 ).fetchone()
                 total_entries = dict(emp_entries)["cnt"] if emp_entries else 0
@@ -410,19 +410,19 @@ class ComplianceEngine:
 
             # Upsert compliance record
             existing = db.execute(
-                "SELECT id FROM compliance_records WHERE candidate_id=?",
+                "SELECT id FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
             ).fetchone()
 
             if existing:
                 db.execute(
                     """UPDATE compliance_records SET
-                       overall_status=?, score=?, identity_verified=?,
-                       right_to_work_valid=?, dbs_valid=?, registration_active=?,
-                       references_verified=?, cv_validated=?, employment_verified=?,
-                       training_compliant=?,
-                       flags=?, audit_log=?, last_evaluated=?, cqc_ready=?
-                       WHERE candidate_id=?""",
+                       overall_status=%s, score=%s, identity_verified=%s,
+                       right_to_work_valid=%s, dbs_valid=%s, registration_active=%s,
+                       references_verified=%s, cv_validated=%s, employment_verified=%s,
+                       training_compliant=%s,
+                       flags=%s, audit_log=%s, last_evaluated=%s, cqc_ready=%s
+                       WHERE candidate_id=%s""",
                     (
                         overall_status, score,
                         1 if checks.get("identity_verified") else 0,
@@ -448,7 +448,7 @@ class ComplianceEngine:
                         references_verified, cv_validated, employment_verified,
                         training_compliant,
                         flags, audit_log, last_evaluated, cqc_ready)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         generate_id(), candidate_id, overall_status, score,
                         1 if checks.get("identity_verified") else 0,
@@ -468,14 +468,14 @@ class ComplianceEngine:
 
             # Update candidate's compliance status
             db.execute(
-                "UPDATE candidates SET compliance_score=?, compliance_status=?, updated_at=? WHERE id=?",
+                "UPDATE candidates SET compliance_score=%s, compliance_status=%s, updated_at=%s WHERE id=%s",
                 (score, overall_status, now, candidate_id),
             )
 
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'compliance', ?, 'evaluated', 'compliance_engine', ?, ?)""",
+                   VALUES (%s, 'compliance', %s, 'evaluated', 'compliance_engine', %s, %s)""",
                 (
                     generate_id(), candidate_id,
                     json.dumps({
@@ -488,7 +488,7 @@ class ComplianceEngine:
             )
 
             row = db.execute(
-                "SELECT * FROM compliance_records WHERE candidate_id=?",
+                "SELECT * FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
             ).fetchone()
             result = dict(row)
@@ -501,7 +501,7 @@ class ComplianceEngine:
     def get_compliance(candidate_id: str) -> dict:
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM compliance_records WHERE candidate_id=?",
+                "SELECT * FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
             ).fetchone()
             if not row:
@@ -512,7 +512,7 @@ class ComplianceEngine:
     def get_audit_log(candidate_id: str) -> list:
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM audit_logs WHERE entity_id=? ORDER BY created_at DESC",
+                "SELECT * FROM audit_logs WHERE entity_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
             ).fetchall()
             return [dict(r) for r in rows]

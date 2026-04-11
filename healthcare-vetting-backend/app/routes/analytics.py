@@ -76,7 +76,7 @@ async def list_scheduled_reports(user=Depends(get_current_user)):
     agency_id = user["sub"]
     with get_db() as db:
         rows = db.execute(
-            "SELECT * FROM scheduled_reports WHERE agency_id=? ORDER BY created_at DESC",
+            "SELECT * FROM scheduled_reports WHERE agency_id=%s ORDER BY created_at DESC",
             (agency_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -100,7 +100,7 @@ async def create_scheduled_report(data: dict, user=Depends(get_current_user)):
         db.execute(
             """INSERT INTO scheduled_reports
                (id, agency_id, report_type, frequency, recipients, is_active, created_at)
-               VALUES (?, ?, ?, ?, ?, 1, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 1, %s)""",
             (report_id, agency_id, report_type, frequency, json.dumps(recipients), now),
         )
 
@@ -114,7 +114,7 @@ async def update_scheduled_report(report_id: str, data: dict, user=Depends(get_c
     agency_id = user["sub"]
     with get_db() as db:
         existing = db.execute(
-            "SELECT id FROM scheduled_reports WHERE id=? AND agency_id=?",
+            "SELECT id FROM scheduled_reports WHERE id=%s AND agency_id=%s",
             (report_id, agency_id),
         ).fetchone()
         if not existing:
@@ -124,16 +124,16 @@ async def update_scheduled_report(report_id: str, data: dict, user=Depends(get_c
         params = []
         for field in ["report_type", "frequency", "is_active"]:
             if field in data:
-                updates.append(f"{field}=?")
+                updates.append(f"{field}=%s")
                 params.append(data[field])
         if "recipients" in data:
-            updates.append("recipients=?")
+            updates.append("recipients=%s")
             params.append(json.dumps(data["recipients"]))
 
         if updates:
             params.append(report_id)
             db.execute(
-                f"UPDATE scheduled_reports SET {', '.join(updates)} WHERE id=?",
+                f"UPDATE scheduled_reports SET {', '.join(updates)} WHERE id=%s",
                 tuple(params),
             )
 
@@ -146,7 +146,7 @@ async def delete_scheduled_report(report_id: str, user=Depends(get_current_user)
     agency_id = user["sub"]
     with get_db() as db:
         db.execute(
-            "DELETE FROM scheduled_reports WHERE id=? AND agency_id=?",
+            "DELETE FROM scheduled_reports WHERE id=%s AND agency_id=%s",
             (report_id, agency_id),
         )
     return {"deleted": True, "id": report_id}
@@ -160,18 +160,18 @@ async def admin_analytics_overview(user=Depends(get_current_admin)):
     from app.services.analytics_reporting import AnalyticsReportingService
 
     with get_db() as db:
-        total_agencies = db.execute("SELECT COUNT(*) FROM agencies").fetchone()[0]
-        total_candidates = db.execute("SELECT COUNT(*) FROM candidates").fetchone()[0]
+        total_agencies = db.execute("SELECT COUNT(*) AS cnt FROM agencies").fetchone()["cnt"]
+        total_candidates = db.execute("SELECT COUNT(*) AS cnt FROM candidates").fetchone()["cnt"]
         total_checks = 0
         for table in ["identity_checks", "dbs_checks", "right_to_work_checks", "registration_checks"]:
             try:
-                total_checks += db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                total_checks += db.execute(f"SELECT COUNT(*) AS cnt FROM {table}").fetchone()["cnt"]
             except Exception:
                 pass
 
         active_subs = db.execute(
-            "SELECT COUNT(*) FROM agency_subscriptions WHERE status='active'"
-        ).fetchone()[0]
+            "SELECT COUNT(*) AS cnt FROM agency_subscriptions WHERE status='active'"
+        ).fetchone()["cnt"]
 
     time_to_clear = AnalyticsReportingService.get_time_to_clear()
     response_rates = AnalyticsReportingService.get_verification_response_rates()

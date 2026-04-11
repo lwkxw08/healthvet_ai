@@ -22,7 +22,7 @@ def create_pre_notification(
 
     with get_db() as db:
         # Look up candidate email
-        candidate = db.execute("SELECT email, first_name, last_name FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        candidate = db.execute("SELECT email, first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
         if not candidate:
             return {"error": "Candidate not found"}
         candidate = dict(candidate)
@@ -31,7 +31,7 @@ def create_pre_notification(
             """INSERT INTO candidate_pre_notifications
                (id, candidate_id, verification_type, verifier_name, verifier_email,
                 verifier_organisation, status, sent_at, verification_request_id, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (notif_id, candidate_id, verification_type, verifier_name, verifier_email,
              verifier_organisation, "pending", now, verification_request_id, now),
         )
@@ -52,7 +52,7 @@ def get_pending_notifications(candidate_id: str) -> list[dict]:
     """Get all pending pre-notifications for a candidate."""
     with get_db() as db:
         rows = db.execute(
-            "SELECT * FROM candidate_pre_notifications WHERE candidate_id=? AND status='pending' ORDER BY created_at DESC",
+            "SELECT * FROM candidate_pre_notifications WHERE candidate_id=%s AND status='pending' ORDER BY created_at DESC",
             (candidate_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -63,13 +63,13 @@ def confirm_notification(notification_id: str, candidate_id: str) -> dict | None
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
         notif = db.execute(
-            "SELECT * FROM candidate_pre_notifications WHERE id=? AND candidate_id=?",
+            "SELECT * FROM candidate_pre_notifications WHERE id=%s AND candidate_id=%s",
             (notification_id, candidate_id),
         ).fetchone()
         if not notif:
             return None
         db.execute(
-            "UPDATE candidate_pre_notifications SET status='confirmed', candidate_confirmed_at=? WHERE id=?",
+            "UPDATE candidate_pre_notifications SET status='confirmed', candidate_confirmed_at=%s WHERE id=%s",
             (now, notification_id),
         )
         return {**dict(notif), "status": "confirmed", "candidate_confirmed_at": now}
@@ -84,7 +84,7 @@ def update_verifier_details(
     """Candidate updates verifier contact details before the request is sent."""
     with get_db() as db:
         notif = db.execute(
-            "SELECT * FROM candidate_pre_notifications WHERE id=? AND candidate_id=? AND status='pending'",
+            "SELECT * FROM candidate_pre_notifications WHERE id=%s AND candidate_id=%s AND status='pending'",
             (notification_id, candidate_id),
         ).fetchone()
         if not notif:
@@ -92,18 +92,18 @@ def update_verifier_details(
         updates = []
         params = []
         if verifier_name:
-            updates.append("verifier_name=?")
+            updates.append("verifier_name=%s")
             params.append(verifier_name)
         if verifier_email:
-            updates.append("verifier_email=?")
+            updates.append("verifier_email=%s")
             params.append(verifier_email)
         if verifier_organisation:
-            updates.append("verifier_organisation=?")
+            updates.append("verifier_organisation=%s")
             params.append(verifier_organisation)
         if updates:
             params.append(notification_id)
-            db.execute(f"UPDATE candidate_pre_notifications SET {', '.join(updates)} WHERE id=?", params)
-        return dict(db.execute("SELECT * FROM candidate_pre_notifications WHERE id=?", (notification_id,)).fetchone())
+            db.execute(f"UPDATE candidate_pre_notifications SET {', '.join(updates)} WHERE id=%s", params)
+        return dict(db.execute("SELECT * FROM candidate_pre_notifications WHERE id=%s", (notification_id,)).fetchone())
 
 
 def get_ready_notifications(delay_hours: int = DEFAULT_DELAY_HOURS) -> list[dict]:
@@ -114,7 +114,7 @@ def get_ready_notifications(delay_hours: int = DEFAULT_DELAY_HOURS) -> list[dict
         rows = db.execute(
             """SELECT * FROM candidate_pre_notifications
                WHERE (status='confirmed')
-                  OR (status='pending' AND sent_at < ?)
+                  OR (status='pending' AND sent_at < %s)
                ORDER BY created_at ASC""",
             (cutoff,),
         ).fetchall()
@@ -125,6 +125,6 @@ def mark_notification_sent(notification_id: str) -> None:
     """Mark a notification as having had its verification request sent."""
     with get_db() as db:
         db.execute(
-            "UPDATE candidate_pre_notifications SET status='sent' WHERE id=?",
+            "UPDATE candidate_pre_notifications SET status='sent' WHERE id=%s",
             (notification_id,),
         )

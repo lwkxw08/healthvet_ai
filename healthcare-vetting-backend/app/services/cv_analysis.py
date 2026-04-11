@@ -65,7 +65,7 @@ class CVAnalysisService:
                    (id, candidate_id, cv_text, cv_file_name, gap_analysis, overlap_detection,
                     qualification_flags, fraud_risk_score, inconsistencies, ai_summary,
                     employment_entries, status, analysed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'completed', %s)""",
                 (
                     analysis_id, candidate_id, cv_text, cv_file_name,
                     json.dumps(gaps), json.dumps(overlaps),
@@ -82,7 +82,7 @@ class CVAnalysisService:
                     """INSERT INTO employment_history
                        (id, candidate_id, cv_analysis_id, employer_name, job_title,
                         start_date, end_date, is_current, duties, source, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'cv_extracted', ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'cv_extracted', %s)""",
                     (
                         entry_id, candidate_id, analysis_id,
                         entry.get("employer", "Unknown Employer"),
@@ -100,7 +100,7 @@ class CVAnalysisService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'cv_fraud_risk', 'high', ?, ?, ?)""",
+                       VALUES (%s, %s, 'cv_fraud_risk', 'high', %s, %s, %s)""",
                     (
                         generate_id(), candidate_id,
                         f"High CV fraud risk detected: {fraud_score:.0%}",
@@ -112,11 +112,11 @@ class CVAnalysisService:
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'cv_analysis', ?, 'completed', 'ai_engine', ?, ?)""",
+                   VALUES (%s, 'cv_analysis', %s, 'completed', 'ai_engine', %s, %s)""",
                 (generate_id(), analysis_id, json.dumps({"fraud_score": fraud_score}), now),
             )
 
-            row = db.execute("SELECT * FROM cv_analyses WHERE id=?", (analysis_id,)).fetchone()
+            row = db.execute("SELECT * FROM cv_analyses WHERE id=%s", (analysis_id,)).fetchone()
             return dict(row)
 
     @staticmethod
@@ -290,7 +290,7 @@ class CVAnalysisService:
         # Try to find date range patterns associated with employer/role info
         # Pattern: YYYY - YYYY or YYYY - Present with surrounding context
         date_blocks = re.findall(
-            r'(?:^|\n)([^\n]{0,100}?)(\d{4})\s*[-–to]+\s*(\d{4}|present|current)([^\n]{0,200})',
+            r'(%s:^|\n)([^\n]{0,100}%s)(\d{4})\s*[-–to]+\s*(\d{4}|present|current)([^\n]{0,200})',
             cv_lower,
             re.IGNORECASE,
         )
@@ -378,7 +378,7 @@ class CVAnalysisService:
     @staticmethod
     def get_analysis(analysis_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM cv_analyses WHERE id=?", (analysis_id,)).fetchone()
+            row = db.execute("SELECT * FROM cv_analyses WHERE id=%s", (analysis_id,)).fetchone()
             if not row:
                 return None
             return dict(row)
@@ -387,7 +387,7 @@ class CVAnalysisService:
     def get_analyses_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM cv_analyses WHERE candidate_id=? ORDER BY analysed_at DESC",
+                "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC",
                 (candidate_id,),
             ).fetchall()
             return [dict(r) for r in rows]

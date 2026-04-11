@@ -70,7 +70,7 @@ class TrustSettingsUpdate(BaseModel):
 def _get_setting(db, key: str) -> str:
     """Get a single setting value from the database."""
     row = db.execute(
-        "SELECT setting_value FROM system_settings WHERE setting_key = ?", (key,)
+        "SELECT setting_value FROM system_settings WHERE setting_key = %s", (key,)
     ).fetchone()
     return dict(row)["setting_value"] if row else ""
 
@@ -80,8 +80,8 @@ def _set_setting(db, key: str, value: str):
     now = datetime.now(timezone.utc).isoformat()
     db.execute(
         """INSERT INTO system_settings (setting_key, setting_value, updated_at)
-           VALUES (?, ?, ?)
-           ON CONFLICT(setting_key) DO UPDATE SET setting_value = ?, updated_at = ?""",
+           VALUES (%s, %s, %s)
+           ON CONFLICT(setting_key) DO UPDATE SET setting_value = %s, updated_at = %s""",
         (key, value, now, value, now),
     )
 

@@ -33,10 +33,10 @@ class ReportService:
             query = "SELECT * FROM invoices WHERE 1=1"
             params = []
             if date_from:
-                query += " AND created_at >= ?"
+                query += " AND created_at >= %s"
                 params.append(date_from)
             if date_to:
-                query += " AND created_at <= ?"
+                query += " AND created_at <= %s"
                 params.append(date_to)
             query += " ORDER BY created_at DESC"
             invoices = db.execute(query, params).fetchall()
@@ -272,10 +272,10 @@ class ReportService:
             query = "SELECT i.*, a.name as agency_name FROM invoices i LEFT JOIN agencies a ON i.agency_id = a.id WHERE 1=1"
             params: list = []
             if date_from:
-                query += " AND i.created_at >= ?"
+                query += " AND i.created_at >= %s"
                 params.append(date_from)
             if date_to:
-                query += " AND i.created_at <= ?"
+                query += " AND i.created_at <= %s"
                 params.append(date_to)
             query += " ORDER BY i.created_at DESC"
             rows = db.execute(query, params).fetchall()
@@ -288,7 +288,7 @@ class ReportService:
                 rows = db.execute(
                     """SELECT c.* FROM candidates c
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
-                       WHERE ac.agency_id=?""",
+                       WHERE ac.agency_id=%s""",
                     (agency_id,),
                 ).fetchall()
             else:
@@ -303,7 +303,7 @@ class ReportService:
                 candidates = db.execute(
                     """SELECT c.* FROM candidates c
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
-                       WHERE ac.agency_id=?""",
+                       WHERE ac.agency_id=%s""",
                     (agency_id,),
                 ).fetchall()
             else:

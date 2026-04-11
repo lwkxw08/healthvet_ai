@@ -287,7 +287,7 @@ def analyse_reference(reference_id: str, reference_data: dict) -> dict:
             created_at TEXT NOT NULL
         )""")
         db.execute(
-            "INSERT INTO ai_reference_analyses (id, reference_id, candidate_id, method, sentiment_score, assessment, concerns_count, result_json, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO ai_reference_analyses (id, reference_id, candidate_id, method, sentiment_score, assessment, concerns_count, result_json, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 analysis_id, reference_id, candidate_id,
                 result.get("method", "unknown"),
@@ -308,12 +308,12 @@ def get_reference_analyses(candidate_id: Optional[str] = None, reference_id: Opt
         try:
             if reference_id:
                 rows = db.execute(
-                    "SELECT * FROM ai_reference_analyses WHERE reference_id=? ORDER BY created_at DESC",
+                    "SELECT * FROM ai_reference_analyses WHERE reference_id=%s ORDER BY created_at DESC",
                     (reference_id,),
                 ).fetchall()
             elif candidate_id:
                 rows = db.execute(
-                    "SELECT * FROM ai_reference_analyses WHERE candidate_id=? ORDER BY created_at DESC",
+                    "SELECT * FROM ai_reference_analyses WHERE candidate_id=%s ORDER BY created_at DESC",
                     (candidate_id,),
                 ).fetchall()
             else:

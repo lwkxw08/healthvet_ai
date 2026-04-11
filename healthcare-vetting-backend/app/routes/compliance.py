@@ -51,7 +51,7 @@ async def get_alerts(candidate_id: str = None, current_user: dict = Depends(get_
         from app.database import get_db
         with get_db() as db:
             rows = db.execute(
-                "SELECT candidate_id FROM agency_candidates WHERE agency_id=?",
+                "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s",
                 (current_user["sub"],),
             ).fetchall()
             candidate_ids = [dict(r)["candidate_id"] for r in rows]

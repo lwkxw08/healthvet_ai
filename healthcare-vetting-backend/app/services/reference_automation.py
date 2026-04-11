@@ -42,7 +42,7 @@ class ReferenceAutomationService:
                    (id, candidate_id, referee_name, referee_email, referee_phone,
                     referee_organisation, referee_job_title, relationship, token,
                     verification_code, status, domain_verified, sent_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'sent', %s, %s)""",
                 (
                     ref_id, candidate_id, referee_name, referee_email,
                     referee_phone, referee_organisation, referee_job_title,
@@ -56,7 +56,7 @@ class ReferenceAutomationService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'reference_domain_mismatch', 'medium', ?, ?, ?)""",
+                       VALUES (%s, %s, 'reference_domain_mismatch', 'medium', %s, %s, %s)""",
                     (
                         generate_id(), candidate_id,
                         f"Reference email domain does not match organisation: {email_domain}",
@@ -68,11 +68,11 @@ class ReferenceAutomationService:
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'reference', ?, 'sent', 'system', ?, ?)""",
+                   VALUES (%s, 'reference', %s, 'sent', 'system', %s, %s)""",
                 (generate_id(), ref_id, json.dumps({"referee_email": referee_email}), now),
             )
 
-            row = db.execute("SELECT * FROM references_ WHERE id=?", (ref_id,)).fetchone()
+            row = db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,)).fetchone()
 
         # Send the actual reference request email
         try:
@@ -93,7 +93,7 @@ class ReferenceAutomationService:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            ref = db.execute("SELECT * FROM references_ WHERE token=?", (token,)).fetchone()
+            ref = db.execute("SELECT * FROM references_ WHERE token=%s", (token,)).fetchone()
             if not ref:
                 return None
 
@@ -113,9 +113,9 @@ class ReferenceAutomationService:
 
             db.execute(
                 """UPDATE references_ SET
-                   status=?, responses=?, sentiment_score=?,
-                   fraud_flags=?, ip_address=?, completed_at=?
-                   WHERE token=?""",
+                   status=%s, responses=%s, sentiment_score=%s,
+                   fraud_flags=%s, ip_address=%s, completed_at=%s
+                   WHERE token=%s""",
                 (
                     status,
                     json.dumps(responses),
@@ -131,7 +131,7 @@ class ReferenceAutomationService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'reference_fraud', 'high', ?, ?, ?)""",
+                       VALUES (%s, %s, 'reference_fraud', 'high', %s, %s, %s)""",
                     (
                         generate_id(), ref_dict["candidate_id"],
                         f"Reference fraud flags detected for {ref_dict['referee_name']}",
@@ -143,18 +143,18 @@ class ReferenceAutomationService:
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'reference', ?, 'submitted', 'referee', ?, ?)""",
+                   VALUES (%s, 'reference', %s, 'submitted', 'referee', %s, %s)""",
                 (generate_id(), ref_dict["id"], json.dumps({"sentiment": sentiment, "fraud_flags": len(fraud_flags)}), now),
             )
 
-            row = db.execute("SELECT * FROM references_ WHERE token=?", (token,)).fetchone()
+            row = db.execute("SELECT * FROM references_ WHERE token=%s", (token,)).fetchone()
             return dict(row)
 
     @staticmethod
     def send_reminder(ref_id: str) -> dict:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            ref = db.execute("SELECT * FROM references_ WHERE id=?", (ref_id,)).fetchone()
+            ref = db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,)).fetchone()
             if not ref:
                 return None
 
@@ -162,7 +162,7 @@ class ReferenceAutomationService:
             new_count = ref_dict["reminder_count"] + 1
 
             db.execute(
-                "UPDATE references_ SET reminder_count=? WHERE id=?",
+                "UPDATE references_ SET reminder_count=%s WHERE id=%s",
                 (new_count, ref_id),
             )
 
@@ -172,7 +172,7 @@ class ReferenceAutomationService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'reference_no_response', 'medium', ?, ?, ?)""",
+                       VALUES (%s, %s, 'reference_no_response', 'medium', %s, %s, %s)""",
                     (
                         generate_id(), ref_dict["candidate_id"],
                         f"Reference from {ref_dict['referee_name']} not received after {new_count} reminders. Candidate has been notified to chase the referee.",
@@ -185,7 +185,7 @@ class ReferenceAutomationService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'candidate_chase_verifier', 'low', ?, ?, ?)""",
+                       VALUES (%s, %s, 'candidate_chase_verifier', 'low', %s, %s, %s)""",
                     (
                         generate_id(), ref_dict["candidate_id"],
                         f"Your referee ({ref_dict['referee_name']} at {ref_dict.get('referee_email', 'N/A')}) has not responded after {new_count} reminder emails. Please contact them directly and ask them to complete the reference.",
@@ -295,23 +295,23 @@ class ReferenceAutomationService:
         # Look up candidate and agency names
         with get_db() as db:
             cand = db.execute(
-                "SELECT first_name, last_name FROM candidates WHERE id=?", (candidate_id,)
+                "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
             ).fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
             agency_link = db.execute(
-                "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1", (candidate_id,)
+                "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             ).fetchone()
             agency_name = "HealthVet AI"
             if agency_link:
                 agency = db.execute(
-                    "SELECT name FROM agencies WHERE id=?", (dict(agency_link)["agency_id"],)
+                    "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
                 ).fetchone()
                 if agency:
                     agency_name = dict(agency)["name"]
 
         from app.config import BASE_URL
-        reference_link = f"{BASE_URL}/verify?token={token}&type=reference"
+        reference_link = f"{BASE_URL}/verify%stoken={token}&type=reference"
 
         variables = {
             "candidate_name": candidate_name,
@@ -345,17 +345,17 @@ class ReferenceAutomationService:
 
         with get_db() as db:
             cand = db.execute(
-                "SELECT first_name, last_name FROM candidates WHERE id=?", (candidate_id,)
+                "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
             ).fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
             agency_link = db.execute(
-                "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1", (candidate_id,)
+                "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             ).fetchone()
             agency_name = "HealthVet AI"
             if agency_link:
                 agency = db.execute(
-                    "SELECT name FROM agencies WHERE id=?", (dict(agency_link)["agency_id"],)
+                    "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
                 ).fetchone()
                 if agency:
                     agency_name = dict(agency)["name"]
@@ -386,7 +386,7 @@ class ReferenceAutomationService:
     @staticmethod
     def get_reference(ref_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM references_ WHERE id=?", (ref_id,)).fetchone()
+            row = db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,)).fetchone()
             if not row:
                 return None
             return dict(row)
@@ -395,7 +395,7 @@ class ReferenceAutomationService:
     def get_references_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM references_ WHERE candidate_id=? ORDER BY sent_at DESC",
+                "SELECT * FROM references_ WHERE candidate_id=%s ORDER BY sent_at DESC",
                 (candidate_id,),
             ).fetchall()
             return [dict(r) for r in rows]

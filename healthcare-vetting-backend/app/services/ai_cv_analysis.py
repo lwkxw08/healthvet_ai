@@ -158,7 +158,7 @@ _CV_ANALYSIS_PROMPT = """You are an expert HR compliance analyst for healthcare 
 
 Focus on:
 1. Employment gaps (periods >3 months without stated employment)
-2. Role progression (does the career path make sense for healthcare?)
+2. Role progression (does the career path make sense for healthcare%s)
 3. Qualification mismatches (certifications that don't align with roles claimed)
 4. Date inconsistencies (overlapping employment, impossible timelines)
 5. Red flags for healthcare compliance (expired registrations mentioned, disciplinary hints)
@@ -256,7 +256,7 @@ def analyse_cv(candidate_id: str, cv_text: str, cv_analysis_id: Optional[str] = 
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         )""")
         db.execute(
-            "INSERT INTO ai_cv_gap_analyses (id, candidate_id, cv_analysis_id, method, overall_risk, gaps_count, overlaps_count, red_flags_count, result_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO ai_cv_gap_analyses (id, candidate_id, cv_analysis_id, method, overall_risk, gaps_count, overlaps_count, red_flags_count, result_json, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 analysis_id, candidate_id, cv_analysis_id,
                 result.get("method", "unknown"),
@@ -277,7 +277,7 @@ def get_cv_analyses(candidate_id: str) -> list[dict]:
     with get_db() as db:
         try:
             rows = db.execute(
-                "SELECT * FROM ai_cv_gap_analyses WHERE candidate_id=? ORDER BY created_at DESC",
+                "SELECT * FROM ai_cv_gap_analyses WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
             ).fetchall()
             results = []

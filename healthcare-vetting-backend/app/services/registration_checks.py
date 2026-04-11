@@ -105,7 +105,7 @@ class RegistrationCheckService:
                 """INSERT INTO registration_checks
                    (id, candidate_id, body, registration_number, status, is_active,
                     sanctions, conditions, last_checked, next_check, result)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     check_id, candidate_id, body, registration_number,
                     result["status"],
@@ -122,7 +122,7 @@ class RegistrationCheckService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'registration_sanction', 'critical', ?, ?, ?)""",
+                       VALUES (%s, %s, 'registration_sanction', 'critical', %s, %s, %s)""",
                     (
                         generate_id(), candidate_id,
                         f"Active sanctions found on {body} registration",
@@ -135,7 +135,7 @@ class RegistrationCheckService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'registration_inactive', 'high', ?, ?, ?)""",
+                       VALUES (%s, %s, 'registration_inactive', 'high', %s, %s, %s)""",
                     (
                         generate_id(), candidate_id,
                         f"{body} registration is not active",
@@ -147,11 +147,11 @@ class RegistrationCheckService:
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'registration_check', ?, 'completed', 'system', ?, ?)""",
+                   VALUES (%s, 'registration_check', %s, 'completed', 'system', %s, %s)""",
                 (generate_id(), check_id, json.dumps(result), now),
             )
 
-            row = db.execute("SELECT * FROM registration_checks WHERE id=?", (check_id,)).fetchone()
+            row = db.execute("SELECT * FROM registration_checks WHERE id=%s", (check_id,)).fetchone()
             return dict(row)
 
     @staticmethod
@@ -198,7 +198,7 @@ class RegistrationCheckService:
     @staticmethod
     def get_check(check_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM registration_checks WHERE id=?", (check_id,)).fetchone()
+            row = db.execute("SELECT * FROM registration_checks WHERE id=%s", (check_id,)).fetchone()
             if not row:
                 return None
             return dict(row)
@@ -207,7 +207,7 @@ class RegistrationCheckService:
     def get_checks_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM registration_checks WHERE candidate_id=? ORDER BY last_checked DESC",
+                "SELECT * FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC",
                 (candidate_id,),
             ).fetchall()
             return [dict(r) for r in rows]

@@ -143,7 +143,7 @@ def _extract_profile_data(profile_url):
         if resp.status_code != 200:
             return None
         stores_match = re.search(
-            r'window\.stores\s*=\s*(\{.*?\});\s*</script>',
+            r'window\.stores\s*=\s*(\{.*%s\});\s*</script>',
             resp.text, re.DOTALL,
         )
         if not stores_match:
@@ -409,7 +409,7 @@ def scrape_indeed(
         for page in range(max_pages):
             start = page * 10
             url = (
-                f"{base_url}?q={search_term.replace(' ', '+')}"
+                f"{base_url}%sq={search_term.replace(' ', '+')}"
                 f"&l={location.replace(' ', '+')}&start={start}"
             )
             logger.info(f"Scraping Indeed page {page + 1}: {url}")
@@ -584,7 +584,7 @@ def scrape_nhs_jobs(search_term="recruitment", max_pages=2):
         base_url = "https://www.jobs.nhs.uk/candidate/search/results"
         for page in range(1, max_pages + 1):
             url = (
-                f"{base_url}?keyword={search_term.replace(' ', '+')}"
+                f"{base_url}%skeyword={search_term.replace(' ', '+')}"
                 f"&page={page}"
             )
             logger.info(f"Scraping NHS Jobs page {page}: {url}")

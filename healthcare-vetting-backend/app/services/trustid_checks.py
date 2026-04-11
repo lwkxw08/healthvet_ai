@@ -54,29 +54,29 @@ class TrustIDService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             existing = db.execute(
-                "SELECT * FROM trustid_config WHERE check_type=?", (check_type,)
+                "SELECT * FROM trustid_config WHERE check_type=%s", (check_type,)
             ).fetchone()
 
             if existing:
                 updates = []
                 params = []
                 if submission_mode is not None:
-                    updates.append("submission_mode=?")
+                    updates.append("submission_mode=%s")
                     params.append(submission_mode)
                 if api_key is not None:
-                    updates.append("api_key=?")
+                    updates.append("api_key=%s")
                     params.append(api_key)
                 if api_secret is not None:
-                    updates.append("api_secret=?")
+                    updates.append("api_secret=%s")
                     params.append(api_secret)
                 if environment is not None:
-                    updates.append("environment=?")
+                    updates.append("environment=%s")
                     params.append(environment)
-                updates.append("updated_at=?")
+                updates.append("updated_at=%s")
                 params.append(now)
                 params.append(check_type)
                 db.execute(
-                    f"UPDATE trustid_config SET {', '.join(updates)} WHERE check_type=?",
+                    f"UPDATE trustid_config SET {', '.join(updates)} WHERE check_type=%s",
                     params,
                 )
             else:
@@ -84,13 +84,13 @@ class TrustIDService:
                 db.execute(
                     """INSERT INTO trustid_config
                        (id, check_type, label, submission_mode, api_key, api_secret, environment, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (generate_id(), check_type, label,
                      submission_mode or "manual", api_key, api_secret,
                      environment or "production", now),
                 )
 
-            row = db.execute("SELECT * FROM trustid_config WHERE check_type=?", (check_type,)).fetchone()
+            row = db.execute("SELECT * FROM trustid_config WHERE check_type=%s", (check_type,)).fetchone()
             return dict(row) if row else {}
 
     @staticmethod
@@ -98,7 +98,7 @@ class TrustIDService:
         """Return 'manual' or 'api' for a given check type."""
         with get_db() as db:
             row = db.execute(
-                "SELECT submission_mode FROM trustid_config WHERE check_type=?", (check_type,)
+                "SELECT submission_mode FROM trustid_config WHERE check_type=%s", (check_type,)
             ).fetchone()
             if row:
                 return dict(row)["submission_mode"]
@@ -129,7 +129,7 @@ class TrustIDService:
                    (id, candidate_id, check_type, submission_mode, status,
                     candidate_name, candidate_email, candidate_dob,
                     submitted_by, notes, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (check_id, candidate_id, check_type, mode, status,
                  candidate_name, candidate_email, candidate_dob,
                  submitted_by, notes, now, now),
@@ -138,7 +138,7 @@ class TrustIDService:
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'trustid_check', ?, 'created', ?, ?, ?)""",
+                   VALUES (%s, 'trustid_check', %s, 'created', %s, %s, %s)""",
                 (generate_id(), check_id, submitted_by,
                  json.dumps({"check_type": check_type, "mode": mode, "candidate_id": candidate_id}),
                  now),
@@ -154,14 +154,14 @@ class TrustIDService:
                     db.execute(
                         """INSERT INTO in_app_notifications
                            (id, user_id, user_type, title, message, category, severity, is_read, created_at)
-                           VALUES (?, ?, 'admin', ?, ?, 'trustid_task', 'warning', 0, ?)""",
+                           VALUES (%s, %s, 'admin', %s, %s, 'trustid_task', 'warning', 0, %s)""",
                         (generate_id(), dict(admin_row)["id"],
                          f"TrustID Task: {pretty_type}",
                          f"{display_name} requires manual {pretty_type} via TrustID portal. Please action ASAP.",
                          now),
                     )
 
-            row = db.execute("SELECT * FROM trustid_checks WHERE id=?", (check_id,)).fetchone()
+            row = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
             return dict(row)
 
     @staticmethod
@@ -198,7 +198,7 @@ class TrustIDService:
                     """SELECT tc.*, c.first_name, c.last_name, c.email as candidate_email_lookup
                        FROM trustid_checks tc
                        LEFT JOIN candidates c ON tc.candidate_id = c.id
-                       WHERE tc.status = ?
+                       WHERE tc.status = %s
                        ORDER BY tc.created_at ASC""",
                     (status,),
                 ).fetchall()
@@ -217,7 +217,7 @@ class TrustIDService:
         """Get all TrustID checks for a specific candidate."""
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM trustid_checks WHERE candidate_id=? ORDER BY created_at DESC",
+                "SELECT * FROM trustid_checks WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
             ).fetchall()
             return [dict(r) for r in rows]
@@ -230,7 +230,7 @@ class TrustIDService:
         Status transitions: pending_admin → submitted_to_trustid → awaiting_candidate."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute("SELECT * FROM trustid_checks WHERE id=?", (check_id,)).fetchone()
+            row = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
             if not row:
                 return {}
             check = dict(row)
@@ -238,21 +238,21 @@ class TrustIDService:
             new_status = "awaiting_candidate"
             db.execute(
                 """UPDATE trustid_checks SET
-                   status=?, trustid_reference=?, admin_notes=?,
-                   admin_submitted_by=?, admin_submitted_at=?, updated_at=?
-                   WHERE id=?""",
+                   status=%s, trustid_reference=%s, admin_notes=%s,
+                   admin_submitted_by=%s, admin_submitted_at=%s, updated_at=%s
+                   WHERE id=%s""",
                 (new_status, trustid_reference, notes, admin_user, now, now, check_id),
             )
 
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'trustid_check', ?, 'admin_submitted', ?, ?, ?)""",
+                   VALUES (%s, 'trustid_check', %s, 'admin_submitted', %s, %s, %s)""",
                 (generate_id(), check_id, admin_user,
                  json.dumps({"trustid_reference": trustid_reference, "previous_status": check["status"]}),
                  now),
             )
 
-            updated = db.execute("SELECT * FROM trustid_checks WHERE id=?", (check_id,)).fetchone()
+            updated = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
             return dict(updated)
 
     @staticmethod
@@ -265,24 +265,24 @@ class TrustIDService:
         result: 'pass', 'fail', 'inconclusive', 'intervention_required'"""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute("SELECT * FROM trustid_checks WHERE id=?", (check_id,)).fetchone()
+            row = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
             if not row:
                 return {}
             check = dict(row)
 
             db.execute(
                 """UPDATE trustid_checks SET
-                   status='completed', result=?, trustid_reference=COALESCE(?, trustid_reference),
-                   report_document_id=?, completed_at=?, admin_notes=?,
-                   admin_completed_by=?, updated_at=?
-                   WHERE id=?""",
+                   status='completed', result=%s, trustid_reference=COALESCE(%s, trustid_reference),
+                   report_document_id=%s, completed_at=%s, admin_notes=%s,
+                   admin_completed_by=%s, updated_at=%s
+                   WHERE id=%s""",
                 (result, trustid_reference, report_document_id,
                  completed_date or now, notes, admin_user, now, check_id),
             )
 
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'trustid_check', ?, 'result_recorded', ?, ?, ?)""",
+                   VALUES (%s, 'trustid_check', %s, 'result_recorded', %s, %s, %s)""",
                 (generate_id(), check_id, admin_user,
                  json.dumps({
                      "result": result,
@@ -302,7 +302,7 @@ class TrustIDService:
                     db, candidate_id, check_type, now, trustid_reference, notes,
                 )
 
-            updated = db.execute("SELECT * FROM trustid_checks WHERE id=?", (check_id,)).fetchone()
+            updated = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
             result_dict = dict(updated)
 
         # Re-evaluate compliance outside the DB context to avoid locking
@@ -326,7 +326,7 @@ class TrustIDService:
             db.execute(
                 """INSERT INTO identity_checks
                    (id, candidate_id, provider, status, result, details, started_at, completed_at)
-                   VALUES (?, ?, 'trustid', 'completed', 'clear', ?, ?, ?)""",
+                   VALUES (%s, %s, 'trustid', 'completed', 'clear', %s, %s, %s)""",
                 (generate_id(), candidate_id,
                  json.dumps({"source": "trustid_manual", "reference": trustid_reference, "notes": notes}),
                  now, now),
@@ -335,7 +335,7 @@ class TrustIDService:
             db.execute(
                 """INSERT INTO right_to_work_checks
                    (id, candidate_id, verification_method, status, verified, result, details, checked_at)
-                   VALUES (?, ?, 'trustid', 'completed', 1, 'clear', ?, ?)""",
+                   VALUES (%s, %s, 'trustid', 'completed', 1, 'clear', %s, %s)""",
                 (generate_id(), candidate_id,
                  json.dumps({"source": "trustid_manual", "reference": trustid_reference, "notes": notes}),
                  now),
@@ -344,7 +344,7 @@ class TrustIDService:
             db.execute(
                 """INSERT INTO dbs_checks
                    (id, candidate_id, provider, status, result, details, submitted_at, completed_at)
-                   VALUES (?, ?, 'trustid', 'completed', 'clear', ?, ?, ?)""",
+                   VALUES (%s, %s, 'trustid', 'completed', 'clear', %s, %s, %s)""",
                 (generate_id(), candidate_id,
                  json.dumps({"source": "trustid_manual", "reference": trustid_reference, "notes": notes}),
                  now, now),
@@ -357,7 +357,7 @@ class TrustIDService:
             counts = {}
             for status in ["pending_admin", "awaiting_candidate", "submitted_to_trustid", "completed"]:
                 row = db.execute(
-                    "SELECT COUNT(*) as cnt FROM trustid_checks WHERE status=?", (status,)
+                    "SELECT COUNT(*) as cnt FROM trustid_checks WHERE status=%s", (status,)
                 ).fetchone()
                 counts[status] = dict(row)["cnt"]
             # Overdue = pending_admin for more than 24 hours

@@ -30,7 +30,7 @@ class TriggerEngine:
 
         with get_db() as db:
             sub = db.execute(
-                "SELECT * FROM candidate_submissions WHERE id=?", (submission_id,)
+                "SELECT * FROM candidate_submissions WHERE id=%s", (submission_id,)
             ).fetchone()
             if not sub:
                 return {"error": "Submission not found"}
@@ -41,13 +41,13 @@ class TriggerEngine:
 
             # Mark as processing
             db.execute(
-                "UPDATE candidate_submissions SET status='processing', processing_started_at=? WHERE id=?",
+                "UPDATE candidate_submissions SET status='processing', processing_started_at=%s WHERE id=%s",
                 (now, submission_id),
             )
 
             # Load all section draft data
             drafts = db.execute(
-                "SELECT * FROM candidate_draft_data WHERE submission_id=?", (submission_id,)
+                "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (submission_id,)
             ).fetchall()
             section_data = {}
             for d in drafts:
@@ -92,7 +92,7 @@ class TriggerEngine:
                 # Get candidate info for TrustID records
                 with get_db() as db:
                     cand = db.execute(
-                        "SELECT first_name, last_name, email, date_of_birth FROM candidates WHERE id=?",
+                        "SELECT first_name, last_name, email, date_of_birth FROM candidates WHERE id=%s",
                         (candidate_id,),
                     ).fetchone()
                     cand_data = dict(cand) if cand else {}
@@ -148,24 +148,24 @@ class TriggerEngine:
         completed_at = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             db.execute(
-                "UPDATE candidate_submissions SET status='completed', processing_completed_at=? WHERE id=?",
+                "UPDATE candidate_submissions SET status='completed', processing_completed_at=%s WHERE id=%s",
                 (completed_at, submission_id),
             )
 
             # If this is a re-vet, mark the re-vet request as completed
             revet = db.execute(
-                "SELECT id FROM revet_requests WHERE submission_id=?", (submission_id,)
+                "SELECT id FROM revet_requests WHERE submission_id=%s", (submission_id,)
             ).fetchone()
             if revet:
                 db.execute(
-                    "UPDATE revet_requests SET status='completed', completed_at=? WHERE id=?",
+                    "UPDATE revet_requests SET status='completed', completed_at=%s WHERE id=%s",
                     (completed_at, dict(revet)["id"]),
                 )
 
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'submission', ?, 'processing_completed', 'trigger_engine', ?, ?)""",
+                   VALUES (%s, 'submission', %s, 'processing_completed', 'trigger_engine', %s, %s)""",
                 (generate_id(), submission_id,
                  json.dumps({"sections_processed": list(results.keys()), "candidate_id": candidate_id}),
                  completed_at),
@@ -180,7 +180,7 @@ class TriggerEngine:
             # Get candidate name for the check
             with get_db() as db:
                 cand = db.execute(
-                    "SELECT first_name, last_name, date_of_birth FROM candidates WHERE id=?",
+                    "SELECT first_name, last_name, date_of_birth FROM candidates WHERE id=%s",
                     (candidate_id,),
                 ).fetchone()
                 cand_data = dict(cand) if cand else {}
@@ -252,7 +252,7 @@ class TriggerEngine:
                         (row["employer_name"], row["job_title"])
                         for row in [
                             dict(r) for r in db.execute(
-                                "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=?",
+                                "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=%s",
                                 (candidate_id,),
                             ).fetchall()
                         ]
@@ -289,7 +289,7 @@ class TriggerEngine:
         try:
             with get_db() as db:
                 cand = db.execute(
-                    "SELECT registration_body, registration_number FROM candidates WHERE id=?",
+                    "SELECT registration_body, registration_number FROM candidates WHERE id=%s",
                     (candidate_id,),
                 ).fetchone()
                 if cand:
@@ -330,13 +330,13 @@ class TriggerEngine:
             with get_db() as db:
                 # Get all employment entries with verifier details
                 entries = db.execute(
-                    "SELECT * FROM employment_history WHERE candidate_id=? AND verifier_name IS NOT NULL AND verifier_email IS NOT NULL",
+                    "SELECT * FROM employment_history WHERE candidate_id=%s AND verifier_name IS NOT NULL AND verifier_email IS NOT NULL",
                     (candidate_id,),
                 ).fetchall()
 
                 # Get existing verifications to avoid duplicates
                 existing = db.execute(
-                    "SELECT employment_id FROM employment_verifications WHERE candidate_id=?",
+                    "SELECT employment_id FROM employment_verifications WHERE candidate_id=%s",
                     (candidate_id,),
                 ).fetchall()
                 existing_ids = {dict(e)["employment_id"] for e in existing}
@@ -374,7 +374,7 @@ class TriggerEngine:
                             """INSERT INTO training_certificates
                                (id, candidate_id, certificate_name, category, provider,
                                 issue_date, expiry_date, certificate_ref, created_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                             (generate_id(), candidate_id,
                              cert["certificate_name"],
                              cert.get("category", "mandatory"),

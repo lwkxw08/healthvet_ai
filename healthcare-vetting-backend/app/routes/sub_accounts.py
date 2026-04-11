@@ -85,7 +85,7 @@ async def list_sub_accounts(current_user: dict = Depends(get_current_user)):
         rows = db.execute(
             """SELECT id, agency_id, email, first_name, last_name, role, industry_template_id, is_active,
                       last_login_at, created_at
-               FROM agency_sub_accounts WHERE agency_id=? ORDER BY created_at""",
+               FROM agency_sub_accounts WHERE agency_id=%s ORDER BY created_at""",
             (agency_id,),
         ).fetchall()
 
@@ -97,7 +97,7 @@ async def list_sub_accounts(current_user: dict = Depends(get_current_user)):
             d["permissions"] = role_info.get("permissions", [])
             # Resolve template name if assigned
             if d.get("industry_template_id"):
-                tmpl = db.execute("SELECT name FROM industry_templates WHERE id=?", (d["industry_template_id"],)).fetchone()
+                tmpl = db.execute("SELECT name FROM industry_templates WHERE id=%s", (d["industry_template_id"],)).fetchone()
                 d["industry_template_name"] = dict(tmpl)["name"] if tmpl else None
             else:
                 d["industry_template_name"] = None
@@ -122,7 +122,7 @@ async def create_sub_account(data: SubAccountCreate, current_user: dict = Depend
     with get_db() as db:
         # Check if email already exists for this agency
         existing = db.execute(
-            "SELECT id FROM agency_sub_accounts WHERE agency_id=? AND email=?",
+            "SELECT id FROM agency_sub_accounts WHERE agency_id=%s AND email=%s",
             (agency_id, data.email.lower()),
         ).fetchone()
         if existing:
@@ -131,14 +131,14 @@ async def create_sub_account(data: SubAccountCreate, current_user: dict = Depend
         db.execute(
             """INSERT INTO agency_sub_accounts
                (id, agency_id, email, password_hash, first_name, last_name, role, industry_template_id, is_active, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s)""",
             (account_id, agency_id, data.email.lower(), hash_password(data.password),
              data.first_name, data.last_name, data.role, data.industry_template_id, now),
         )
 
         # Log the action
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (generate_id(), "sub_account", account_id, "sub_account_created",
              current_user["sub"], f"Created sub-account {data.email} with role {data.role}", now),
         )
@@ -146,7 +146,7 @@ async def create_sub_account(data: SubAccountCreate, current_user: dict = Depend
         # Resolve template name
         template_name = None
         if data.industry_template_id:
-            tmpl = db.execute("SELECT name FROM industry_templates WHERE id=?", (data.industry_template_id,)).fetchone()
+            tmpl = db.execute("SELECT name FROM industry_templates WHERE id=%s", (data.industry_template_id,)).fetchone()
             template_name = dict(tmpl)["name"] if tmpl else None
 
         return {
@@ -175,7 +175,7 @@ async def update_sub_account(account_id: str, data: SubAccountUpdate, current_us
 
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM agency_sub_accounts WHERE id=? AND agency_id=?",
+            "SELECT * FROM agency_sub_accounts WHERE id=%s AND agency_id=%s",
             (account_id, agency_id),
         ).fetchone()
         if not row:
@@ -196,12 +196,12 @@ async def update_sub_account(account_id: str, data: SubAccountUpdate, current_us
             updates["industry_template_id"] = data.industry_template_id if data.industry_template_id else None
 
         if updates:
-            set_clause = ", ".join(f"{k}=?" for k in updates.keys())
+            set_clause = ", ".join(f"{k}=%s" for k in updates.keys())
             values = list(updates.values()) + [account_id]
-            db.execute(f"UPDATE agency_sub_accounts SET {set_clause} WHERE id=?", values)
+            db.execute(f"UPDATE agency_sub_accounts SET {set_clause} WHERE id=%s", values)
 
         row = db.execute(
-            "SELECT id, agency_id, email, first_name, last_name, role, industry_template_id, is_active, last_login_at, created_at FROM agency_sub_accounts WHERE id=?",
+            "SELECT id, agency_id, email, first_name, last_name, role, industry_template_id, is_active, last_login_at, created_at FROM agency_sub_accounts WHERE id=%s",
             (account_id,),
         ).fetchone()
         d = dict(row)
@@ -209,7 +209,7 @@ async def update_sub_account(account_id: str, data: SubAccountUpdate, current_us
         d["role_label"] = role_info.get("label", d["role"])
         d["permissions"] = role_info.get("permissions", [])
         if d.get("industry_template_id"):
-            tmpl = db.execute("SELECT name FROM industry_templates WHERE id=?", (d["industry_template_id"],)).fetchone()
+            tmpl = db.execute("SELECT name FROM industry_templates WHERE id=%s", (d["industry_template_id"],)).fetchone()
             d["industry_template_name"] = dict(tmpl)["name"] if tmpl else None
         else:
             d["industry_template_name"] = None
@@ -227,17 +227,17 @@ async def delete_sub_account(account_id: str, current_user: dict = Depends(get_c
 
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM agency_sub_accounts WHERE id=? AND agency_id=?",
+            "SELECT * FROM agency_sub_accounts WHERE id=%s AND agency_id=%s",
             (account_id, agency_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Sub-account not found")
 
         email = dict(row)["email"]
-        db.execute("DELETE FROM agency_sub_accounts WHERE id=?", (account_id,))
+        db.execute("DELETE FROM agency_sub_accounts WHERE id=%s", (account_id,))
 
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (generate_id(), "sub_account", account_id, "sub_account_deleted",
              current_user["sub"], f"Deleted sub-account {email}", now),
         )
@@ -250,7 +250,7 @@ async def sub_account_login(data: SubAccountLogin):
     """Login as a sub-account user."""
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM agency_sub_accounts WHERE email=? AND is_active=1",
+            "SELECT * FROM agency_sub_accounts WHERE email=%s AND is_active=1",
             (data.email.lower(),),
         ).fetchone()
         if not row:
@@ -263,7 +263,7 @@ async def sub_account_login(data: SubAccountLogin):
         # Update last login
         now = datetime.now(timezone.utc).isoformat()
         db.execute(
-            "UPDATE agency_sub_accounts SET last_login_at=? WHERE id=?",
+            "UPDATE agency_sub_accounts SET last_login_at=%s WHERE id=%s",
             (now, account["id"]),
         )
 

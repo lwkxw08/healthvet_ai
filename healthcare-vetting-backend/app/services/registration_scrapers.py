@@ -67,7 +67,7 @@ def scrape_nmc_register(registration_number: str) -> dict:
         driver = _get_headless_driver()
 
         # Navigate to NMC search
-        url = f"https://www.nmc.org.uk/registration/search-the-register/?query={registration_number}"
+        url = f"https://www.nmc.org.uk/registration/search-the-register/%squery={registration_number}"
         logger.info(f"Scraping NMC register for: {registration_number}")
         driver.get(url)
         _random_delay(2.0, 4.0)
@@ -181,7 +181,7 @@ def scrape_gmc_register(registration_number: str) -> dict:
         driver = _get_headless_driver()
 
         # GMC register search
-        url = f"https://www.gmc-uk.org/registration-and-licensing/the-medical-register/a-]doctor-on-the-medical-register?query={registration_number}"
+        url = f"https://www.gmc-uk.org/registration-and-licensing/the-medical-register/a-]doctor-on-the-medical-register%squery={registration_number}"
         logger.info(f"Scraping GMC register for: {registration_number}")
         driver.get(url)
         _random_delay(2.0, 4.0)
@@ -288,7 +288,7 @@ def scrape_hcpc_register(registration_number: str) -> dict:
         driver = _get_headless_driver()
 
         # HCPC online register search
-        url = f"https://www.hcpc-uk.org/check-the-register/by-registration-number/?query={registration_number}"
+        url = f"https://www.hcpc-uk.org/check-the-register/by-registration-number/%squery={registration_number}"
         logger.info(f"Scraping HCPC register for: {registration_number}")
         driver.get(url)
         _random_delay(2.0, 4.0)

@@ -147,7 +147,7 @@ class SMSService:
                 """INSERT INTO sms_notifications
                    (id, user_id, user_type, to_number, message, category,
                     reference_id, provider, status, provider_response, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (sms_id, user_id, user_type, to_number, message, category,
                  reference_id, SMS_PROVIDER, status, json.dumps(result), now),
             )
@@ -200,12 +200,12 @@ class SMSService:
         with get_db() as db:
             if user_id:
                 rows = db.execute(
-                    "SELECT * FROM sms_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    "SELECT * FROM sms_notifications WHERE user_id=%s ORDER BY created_at DESC LIMIT %s OFFSET %s",
                     (user_id, limit, offset),
                 ).fetchall()
             else:
                 rows = db.execute(
-                    "SELECT * FROM sms_notifications ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    "SELECT * FROM sms_notifications ORDER BY created_at DESC LIMIT %s OFFSET %s",
                     (limit, offset),
                 ).fetchall()
             return [dict(r) for r in rows]

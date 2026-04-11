@@ -87,7 +87,7 @@ def get_api_key_user(request: Request) -> dict:
 
     with get_db() as db:
         rows = db.execute(
-            "SELECT * FROM api_keys WHERE key_prefix=? AND is_active=1",
+            "SELECT * FROM api_keys WHERE key_prefix=%s AND is_active=1",
             (prefix,),
         ).fetchall()
 
@@ -105,7 +105,7 @@ def get_api_key_user(request: Request) -> dict:
                 # Update last used
                 now = datetime.now(timezone.utc).isoformat()
                 db.execute(
-                    "UPDATE api_keys SET last_used_at=? WHERE id=?",
+                    "UPDATE api_keys SET last_used_at=%s WHERE id=%s",
                     (now, key_record["id"]),
                 )
 
@@ -158,16 +158,16 @@ async def create_api_key(
     with get_db() as db:
         # Limit to 5 active keys per agency
         count = db.execute(
-            "SELECT COUNT(*) FROM api_keys WHERE agency_id=? AND is_active=1",
+            "SELECT COUNT(*) AS cnt FROM api_keys WHERE agency_id=%s AND is_active=1",
             (agency_id,),
-        ).fetchone()[0]
+        ).fetchone()["cnt"]
         if count >= 5:
             raise HTTPException(status_code=400, detail="Maximum 5 active API keys per agency")
 
         db.execute(
             """INSERT INTO api_keys
                (id, agency_id, key_hash, key_prefix, name, scopes, is_active, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 1, %s)""",
             (key_id, agency_id, key_hash, key_prefix, data.name,
              json.dumps(data.scopes), now),
         )
@@ -198,7 +198,7 @@ async def list_api_keys(current_user: dict = Depends(get_current_user)):
             ).fetchall()
         else:
             rows = db.execute(
-                "SELECT id, agency_id, key_prefix, name, scopes, is_active, last_used_at, created_at FROM api_keys WHERE agency_id=? ORDER BY created_at DESC",
+                "SELECT id, agency_id, key_prefix, name, scopes, is_active, last_used_at, created_at FROM api_keys WHERE agency_id=%s ORDER BY created_at DESC",
                 (agency_id,),
             ).fetchall()
 
@@ -216,17 +216,17 @@ async def revoke_api_key(
 
     with get_db() as db:
         if user_type == "admin":
-            existing = db.execute("SELECT id FROM api_keys WHERE id=?", (key_id,)).fetchone()
+            existing = db.execute("SELECT id FROM api_keys WHERE id=%s", (key_id,)).fetchone()
         else:
             existing = db.execute(
-                "SELECT id FROM api_keys WHERE id=? AND agency_id=?",
+                "SELECT id FROM api_keys WHERE id=%s AND agency_id=%s",
                 (key_id, agency_id),
             ).fetchone()
 
         if not existing:
             raise HTTPException(status_code=404, detail="API key not found")
 
-        db.execute("UPDATE api_keys SET is_active=0 WHERE id=?", (key_id,))
+        db.execute("UPDATE api_keys SET is_active=0 WHERE id=%s", (key_id,))
 
     return {"revoked": True, "key_id": key_id}
 
@@ -255,16 +255,16 @@ async def create_webhook_subscription(
     with get_db() as db:
         # Limit to 10 webhooks per agency
         count = db.execute(
-            "SELECT COUNT(*) FROM webhook_subscriptions WHERE agency_id=? AND is_active=1",
+            "SELECT COUNT(*) AS cnt FROM webhook_subscriptions WHERE agency_id=%s AND is_active=1",
             (agency_id,),
-        ).fetchone()[0]
+        ).fetchone()["cnt"]
         if count >= 10:
             raise HTTPException(status_code=400, detail="Maximum 10 active webhook subscriptions per agency")
 
         db.execute(
             """INSERT INTO webhook_subscriptions
                (id, agency_id, url, secret, events, is_active, created_at)
-               VALUES (?, ?, ?, ?, ?, 1, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 1, %s)""",
             (sub_id, agency_id, data.url, webhook_secret,
              json.dumps(data.events), now),
         )
@@ -294,7 +294,7 @@ async def list_webhook_subscriptions(current_user: dict = Depends(get_current_us
             ).fetchall()
         else:
             rows = db.execute(
-                "SELECT id, agency_id, url, events, is_active, failure_count, last_triggered_at, created_at FROM webhook_subscriptions WHERE agency_id=? ORDER BY created_at DESC",
+                "SELECT id, agency_id, url, events, is_active, failure_count, last_triggered_at, created_at FROM webhook_subscriptions WHERE agency_id=%s ORDER BY created_at DESC",
                 (agency_id,),
             ).fetchall()
 
@@ -312,17 +312,17 @@ async def delete_webhook_subscription(
 
     with get_db() as db:
         if user_type == "admin":
-            existing = db.execute("SELECT id FROM webhook_subscriptions WHERE id=?", (subscription_id,)).fetchone()
+            existing = db.execute("SELECT id FROM webhook_subscriptions WHERE id=%s", (subscription_id,)).fetchone()
         else:
             existing = db.execute(
-                "SELECT id FROM webhook_subscriptions WHERE id=? AND agency_id=?",
+                "SELECT id FROM webhook_subscriptions WHERE id=%s AND agency_id=%s",
                 (subscription_id, agency_id),
             ).fetchone()
 
         if not existing:
             raise HTTPException(status_code=404, detail="Webhook subscription not found")
 
-        db.execute("UPDATE webhook_subscriptions SET is_active=0 WHERE id=?", (subscription_id,))
+        db.execute("UPDATE webhook_subscriptions SET is_active=0 WHERE id=%s", (subscription_id,))
 
     return {"deleted": True, "subscription_id": subscription_id}
 
@@ -355,8 +355,8 @@ async def list_webhook_deliveries(
     with get_db() as db:
         rows = db.execute(
             """SELECT id, event_type, response_status, attempt, status, created_at, delivered_at
-               FROM webhook_deliveries WHERE subscription_id=?
-               ORDER BY created_at DESC LIMIT ?""",
+               FROM webhook_deliveries WHERE subscription_id=%s
+               ORDER BY created_at DESC LIMIT %s""",
             (subscription_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -378,7 +378,7 @@ async def api_list_candidates(
                       ac.employment_status
                FROM candidates c
                JOIN agency_candidates ac ON c.id = ac.candidate_id
-               WHERE ac.agency_id=?
+               WHERE ac.agency_id=%s
                ORDER BY c.created_at DESC""",
             (agency_id,),
         ).fetchall()
@@ -396,7 +396,7 @@ async def api_get_candidate(
     with get_db() as db:
         # Verify agency owns candidate
         link = db.execute(
-            "SELECT 1 FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+            "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
         ).fetchone()
         if not link:
@@ -406,7 +406,7 @@ async def api_get_candidate(
             """SELECT id, email, first_name, last_name, phone, profession,
                       registration_number, registration_body, status,
                       compliance_score, compliance_status, created_at
-               FROM candidates WHERE id=?""",
+               FROM candidates WHERE id=%s""",
             (candidate_id,),
         ).fetchone()
         if not candidate:
@@ -425,14 +425,14 @@ async def api_get_compliance(
 
     with get_db() as db:
         link = db.execute(
-            "SELECT 1 FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+            "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
         ).fetchone()
         if not link:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         compliance = db.execute(
-            "SELECT * FROM compliance_records WHERE candidate_id=? ORDER BY last_evaluated DESC LIMIT 1",
+            "SELECT * FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
             (candidate_id,),
         ).fetchone()
         if not compliance:
@@ -451,26 +451,26 @@ async def api_get_checks(
 
     with get_db() as db:
         link = db.execute(
-            "SELECT 1 FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+            "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
         ).fetchone()
         if not link:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         identity = db.execute(
-            "SELECT id, status, result, started_at, completed_at FROM identity_checks WHERE candidate_id=?",
+            "SELECT id, status, result, started_at, completed_at FROM identity_checks WHERE candidate_id=%s",
             (candidate_id,),
         ).fetchall()
         rtw = db.execute(
-            "SELECT id, status, verified, verification_method, checked_at FROM right_to_work_checks WHERE candidate_id=?",
+            "SELECT id, status, verified, verification_method, checked_at FROM right_to_work_checks WHERE candidate_id=%s",
             (candidate_id,),
         ).fetchall()
         dbs = db.execute(
-            "SELECT id, status, check_type, certificate_number, result, submitted_at, completed_at FROM dbs_checks WHERE candidate_id=?",
+            "SELECT id, status, check_type, certificate_number, result, submitted_at, completed_at FROM dbs_checks WHERE candidate_id=%s",
             (candidate_id,),
         ).fetchall()
         reg = db.execute(
-            "SELECT id, body, status, is_active, last_checked FROM registration_checks WHERE candidate_id=?",
+            "SELECT id, body, status, is_active, last_checked FROM registration_checks WHERE candidate_id=%s",
             (candidate_id,),
         ).fetchall()
 
@@ -494,7 +494,7 @@ async def api_list_invoices(
         rows = db.execute(
             """SELECT id, candidate_id, check_type, description, cost_amount,
                       sell_amount, status, created_at, paid_at
-               FROM invoices WHERE agency_id=?
+               FROM invoices WHERE agency_id=%s
                ORDER BY created_at DESC""",
             (agency_id,),
         ).fetchall()
@@ -520,7 +520,7 @@ def dispatch_webhook_event(agency_id: str, event_type: str, data: dict):
 
     with get_db() as db:
         subs = db.execute(
-            "SELECT id, events FROM webhook_subscriptions WHERE agency_id=? AND is_active=1",
+            "SELECT id, events FROM webhook_subscriptions WHERE agency_id=%s AND is_active=1",
             (agency_id,),
         ).fetchall()
 

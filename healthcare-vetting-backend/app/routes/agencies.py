@@ -22,7 +22,7 @@ def _get_agency_template_check_keys(db, agency_id: str) -> list[str]:
 
     # 1. Agency-level template
     agency = db.execute(
-        "SELECT industry_template_id FROM agencies WHERE id=?", (agency_id,)
+        "SELECT industry_template_id FROM agencies WHERE id=%s", (agency_id,)
     ).fetchone()
     if agency and dict(agency).get("industry_template_id"):
         template_id = dict(agency)["industry_template_id"]
@@ -38,7 +38,7 @@ def _get_agency_template_check_keys(db, agency_id: str) -> list[str]:
     # 3. Load check keys from template
     if template_id:
         checks = db.execute(
-            "SELECT check_key FROM industry_template_checks WHERE template_id=? AND is_enabled=1",
+            "SELECT check_key FROM industry_template_checks WHERE template_id=%s AND is_enabled=1",
             (template_id,),
         ).fetchall()
         if checks:
@@ -65,7 +65,7 @@ async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
         # Resolve the agency's industry template
         template_id = None
         agency = db.execute(
-            "SELECT industry_template_id FROM agencies WHERE id=?", (agency_id,)
+            "SELECT industry_template_id FROM agencies WHERE id=%s", (agency_id,)
         ).fetchone()
         if agency and dict(agency).get("industry_template_id"):
             template_id = dict(agency)["industry_template_id"]
@@ -86,7 +86,7 @@ async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
 
             # Read per-check pricing from industry_check_pricing
             pricing_rows = db.execute(
-                "SELECT check_type, label, sell_price FROM industry_check_pricing WHERE industry_template_id=? AND is_active=1",
+                "SELECT check_type, label, sell_price FROM industry_check_pricing WHERE industry_template_id=%s AND is_active=1",
                 (template_id,)
             ).fetchall()
             for row in pricing_rows:
@@ -127,7 +127,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
     with get_db() as db:
         # Get agency details including billing_mode
         agency_row = db.execute(
-            "SELECT name, billing_mode, stripe_customer_id, discount_percent FROM agencies WHERE id=?",
+            "SELECT name, billing_mode, stripe_customer_id, discount_percent FROM agencies WHERE id=%s",
             (agency_id,),
         ).fetchone()
         agency_data = dict(agency_row) if agency_row else {}
@@ -137,7 +137,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
 
         # Check if there's already a pending invite for this email from this agency
         existing = db.execute(
-            "SELECT id FROM agency_invites WHERE agency_id=? AND candidate_email=? AND status='pending'",
+            "SELECT id FROM agency_invites WHERE agency_id=%s AND candidate_email=%s AND status='pending'",
             (agency_id, data.candidate_email),
         ).fetchone()
         if existing:
@@ -173,7 +173,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
 
         db.execute(
             """INSERT INTO agency_invites (id, agency_id, candidate_email, invite_code, status, created_at, include_monitoring, vetting_cost, monitoring_cost, sub_account_id)
-               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s)""",
             (invite_id, agency_id, data.candidate_email, invite_code, now,
              1 if data.include_monitoring else 0, round(vetting_cost, 2), round(monitoring_cost, 2),
              data.sub_account_id),
@@ -207,7 +207,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
             inv_id = generate_id()
             db.execute(
                 """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
-                   VALUES (?, ?, 'full_vetting', 'Full Automated Vetting - ' || ?, ?, ?, 'pending', 'stripe', ?, ?)""",
+                   VALUES (%s, %s, 'full_vetting', 'Full Automated Vetting - ' || %s, %s, %s, 'pending', 'stripe', %s, %s)""",
                 (inv_id, agency_id, data.candidate_email, cost_amount,
                  round(vetting_cost, 2), due_date, now),
             )
@@ -215,7 +215,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
                 mon_inv_id = generate_id()
                 db.execute(
                     """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
-                       VALUES (?, ?, 'annual_monitoring', 'Annual Monitoring Service - ' || ?, ?, ?, 'pending', 'stripe', ?, ?)""",
+                       VALUES (%s, %s, 'annual_monitoring', 'Annual Monitoring Service - ' || %s, %s, %s, 'pending', 'stripe', %s, %s)""",
                     (mon_inv_id, agency_id, data.candidate_email,
                      round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), due_date, now),
                 )
@@ -229,14 +229,14 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
             inv_id = generate_id()
             db.execute(
                 """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
-                   VALUES (?, ?, 'full_vetting', 'Full Automated Vetting - ' || ?, ?, ?, 'pending', 'manual', ?, ?)""",
+                   VALUES (%s, %s, 'full_vetting', 'Full Automated Vetting - ' || %s, %s, %s, 'pending', 'manual', %s, %s)""",
                 (inv_id, agency_id, data.candidate_email, cost_amount,
                  round(vetting_cost, 2), due_date, now),
             )
             if data.include_monitoring and monitoring_cost > 0:
                 db.execute(
                     """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
-                       VALUES (?, ?, 'annual_monitoring', 'Annual Monitoring Service - ' || ?, ?, ?, 'pending', 'manual', ?, ?)""",
+                       VALUES (%s, %s, 'annual_monitoring', 'Annual Monitoring Service - ' || %s, %s, %s, 'pending', 'manual', %s, %s)""",
                     (generate_id(), agency_id, data.candidate_email,
                      round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), due_date, now),
                 )
@@ -247,7 +247,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
     try:
         reload_email_config()
         base_url = str(request.base_url).rstrip("/")
-        invite_link = f"{base_url}/?invite={invite_code}"
+        invite_link = f"{base_url}/%sinvite={invite_code}"
         email_result = EmailTemplateService.send_email(
             template_key="candidate_invite",
             recipient_email=data.candidate_email,
@@ -282,11 +282,11 @@ async def list_invites(current_user: dict = Depends(get_current_user)):
 
     agency_id = current_user["sub"]
     with get_db() as db:
-        agency_row = db.execute("SELECT name FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        agency_row = db.execute("SELECT name FROM agencies WHERE id=%s", (agency_id,)).fetchone()
         agency_name = dict(agency_row)["name"] if agency_row else "Unknown Agency"
 
         rows = db.execute(
-            "SELECT * FROM agency_invites WHERE agency_id=? ORDER BY created_at DESC",
+            "SELECT * FROM agency_invites WHERE agency_id=%s ORDER BY created_at DESC",
             (agency_id,),
         ).fetchall()
 
@@ -306,7 +306,7 @@ async def revoke_invite(invite_id: str, current_user: dict = Depends(get_current
 
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM agency_invites WHERE id=? AND agency_id=?",
+            "SELECT * FROM agency_invites WHERE id=%s AND agency_id=%s",
             (invite_id, current_user["sub"]),
         ).fetchone()
         if not row:
@@ -316,7 +316,7 @@ async def revoke_invite(invite_id: str, current_user: dict = Depends(get_current
             raise HTTPException(status_code=400, detail="Can only revoke pending invites")
 
         db.execute(
-            "UPDATE agency_invites SET status='revoked' WHERE id=?",
+            "UPDATE agency_invites SET status='revoked' WHERE id=%s",
             (invite_id,),
         )
 
@@ -332,7 +332,7 @@ async def resend_invite(invite_id: str, request: Request, current_user: dict = D
     agency_id = current_user["sub"]
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM agency_invites WHERE id=? AND agency_id=?",
+            "SELECT * FROM agency_invites WHERE id=%s AND agency_id=%s",
             (invite_id, agency_id),
         ).fetchone()
         if not row:
@@ -341,14 +341,14 @@ async def resend_invite(invite_id: str, request: Request, current_user: dict = D
         if invite["status"] not in ("pending", "sent"):
             raise HTTPException(status_code=400, detail="Can only resend pending or sent invites")
 
-        agency_row = db.execute("SELECT name FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        agency_row = db.execute("SELECT name FROM agencies WHERE id=%s", (agency_id,)).fetchone()
         agency_name = dict(agency_row)["name"] if agency_row else "Unknown Agency"
 
         # Send the invite email again
         try:
             reload_email_config()
             base_url = str(request.base_url).rstrip("/")
-            invite_link = f"{base_url}/?invite={invite['invite_code']}"
+            invite_link = f"{base_url}/%sinvite={invite['invite_code']}"
             email_result = EmailTemplateService.send_email(
                 template_key="candidate_invite",
                 recipient_email=invite["candidate_email"],
@@ -374,7 +374,7 @@ async def get_invite_info(invite_code: str):
         row = db.execute(
             """SELECT ai.*, a.name as agency_name FROM agency_invites ai
                JOIN agencies a ON ai.agency_id = a.id
-               WHERE ai.invite_code=? AND ai.status='pending'""",
+               WHERE ai.invite_code=%s AND ai.status='pending'""",
             (invite_code,),
         ).fetchone()
         if not row:
@@ -399,7 +399,7 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
 
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM agency_invites WHERE invite_code=? AND status='pending'",
+            "SELECT * FROM agency_invites WHERE invite_code=%s AND status='pending'",
             (invite_code,),
         ).fetchone()
         if not row:
@@ -409,7 +409,7 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
 
         # Verify the candidate email matches the invite
         candidate_row = db.execute(
-            "SELECT email FROM candidates WHERE id=?",
+            "SELECT email FROM candidates WHERE id=%s",
             (candidate_id,),
         ).fetchone()
         if candidate_row:
@@ -422,13 +422,13 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
 
         # Check if already assigned
         existing = db.execute(
-            "SELECT 1 FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+            "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (invite["agency_id"], candidate_id),
         ).fetchone()
         if existing:
             # Already assigned, just update invite status
             db.execute(
-                "UPDATE agency_invites SET status='accepted', candidate_id=?, accepted_at=? WHERE id=?",
+                "UPDATE agency_invites SET status='accepted', candidate_id=%s, accepted_at=%s WHERE id=%s",
                 (candidate_id, now, invite["id"]),
             )
             return {"status": "already_assigned", "message": "You are already linked to this agency"}
@@ -440,13 +440,13 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
         sub_account_id = invite.get("sub_account_id")
         db.execute(
             """INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at, annual_monitoring, vetting_cost_accepted, monitoring_cost_accepted, invited_by_sub_account_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (invite["agency_id"], candidate_id, now, include_monitoring, vetting_cost, monitoring_cost, sub_account_id),
         )
 
         # Update invite status
         db.execute(
-            "UPDATE agency_invites SET status='accepted', candidate_id=?, accepted_at=? WHERE id=?",
+            "UPDATE agency_invites SET status='accepted', candidate_id=%s, accepted_at=%s WHERE id=%s",
             (candidate_id, now, invite["id"]),
         )
 
@@ -464,7 +464,7 @@ async def get_my_agencies(current_user: dict = Depends(get_current_user)):
             """SELECT a.id, a.name, a.email, a.contact_name, ac.assigned_at
                FROM agencies a
                JOIN agency_candidates ac ON a.id = ac.agency_id
-               WHERE ac.candidate_id=?""",
+               WHERE ac.candidate_id=%s""",
             (current_user["sub"],),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -478,7 +478,7 @@ async def get_pending_invites(current_user: dict = Depends(get_current_user)):
 
     with get_db() as db:
         candidate_row = db.execute(
-            "SELECT email FROM candidates WHERE id=?", (current_user["sub"],)
+            "SELECT email FROM candidates WHERE id=%s", (current_user["sub"],)
         ).fetchone()
         if not candidate_row:
             return []
@@ -487,7 +487,7 @@ async def get_pending_invites(current_user: dict = Depends(get_current_user)):
         rows = db.execute(
             """SELECT ai.*, a.name as agency_name FROM agency_invites ai
                JOIN agencies a ON ai.agency_id = a.id
-               WHERE ai.candidate_email=? AND ai.status='pending'""",
+               WHERE ai.candidate_email=%s AND ai.status='pending'""",
             (candidate_email,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -518,14 +518,14 @@ async def update_candidate_status(
 
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+            "SELECT * FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Candidate not found in your agency")
 
         db.execute(
-            "UPDATE agency_candidates SET employment_status=?, employment_status_updated_at=? WHERE agency_id=? AND candidate_id=?",
+            "UPDATE agency_candidates SET employment_status=%s, employment_status_updated_at=%s WHERE agency_id=%s AND candidate_id=%s",
             (data.employment_status, now, agency_id, candidate_id),
         )
 
@@ -545,7 +545,7 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
     with get_db() as db:
         # Get invoices for this agency
         invoices = [dict(r) for r in db.execute(
-            "SELECT * FROM invoices WHERE agency_id=? ORDER BY created_at DESC",
+            "SELECT * FROM invoices WHERE agency_id=%s ORDER BY created_at DESC",
             (agency_id,),
         ).fetchall()]
 
@@ -569,13 +569,13 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
 
         # Get candidate count
         cand_count = db.execute(
-            "SELECT COUNT(*) as cnt FROM agency_candidates WHERE agency_id=?",
+            "SELECT COUNT(*) as cnt FROM agency_candidates WHERE agency_id=%s",
             (agency_id,),
         ).fetchone()
 
         # Include re-vet requests in the breakdown
         revet_rows = db.execute(
-            "SELECT rr.*, c.first_name, c.last_name FROM revet_requests rr JOIN candidates c ON rr.candidate_id = c.id WHERE rr.agency_id=?",
+            "SELECT rr.*, c.first_name, c.last_name FROM revet_requests rr JOIN candidates c ON rr.candidate_id = c.id WHERE rr.agency_id=%s",
             (agency_id,),
         ).fetchall()
 
@@ -588,7 +588,7 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
             cand_name = f"{rd['first_name']} {rd['last_name']}"
             for sec in sections:
                 price_row = db.execute(
-                    "SELECT sell_price, label FROM pricing_settings WHERE check_type=?", (sec,)
+                    "SELECT sell_price, label FROM pricing_settings WHERE check_type=%s", (sec,)
                 ).fetchone()
                 if price_row:
                     pd = dict(price_row)
@@ -653,18 +653,18 @@ async def request_revet(
     with get_db() as db:
         # Verify agency owns the candidate
         row = db.execute(
-            "SELECT * FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+            "SELECT * FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Candidate not found in your agency")
 
         # Get candidate info
-        cand = db.execute("SELECT first_name, last_name, email FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        cand = db.execute("SELECT first_name, last_name, email FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
         cand_data = dict(cand) if cand else {}
 
         # Get agency name
-        agency = db.execute("SELECT name FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        agency = db.execute("SELECT name FROM agencies WHERE id=%s", (agency_id,)).fetchone()
         agency_name = dict(agency)["name"] if agency else "Unknown"
 
         # Get pricing for the sections
@@ -672,7 +672,7 @@ async def request_revet(
         section_costs = []
         for section in data.sections:
             price_row = db.execute(
-                "SELECT sell_price, label FROM pricing_settings WHERE check_type=?", (section,)
+                "SELECT sell_price, label FROM pricing_settings WHERE check_type=%s", (section,)
             ).fetchone()
             if price_row:
                 pd = dict(price_row)
@@ -682,14 +682,14 @@ async def request_revet(
         revet_id = generate_id()
         db.execute(
             """INSERT INTO revet_requests (id, agency_id, candidate_id, sections, token, status, created_at)
-               VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
+               VALUES (%s, %s, %s, %s, %s, 'pending', %s)""",
             (revet_id, agency_id, candidate_id, json.dumps(data.sections), token, now),
         )
 
         # Audit log
         db.execute(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-               VALUES (?, 'revet_request', ?, 'created', ?, ?, ?)""",
+               VALUES (%s, 'revet_request', %s, 'created', %s, %s, %s)""",
             (generate_id(), revet_id, agency_id,
              json.dumps({"sections": data.sections, "candidate_id": candidate_id}), now),
         )
@@ -721,7 +721,7 @@ async def list_revet_requests(current_user: dict = Depends(get_current_user)):
             """SELECT rr.*, c.first_name, c.last_name, c.email
                FROM revet_requests rr
                JOIN candidates c ON rr.candidate_id = c.id
-               WHERE rr.agency_id=?
+               WHERE rr.agency_id=%s
                ORDER BY rr.created_at DESC""",
             (agency_id,),
         ).fetchall()
@@ -749,7 +749,7 @@ async def get_candidates_with_status(current_user: dict = Depends(get_current_us
                       ac.annual_monitoring, ac.vetting_cost_accepted, ac.monitoring_cost_accepted
                FROM candidates c
                JOIN agency_candidates ac ON c.id = ac.candidate_id
-               WHERE ac.agency_id=?
+               WHERE ac.agency_id=%s
                ORDER BY c.created_at DESC""",
             (agency_id,),
         ).fetchall()
@@ -779,7 +779,7 @@ async def pay_invoice(invoice_id: str, current_user: dict = Depends(get_current_
     # Verify the invoice belongs to this agency
     with get_db() as db:
         inv = db.execute(
-            "SELECT id, agency_id, status FROM invoices WHERE id=?", (invoice_id,)
+            "SELECT id, agency_id, status FROM invoices WHERE id=%s", (invoice_id,)
         ).fetchone()
         if not inv:
             raise HTTPException(status_code=404, detail="Invoice not found")

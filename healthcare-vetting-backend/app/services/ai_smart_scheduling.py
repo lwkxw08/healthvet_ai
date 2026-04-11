@@ -28,7 +28,7 @@ def analyse_response_patterns(agency_id: Optional[str] = None) -> dict:
                 FROM employment_verifications ev
                 LEFT JOIN candidates c ON c.id = ev.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = ev.candidate_id
-                WHERE ac.agency_id = ? AND ev.completed_at IS NOT NULL
+                WHERE ac.agency_id = %s AND ev.completed_at IS NOT NULL
                 ORDER BY ev.sent_at DESC
             """, (agency_id,)).fetchall()
         else:
@@ -49,7 +49,7 @@ def analyse_response_patterns(agency_id: Optional[str] = None) -> dict:
                 FROM references_ r
                 LEFT JOIN candidates c ON c.id = r.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = r.candidate_id
-                WHERE ac.agency_id = ? AND r.status IN ('completed', 'verified')
+                WHERE ac.agency_id = %s AND r.status IN ('completed', 'verified')
                 ORDER BY r.created_at DESC
             """, (agency_id,)).fetchall()
         else:
@@ -70,7 +70,7 @@ def analyse_response_patterns(agency_id: Optional[str] = None) -> dict:
                 FROM employment_verifications ev
                 LEFT JOIN candidates c ON c.id = ev.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = ev.candidate_id
-                WHERE ac.agency_id = ? AND ev.status IN ('pending', 'sent')
+                WHERE ac.agency_id = %s AND ev.status IN ('pending', 'sent')
                 ORDER BY ev.sent_at ASC
             """, (agency_id,)).fetchall()
             pending_ref = db.execute("""
@@ -78,7 +78,7 @@ def analyse_response_patterns(agency_id: Optional[str] = None) -> dict:
                 FROM references_ r
                 LEFT JOIN candidates c ON c.id = r.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = r.candidate_id
-                WHERE ac.agency_id = ? AND r.status IN ('pending', 'sent')
+                WHERE ac.agency_id = %s AND r.status IN ('pending', 'sent')
                 ORDER BY r.created_at ASC
             """, (agency_id,)).fetchall()
         else:
@@ -341,7 +341,7 @@ def analyse_response_patterns(agency_id: Optional[str] = None) -> dict:
             created_at TEXT NOT NULL
         )""")
         db.execute(
-            "INSERT INTO ai_scheduling_analyses (id, agency_id, total_pending, need_action, optimal_send_hour, result_json, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO ai_scheduling_analyses (id, agency_id, total_pending, need_action, optimal_send_hour, result_json, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (
                 scan_id, agency_id,
                 len(follow_ups),

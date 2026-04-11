@@ -47,7 +47,7 @@ class AuditTrailService:
                 """INSERT INTO audit_trail
                    (id, entity_type, entity_id, action, actor, actor_type,
                     details, ip_address, prev_hash, chain_hash, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (log_id, entity_type, entity_id, action, actor, actor_type,
                  details_json, ip_address, prev_hash, chain_hash, now),
             )
@@ -67,7 +67,7 @@ class AuditTrailService:
                 """INSERT INTO data_access_log
                    (id, entity_type, entity_id, accessor, accessor_type,
                     purpose, ip_address, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                 (log_id, entity_type, entity_id, accessor, accessor_type,
                  purpose, ip_address, now),
             )
@@ -79,7 +79,7 @@ class AuditTrailService:
         """Verify the integrity of the audit trail hash chain."""
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM audit_trail ORDER BY created_at ASC, rowid ASC LIMIT ?",
+                "SELECT * FROM audit_trail ORDER BY created_at ASC, rowid ASC LIMIT %s",
                 (limit,),
             ).fetchall()
 
@@ -122,33 +122,33 @@ class AuditTrailService:
         params = []
 
         if entity_type:
-            conditions.append("entity_type=?")
+            conditions.append("entity_type=%s")
             params.append(entity_type)
         if entity_id:
-            conditions.append("entity_id=?")
+            conditions.append("entity_id=%s")
             params.append(entity_id)
         if actor:
-            conditions.append("actor=?")
+            conditions.append("actor=%s")
             params.append(actor)
         if action:
-            conditions.append("action LIKE ?")
+            conditions.append("action LIKE %s")
             params.append(f"%{action}%")
         if date_from:
-            conditions.append("created_at >= ?")
+            conditions.append("created_at >= %s")
             params.append(date_from)
         if date_to:
-            conditions.append("created_at <= ?")
+            conditions.append("created_at <= %s")
             params.append(date_to)
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         with get_db() as db:
             total = db.execute(
-                f"SELECT COUNT(*) FROM audit_trail {where}", tuple(params)
-            ).fetchone()[0]
+                f"SELECT COUNT(*) AS cnt FROM audit_trail {where}", tuple(params)
+            ).fetchone()["cnt"]
 
             rows = db.execute(
-                f"SELECT * FROM audit_trail {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                f"SELECT * FROM audit_trail {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
                 tuple(params) + (limit, offset),
             ).fetchall()
 
@@ -173,26 +173,26 @@ class AuditTrailService:
         params = []
 
         if entity_type:
-            conditions.append("entity_type=?")
+            conditions.append("entity_type=%s")
             params.append(entity_type)
         if entity_id:
-            conditions.append("entity_id=?")
+            conditions.append("entity_id=%s")
             params.append(entity_id)
         if accessor:
-            conditions.append("accessor=?")
+            conditions.append("accessor=%s")
             params.append(accessor)
         if date_from:
-            conditions.append("created_at >= ?")
+            conditions.append("created_at >= %s")
             params.append(date_from)
         if date_to:
-            conditions.append("created_at <= ?")
+            conditions.append("created_at <= %s")
             params.append(date_to)
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         with get_db() as db:
             rows = db.execute(
-                f"SELECT * FROM data_access_log {where} ORDER BY created_at DESC LIMIT ?",
+                f"SELECT * FROM data_access_log {where} ORDER BY created_at DESC LIMIT %s",
                 tuple(params) + (limit,),
             ).fetchall()
 
@@ -207,10 +207,10 @@ class AuditTrailService:
             conditions = []
             params = []
             if date_from:
-                conditions.append("created_at >= ?")
+                conditions.append("created_at >= %s")
                 params.append(date_from)
             if date_to:
-                conditions.append("created_at <= ?")
+                conditions.append("created_at <= %s")
                 params.append(date_to)
 
             where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -255,7 +255,7 @@ class AuditTrailService:
         with get_db() as db:
             # Find candidate
             candidate = db.execute(
-                "SELECT * FROM candidates WHERE email=?", (candidate_email,)
+                "SELECT * FROM candidates WHERE email=%s", (candidate_email,)
             ).fetchone()
             if not candidate:
                 return {"status": "not_found", "email": candidate_email}
@@ -266,11 +266,11 @@ class AuditTrailService:
             # All data mutations related to this candidate
             mutations = db.execute(
                 """SELECT * FROM audit_trail
-                   WHERE (entity_type='candidate' AND entity_id=?)
+                   WHERE (entity_type='candidate' AND entity_id=%s)
                       OR (entity_type LIKE '%check%' AND entity_id IN
-                          (SELECT id FROM identity_checks WHERE candidate_id=?
-                           UNION SELECT id FROM dbs_checks WHERE candidate_id=?
-                           UNION SELECT id FROM right_to_work_checks WHERE candidate_id=?))
+                          (SELECT id FROM identity_checks WHERE candidate_id=%s
+                           UNION SELECT id FROM dbs_checks WHERE candidate_id=%s
+                           UNION SELECT id FROM right_to_work_checks WHERE candidate_id=%s))
                    ORDER BY created_at ASC""",
                 (candidate_id, candidate_id, candidate_id, candidate_id),
             ).fetchall()
@@ -278,7 +278,7 @@ class AuditTrailService:
             # All data access events for this candidate
             access_events = db.execute(
                 """SELECT * FROM data_access_log
-                   WHERE (entity_type='candidate' AND entity_id=?)
+                   WHERE (entity_type='candidate' AND entity_id=%s)
                    ORDER BY created_at ASC""",
                 (candidate_id,),
             ).fetchall()
@@ -321,8 +321,8 @@ class AuditTrailService:
                         table, date_col = category_map[category]
                         try:
                             affected = db.execute(
-                                f"SELECT COUNT(*) FROM {table} WHERE {date_col} < datetime('now', '-{days} days')",
-                            ).fetchone()[0]
+                                f"SELECT COUNT(*) AS cnt FROM {table} WHERE {date_col} < datetime('now', '-{days} days')",
+                            ).fetchone()["cnt"]
                         except Exception:
                             pass
 

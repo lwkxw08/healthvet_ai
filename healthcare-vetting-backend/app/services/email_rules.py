@@ -175,7 +175,7 @@ class EmailRulesService:
                     """INSERT INTO email_rules
                        (id, action_trigger, name, description, template_key,
                         recipient_type, conditions, priority, is_active, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)""",
                     (
                         generate_id(),
                         rule["action_trigger"],
@@ -204,7 +204,7 @@ class EmailRulesService:
     def get_rule(rule_id: str) -> dict:
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM email_rules WHERE id=?", (rule_id,)
+                "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             ).fetchone()
             return dict(row) if row else None
 
@@ -216,7 +216,7 @@ class EmailRulesService:
                 """SELECT r.*, t.name as template_name, t.is_active as template_active
                    FROM email_rules r
                    LEFT JOIN email_templates t ON r.template_key = t.template_key
-                   WHERE r.action_trigger=? AND r.is_active=1
+                   WHERE r.action_trigger=%s AND r.is_active=1
                    ORDER BY r.priority ASC""",
                 (action_trigger,),
             ).fetchall()
@@ -239,7 +239,7 @@ class EmailRulesService:
                 """INSERT INTO email_rules
                    (id, action_trigger, name, description, template_key,
                     recipient_type, conditions, priority, is_active, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)""",
                 (
                     rule_id, action_trigger, name, description,
                     template_key, recipient_type,
@@ -248,7 +248,7 @@ class EmailRulesService:
                 ),
             )
             row = db.execute(
-                "SELECT * FROM email_rules WHERE id=?", (rule_id,)
+                "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             ).fetchone()
             return dict(row)
 
@@ -266,7 +266,7 @@ class EmailRulesService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM email_rules WHERE id=?", (rule_id,)
+                "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             ).fetchone()
             if not row:
                 return None
@@ -274,9 +274,9 @@ class EmailRulesService:
 
             db.execute(
                 """UPDATE email_rules SET
-                   name=?, description=?, template_key=?, recipient_type=?,
-                   conditions=?, priority=?, is_active=?, updated_at=?
-                   WHERE id=?""",
+                   name=%s, description=%s, template_key=%s, recipient_type=%s,
+                   conditions=%s, priority=%s, is_active=%s, updated_at=%s
+                   WHERE id=%s""",
                 (
                     name if name is not None else current["name"],
                     description if description is not None else current["description"],
@@ -290,7 +290,7 @@ class EmailRulesService:
                 ),
             )
             row = db.execute(
-                "SELECT * FROM email_rules WHERE id=?", (rule_id,)
+                "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             ).fetchone()
             return dict(row)
 
@@ -298,11 +298,11 @@ class EmailRulesService:
     def delete_rule(rule_id: str) -> bool:
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM email_rules WHERE id=?", (rule_id,)
+                "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             ).fetchone()
             if not row:
                 return None
-            db.execute("DELETE FROM email_rules WHERE id=?", (rule_id,))
+            db.execute("DELETE FROM email_rules WHERE id=%s", (rule_id,))
             return True
 
     @staticmethod

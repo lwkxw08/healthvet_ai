@@ -56,7 +56,7 @@ class JobProcessingService:
                 """INSERT INTO background_jobs
                    (id, task_name, args, kwargs, status, priority, timeout_seconds,
                     max_retries, attempt, scheduled_at, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s)""",
                 (job_id, task_name, json.dumps(args or []),
                  json.dumps(kwargs or {}), STATUS_QUEUED, priority,
                  timeout, MAX_JOB_RETRIES, scheduled_at, now),
@@ -71,7 +71,7 @@ class JobProcessingService:
                 celery_task_id = result.get("task_id")
                 with get_db() as db:
                     db.execute(
-                        "UPDATE background_jobs SET celery_task_id=?, status=? WHERE id=?",
+                        "UPDATE background_jobs SET celery_task_id=%s, status=%s WHERE id=%s",
                         (celery_task_id, STATUS_RUNNING, job_id),
                     )
                 return {"job_id": job_id, "celery_task_id": celery_task_id, "status": STATUS_RUNNING}
@@ -87,7 +87,7 @@ class JobProcessingService:
         """Get the status of a specific job."""
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM background_jobs WHERE id=?", (job_id,)
+                "SELECT * FROM background_jobs WHERE id=%s", (job_id,)
             ).fetchone()
             if not row:
                 return None
@@ -108,26 +108,26 @@ class JobProcessingService:
         params = []
 
         if status:
-            conditions.append("status=?")
+            conditions.append("status=%s")
             params.append(status)
         if task_name:
-            conditions.append("task_name LIKE ?")
+            conditions.append("task_name LIKE %s")
             params.append(f"%{task_name}%")
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         with get_db() as db:
             total = db.execute(
-                f"SELECT COUNT(*) FROM background_jobs {where}",
+                f"SELECT COUNT(*) AS cnt FROM background_jobs {where}",
                 tuple(params),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
 
             rows = db.execute(
                 f"""SELECT id, task_name, status, priority, attempt, max_retries,
                            timeout_seconds, celery_task_id, started_at, completed_at,
                            error, created_at
                     FROM background_jobs {where}
-                    ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+                    ORDER BY created_at DESC LIMIT %s OFFSET %s""",
                 tuple(params) + (limit, offset),
             ).fetchall()
 
@@ -136,8 +136,8 @@ class JobProcessingService:
             for s in [STATUS_QUEUED, STATUS_RUNNING, STATUS_COMPLETED,
                       STATUS_FAILED, STATUS_DEAD, STATUS_TIMED_OUT]:
                 count = db.execute(
-                    "SELECT COUNT(*) FROM background_jobs WHERE status=?", (s,)
-                ).fetchone()[0]
+                    "SELECT COUNT(*) AS cnt FROM background_jobs WHERE status=%s", (s,)
+                ).fetchone()["cnt"]
                 stats[s] = count
 
             return {
@@ -154,8 +154,8 @@ class JobProcessingService:
         with get_db() as db:
             rows = db.execute(
                 """SELECT * FROM background_jobs
-                   WHERE status=?
-                   ORDER BY completed_at DESC LIMIT ?""",
+                   WHERE status=%s
+                   ORDER BY completed_at DESC LIMIT %s""",
                 (STATUS_DEAD, limit),
             ).fetchall()
 
@@ -177,7 +177,7 @@ class JobProcessingService:
         """Retry a job from the dead letter queue."""
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM background_jobs WHERE id=? AND status=?",
+                "SELECT * FROM background_jobs WHERE id=%s AND status=%s",
                 (job_id, STATUS_DEAD),
             ).fetchone()
             if not row:
@@ -190,9 +190,9 @@ class JobProcessingService:
             # Reset the job
             db.execute(
                 """UPDATE background_jobs SET
-                   status=?, attempt=0, error=NULL, started_at=NULL,
+                   status=%s, attempt=0, error=NULL, started_at=NULL,
                    completed_at=NULL, result=NULL
-                   WHERE id=?""",
+                   WHERE id=%s""",
                 (STATUS_QUEUED, job_id),
             )
 
@@ -208,7 +208,7 @@ class JobProcessingService:
         """Cancel a queued or running job."""
         with get_db() as db:
             row = db.execute(
-                "SELECT status, celery_task_id FROM background_jobs WHERE id=?",
+                "SELECT status, celery_task_id FROM background_jobs WHERE id=%s",
                 (job_id,),
             ).fetchone()
             if not row:
@@ -220,7 +220,7 @@ class JobProcessingService:
 
             now = datetime.now(timezone.utc).isoformat()
             db.execute(
-                "UPDATE background_jobs SET status='cancelled', completed_at=? WHERE id=?",
+                "UPDATE background_jobs SET status='cancelled', completed_at=%s WHERE id=%s",
                 (now, job_id),
             )
 
@@ -242,7 +242,7 @@ class JobProcessingService:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with get_db() as db:
             result = db.execute(
-                "DELETE FROM background_jobs WHERE status IN (?, 'cancelled') AND completed_at < ?",
+                "DELETE FROM background_jobs WHERE status IN (%s, 'cancelled') AND completed_at < %s",
                 (STATUS_COMPLETED, cutoff),
             )
             return {"deleted": result.rowcount}
@@ -302,7 +302,7 @@ def _run_job_sync(job_id: str, task_name: str, args: tuple,
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             db.execute(
-                "UPDATE background_jobs SET status=?, started_at=? WHERE id=?",
+                "UPDATE background_jobs SET status=%s, started_at=%s WHERE id=%s",
                 (STATUS_RUNNING, now, job_id),
             )
 
@@ -318,8 +318,8 @@ def _run_job_sync(job_id: str, task_name: str, args: tuple,
             with get_db() as db:
                 db.execute(
                     """UPDATE background_jobs SET
-                       status=?, result=?, completed_at=?, attempt=attempt+1
-                       WHERE id=?""",
+                       status=%s, result=%s, completed_at=%s, attempt=attempt+1
+                       WHERE id=%s""",
                     (STATUS_COMPLETED, json.dumps(result, default=str),
                      completed, job_id),
                 )
@@ -346,7 +346,7 @@ def _mark_job_failed(job_id: str, error: str, status: str = STATUS_FAILED):
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
         db.execute(
-            "UPDATE background_jobs SET status=?, error=?, completed_at=? WHERE id=?",
+            "UPDATE background_jobs SET status=%s, error=%s, completed_at=%s WHERE id=%s",
             (status, error, now, job_id),
         )
 
@@ -357,7 +357,7 @@ def _handle_job_failure(job_id: str, task_name: str, args: tuple,
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
         row = db.execute(
-            "SELECT attempt, max_retries FROM background_jobs WHERE id=?",
+            "SELECT attempt, max_retries FROM background_jobs WHERE id=%s",
             (job_id,),
         ).fetchone()
         if not row:
@@ -371,8 +371,8 @@ def _handle_job_failure(job_id: str, task_name: str, args: tuple,
             # Move to dead letter queue
             db.execute(
                 """UPDATE background_jobs SET
-                   status=?, error=?, completed_at=?, attempt=?
-                   WHERE id=?""",
+                   status=%s, error=%s, completed_at=%s, attempt=%s
+                   WHERE id=%s""",
                 (STATUS_DEAD, error, now, attempt, job_id),
             )
             logger.warning("Job %s moved to dead letter queue after %d attempts", job_id, attempt)
@@ -382,8 +382,8 @@ def _handle_job_failure(job_id: str, task_name: str, args: tuple,
             retry_at = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
             db.execute(
                 """UPDATE background_jobs SET
-                   status=?, error=?, attempt=?, scheduled_at=?
-                   WHERE id=?""",
+                   status=%s, error=%s, attempt=%s, scheduled_at=%s
+                   WHERE id=%s""",
                 (STATUS_RETRYING, error, attempt, retry_at, job_id),
             )
 
@@ -395,7 +395,7 @@ def _handle_job_failure(job_id: str, task_name: str, args: tuple,
                     dispatch_task(task_name, *args, **kwargs)
                     with get_db() as inner_db:
                         inner_db.execute(
-                            "UPDATE background_jobs SET status=? WHERE id=?",
+                            "UPDATE background_jobs SET status=%s WHERE id=%s",
                             (STATUS_RUNNING, job_id),
                         )
                 except Exception as e:

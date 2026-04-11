@@ -2,7 +2,7 @@
 WebSocket support for real-time candidate status updates.
 
 Clients connect to /ws/{user_type}/{user_id} with a valid JWT token
-passed as a query parameter (?token=...).
+passed as a query parameter (%stoken=...).
 
 The server broadcasts events when candidate statuses change, compliance
 evaluations complete, or TrustID tasks are updated.
@@ -121,7 +121,7 @@ async def websocket_endpoint(
 ):
     """WebSocket endpoint for real-time updates.
 
-    Connect with: ws://host/ws/{user_type}/{user_id}?token=JWT_TOKEN
+    Connect with: ws://host/ws/{user_type}/{user_id}%stoken=JWT_TOKEN
     """
     # Validate token
     if not token:

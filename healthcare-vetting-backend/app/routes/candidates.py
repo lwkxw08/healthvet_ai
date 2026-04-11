@@ -13,7 +13,7 @@ async def get_my_profile(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Candidates only")
 
     with get_db() as db:
-        row = db.execute("SELECT * FROM candidates WHERE id=?", (current_user["sub"],)).fetchone()
+        row = db.execute("SELECT * FROM candidates WHERE id=%s", (current_user["sub"],)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Candidate not found")
         return dict(row)
@@ -28,12 +28,12 @@ async def update_my_profile(data: CandidateUpdate, current_user: dict = Depends(
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    set_clause = ", ".join(f"{k}=?" for k in updates.keys())
+    set_clause = ", ".join(f"{k}=%s" for k in updates.keys())
     values = list(updates.values()) + [current_user["sub"]]
 
     with get_db() as db:
-        db.execute(f"UPDATE candidates SET {set_clause} WHERE id=?", values)
-        row = db.execute("SELECT * FROM candidates WHERE id=?", (current_user["sub"],)).fetchone()
+        db.execute(f"UPDATE candidates SET {set_clause} WHERE id=%s", values)
+        row = db.execute("SELECT * FROM candidates WHERE id=%s", (current_user["sub"],)).fetchone()
         return dict(row)
 
 
@@ -48,7 +48,7 @@ async def list_candidates(current_user: dict = Depends(get_current_user)):
             rows = db.execute(
                 """SELECT c.* FROM candidates c
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
-                   WHERE ac.agency_id=?
+                   WHERE ac.agency_id=%s
                    ORDER BY c.created_at DESC""",
                 (current_user["sub"],),
             ).fetchall()
@@ -62,7 +62,7 @@ async def list_candidates(current_user: dict = Depends(get_current_user)):
 async def get_candidate(candidate_id: str, current_user: dict = Depends(get_current_user)):
     verify_agency_owns_candidate(current_user, candidate_id)
     with get_db() as db:
-        row = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        row = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Candidate not found")
         return dict(row)
@@ -77,7 +77,7 @@ async def assign_to_agency(candidate_id: str, agency_id: str, current_user: dict
     with get_db() as db:
         try:
             db.execute(
-                "INSERT INTO agency_candidates (agency_id, candidate_id) VALUES (?, ?)",
+                "INSERT INTO agency_candidates (agency_id, candidate_id) VALUES (%s, %s)",
                 (agency_id, candidate_id),
             )
         except Exception:

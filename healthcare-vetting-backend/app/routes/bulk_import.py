@@ -73,19 +73,19 @@ async def bulk_import_candidates(data: BulkImportRequest, current_user: dict = D
                 continue
 
             # Check if candidate already exists
-            existing = db.execute("SELECT id FROM candidates WHERE email=?", (email,)).fetchone()
+            existing = db.execute("SELECT id FROM candidates WHERE email=%s", (email,)).fetchone()
 
             if existing:
                 candidate_id = dict(existing)["id"]
                 # If agency, link if not already linked
                 if agency_id:
                     linked = db.execute(
-                        "SELECT 1 FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+                        "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
                         (agency_id, candidate_id),
                     ).fetchone()
                     if not linked:
                         db.execute(
-                            "INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at) VALUES (?, ?, ?)",
+                            "INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at) VALUES (%s, %s, %s)",
                             (agency_id, candidate_id, now),
                         )
                 results["candidates"].append({"email": email, "status": "already_exists", "candidate_id": candidate_id})
@@ -97,7 +97,7 @@ async def bulk_import_candidates(data: BulkImportRequest, current_user: dict = D
             temp_password = secrets.token_urlsafe(12)
             db.execute(
                 """INSERT INTO candidates (id, email, password_hash, first_name, last_name, phone, profession, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (candidate_id, email, hash_password(temp_password), first_name, last_name,
                  phone or None, profession or None, now, now),
             )
@@ -105,7 +105,7 @@ async def bulk_import_candidates(data: BulkImportRequest, current_user: dict = D
             # Link to agency
             if agency_id:
                 db.execute(
-                    "INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at) VALUES (?, ?, ?)",
+                    "INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at) VALUES (%s, %s, %s)",
                     (agency_id, candidate_id, now),
                 )
 
@@ -115,7 +115,7 @@ async def bulk_import_candidates(data: BulkImportRequest, current_user: dict = D
                     invite_code = secrets.token_urlsafe(16)
                     db.execute(
                         """INSERT INTO agency_invites (id, agency_id, candidate_email, invite_code, status, created_at)
-                           VALUES (?, ?, ?, ?, 'pending', ?)""",
+                           VALUES (%s, %s, %s, %s, 'pending', %s)""",
                         (invite_id, agency_id, email, invite_code, now),
                     )
 
@@ -130,7 +130,7 @@ async def bulk_import_candidates(data: BulkImportRequest, current_user: dict = D
         # Log the bulk import
         log_id = generate_id()
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "bulk_import", agency_id or "admin", "bulk_candidate_import",
              current_user["sub"], f"Imported {results['imported']}, skipped {results['skipped']}", now),
         )

@@ -93,7 +93,7 @@ def verify_agency_owns_candidate(current_user: dict, candidate_id: str) -> None:
     if user_type == "agency":
         with get_db() as db:
             row = db.execute(
-                "SELECT 1 FROM agency_candidates WHERE agency_id=? AND candidate_id=?",
+                "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
                 (current_user["sub"], candidate_id),
             ).fetchone()
             if not row:

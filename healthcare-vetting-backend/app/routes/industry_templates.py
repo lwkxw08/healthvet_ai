@@ -58,7 +58,7 @@ async def list_templates(admin=Depends(get_current_admin)):
         for t in templates:
             td = dict(t)
             checks = db.execute(
-                "SELECT * FROM industry_template_checks WHERE template_id=? ORDER BY sort_order ASC",
+                "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
                 (td["id"],),
             ).fetchall()
             td["checks"] = [dict(c) for c in checks]
@@ -69,7 +69,7 @@ async def list_templates(admin=Depends(get_current_admin)):
                     c["config"] = {}
             # Count agencies using this template
             agency_count = db.execute(
-                "SELECT COUNT(*) as cnt FROM agencies WHERE industry_template_id=?",
+                "SELECT COUNT(*) as cnt FROM agencies WHERE industry_template_id=%s",
                 (td["id"],),
             ).fetchone()
             td["agency_count"] = dict(agency_count)["cnt"] if agency_count else 0
@@ -81,12 +81,12 @@ async def list_templates(admin=Depends(get_current_admin)):
 async def get_template(template_id: str, admin=Depends(get_current_admin)):
     """Get a single industry template with checks."""
     with get_db() as db:
-        t = db.execute("SELECT * FROM industry_templates WHERE id=?", (template_id,)).fetchone()
+        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
         if not t:
             raise HTTPException(status_code=404, detail="Template not found")
         td = dict(t)
         checks = db.execute(
-            "SELECT * FROM industry_template_checks WHERE template_id=? ORDER BY sort_order ASC",
+            "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
             (template_id,),
         ).fetchall()
         td["checks"] = [dict(c) for c in checks]
@@ -105,13 +105,13 @@ async def create_template(data: TemplateCreateInput, admin=Depends(get_current_a
     template_id = generate_id()
     with get_db() as db:
         # Check for duplicate name
-        existing = db.execute("SELECT id FROM industry_templates WHERE name=?", (data.name,)).fetchone()
+        existing = db.execute("SELECT id FROM industry_templates WHERE name=%s", (data.name,)).fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="Template with this name already exists")
 
         db.execute(
             """INSERT INTO industry_templates (id, name, description, compliance_label, compliance_threshold, is_default, is_active, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 0, 1, %s, %s)""",
             (template_id, data.name, data.description, data.compliance_label, data.compliance_threshold, now, now),
         )
 
@@ -119,7 +119,7 @@ async def create_template(data: TemplateCreateInput, admin=Depends(get_current_a
         for check in data.checks:
             db.execute(
                 """INSERT INTO industry_template_checks (id, template_id, check_key, check_label, is_required, is_enabled, weight, config, sort_order)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (generate_id(), template_id, check.check_key, check.check_label,
                  1 if check.is_required else 0, 1 if check.is_enabled else 0,
                  check.weight, json.dumps(check.config), check.sort_order),
@@ -133,7 +133,7 @@ async def update_template(template_id: str, data: TemplateUpdateInput, admin=Dep
     """Update an industry template and its checks."""
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        t = db.execute("SELECT * FROM industry_templates WHERE id=?", (template_id,)).fetchone()
+        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
         if not t:
             raise HTTPException(status_code=404, detail="Template not found")
 
@@ -141,34 +141,34 @@ async def update_template(template_id: str, data: TemplateUpdateInput, admin=Dep
         updates = []
         params = []
         if data.name is not None:
-            updates.append("name=?")
+            updates.append("name=%s")
             params.append(data.name)
         if data.description is not None:
-            updates.append("description=?")
+            updates.append("description=%s")
             params.append(data.description)
         if data.compliance_label is not None:
-            updates.append("compliance_label=?")
+            updates.append("compliance_label=%s")
             params.append(data.compliance_label)
         if data.compliance_threshold is not None:
-            updates.append("compliance_threshold=?")
+            updates.append("compliance_threshold=%s")
             params.append(data.compliance_threshold)
         if data.is_active is not None:
-            updates.append("is_active=?")
+            updates.append("is_active=%s")
             params.append(1 if data.is_active else 0)
 
         if updates:
-            updates.append("updated_at=?")
+            updates.append("updated_at=%s")
             params.append(now)
             params.append(template_id)
-            db.execute(f"UPDATE industry_templates SET {', '.join(updates)} WHERE id=?", params)
+            db.execute(f"UPDATE industry_templates SET {', '.join(updates)} WHERE id=%s", params)
 
         # Replace checks if provided
         if data.checks is not None:
-            db.execute("DELETE FROM industry_template_checks WHERE template_id=?", (template_id,))
+            db.execute("DELETE FROM industry_template_checks WHERE template_id=%s", (template_id,))
             for check in data.checks:
                 db.execute(
                     """INSERT INTO industry_template_checks (id, template_id, check_key, check_label, is_required, is_enabled, weight, config, sort_order)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (generate_id(), template_id, check.check_key, check.check_label,
                      1 if check.is_required else 0, 1 if check.is_enabled else 0,
                      check.weight, json.dumps(check.config), check.sort_order),
@@ -181,7 +181,7 @@ async def update_template(template_id: str, data: TemplateUpdateInput, admin=Dep
 async def delete_template(template_id: str, admin=Depends(get_current_admin)):
     """Delete an industry template (only if no agencies are using it)."""
     with get_db() as db:
-        t = db.execute("SELECT * FROM industry_templates WHERE id=?", (template_id,)).fetchone()
+        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
         if not t:
             raise HTTPException(status_code=404, detail="Template not found")
         if dict(t).get("is_default"):
@@ -189,13 +189,13 @@ async def delete_template(template_id: str, admin=Depends(get_current_admin)):
 
         # Check if any agencies are using this template
         agency_count = db.execute(
-            "SELECT COUNT(*) as cnt FROM agencies WHERE industry_template_id=?", (template_id,)
+            "SELECT COUNT(*) as cnt FROM agencies WHERE industry_template_id=%s", (template_id,)
         ).fetchone()
         if dict(agency_count)["cnt"] > 0:
             raise HTTPException(status_code=400, detail=f"Cannot delete: {dict(agency_count)['cnt']} agencies are using this template")
 
-        db.execute("DELETE FROM industry_template_checks WHERE template_id=?", (template_id,))
-        db.execute("DELETE FROM industry_templates WHERE id=?", (template_id,))
+        db.execute("DELETE FROM industry_template_checks WHERE template_id=%s", (template_id,))
+        db.execute("DELETE FROM industry_templates WHERE id=%s", (template_id,))
 
     return {"message": "Template deleted successfully"}
 
@@ -205,7 +205,7 @@ async def clone_template(template_id: str, admin=Depends(get_current_admin)):
     """Clone an existing template to create a new one."""
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        t = db.execute("SELECT * FROM industry_templates WHERE id=?", (template_id,)).fetchone()
+        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
         if not t:
             raise HTTPException(status_code=404, detail="Template not found")
         td = dict(t)
@@ -214,25 +214,25 @@ async def clone_template(template_id: str, admin=Depends(get_current_admin)):
         new_name = f"{td['name']} (Copy)"
         # Ensure unique name
         counter = 1
-        while db.execute("SELECT id FROM industry_templates WHERE name=?", (new_name,)).fetchone():
+        while db.execute("SELECT id FROM industry_templates WHERE name=%s", (new_name,)).fetchone():
             counter += 1
             new_name = f"{td['name']} (Copy {counter})"
 
         db.execute(
             """INSERT INTO industry_templates (id, name, description, compliance_label, compliance_threshold, is_default, is_active, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 0, 1, %s, %s)""",
             (new_id, new_name, td["description"], td["compliance_label"], td["compliance_threshold"], now, now),
         )
 
         # Clone checks
         checks = db.execute(
-            "SELECT * FROM industry_template_checks WHERE template_id=?", (template_id,)
+            "SELECT * FROM industry_template_checks WHERE template_id=%s", (template_id,)
         ).fetchall()
         for c in checks:
             cd = dict(c)
             db.execute(
                 """INSERT INTO industry_template_checks (id, template_id, check_key, check_label, is_required, is_enabled, weight, config, sort_order)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (generate_id(), new_id, cd["check_key"], cd["check_label"],
                  cd["is_required"], cd["is_enabled"], cd["weight"], cd["config"], cd["sort_order"]),
             )
@@ -244,14 +244,14 @@ async def clone_template(template_id: str, admin=Depends(get_current_admin)):
 async def assign_template_to_agency(data: AgencyTemplateAssign, admin=Depends(get_current_admin)):
     """Assign an industry template to an agency."""
     with get_db() as db:
-        agency = db.execute("SELECT id FROM agencies WHERE id=?", (data.agency_id,)).fetchone()
+        agency = db.execute("SELECT id FROM agencies WHERE id=%s", (data.agency_id,)).fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
-        template = db.execute("SELECT id FROM industry_templates WHERE id=?", (data.template_id,)).fetchone()
+        template = db.execute("SELECT id FROM industry_templates WHERE id=%s", (data.template_id,)).fetchone()
         if not template:
             raise HTTPException(status_code=404, detail="Template not found")
 
-        db.execute("UPDATE agencies SET industry_template_id=? WHERE id=?", (data.template_id, data.agency_id))
+        db.execute("UPDATE agencies SET industry_template_id=%s WHERE id=%s", (data.template_id, data.agency_id))
 
     return {"message": "Template assigned to agency successfully"}
 
@@ -260,7 +260,7 @@ async def assign_template_to_agency(data: AgencyTemplateAssign, admin=Depends(ge
 async def get_agency_template(agency_id: str, admin=Depends(get_current_admin)):
     """Get the industry template assigned to an agency."""
     with get_db() as db:
-        agency = db.execute("SELECT id, industry_template_id FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        agency = db.execute("SELECT id, industry_template_id FROM agencies WHERE id=%s", (agency_id,)).fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
         ad = dict(agency)
@@ -271,19 +271,19 @@ async def get_agency_template(agency_id: str, admin=Depends(get_current_admin)):
             if default:
                 td = dict(default)
                 checks = db.execute(
-                    "SELECT * FROM industry_template_checks WHERE template_id=? ORDER BY sort_order ASC",
+                    "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
                     (td["id"],),
                 ).fetchall()
                 td["checks"] = [dict(c) for c in checks]
                 return td
             return None
 
-        t = db.execute("SELECT * FROM industry_templates WHERE id=?", (template_id,)).fetchone()
+        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
         if not t:
             return None
         td = dict(t)
         checks = db.execute(
-            "SELECT * FROM industry_template_checks WHERE template_id=? ORDER BY sort_order ASC",
+            "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
             (template_id,),
         ).fetchall()
         td["checks"] = [dict(c) for c in checks]

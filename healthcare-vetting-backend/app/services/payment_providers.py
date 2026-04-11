@@ -74,7 +74,7 @@ class PaymentProviderService:
         """Get a single provider config (internal — includes decrypted keys)."""
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM payment_provider_config WHERE provider=?",
+                "SELECT * FROM payment_provider_config WHERE provider=%s",
                 (provider,),
             ).fetchone()
             if not row:
@@ -101,18 +101,18 @@ class PaymentProviderService:
 
         with get_db() as db:
             row = db.execute(
-                "SELECT id FROM payment_provider_config WHERE provider=?", (provider,)
+                "SELECT id FROM payment_provider_config WHERE provider=%s", (provider,)
             ).fetchone()
 
             if row:
                 db.execute(
                     """UPDATE payment_provider_config
-                       SET api_key_encrypted=?, api_secret_encrypted=?, webhook_secret=?,
-                           environment=?, api_key_set=1, is_enabled=?,
-                           account_id=?, account_name=?,
-                           last_tested_at=?, test_status=?,
-                           connected_at=?, updated_at=?
-                       WHERE provider=?""",
+                       SET api_key_encrypted=%s, api_secret_encrypted=%s, webhook_secret=%s,
+                           environment=%s, api_key_set=1, is_enabled=%s,
+                           account_id=%s, account_name=%s,
+                           last_tested_at=%s, test_status=%s,
+                           connected_at=%s, updated_at=%s
+                       WHERE provider=%s""",
                     (encrypt_value(api_key), encrypt_value(api_secret), encrypt_value(webhook_secret),
                      environment, 1 if test_result["success"] else 0,
                      test_result.get("account_id", ""),
@@ -130,7 +130,7 @@ class PaymentProviderService:
                         webhook_secret, environment, api_key_set, is_enabled,
                         account_id, account_name,
                         last_tested_at, test_status, connected_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s)""",
                     (pid, provider, display_name, encrypt_value(api_key), encrypt_value(api_secret),
                      encrypt_value(webhook_secret), environment,
                      1 if test_result["success"] else 0,
@@ -159,17 +159,17 @@ class PaymentProviderService:
                    SET api_key_encrypted=NULL, api_secret_encrypted=NULL,
                        webhook_secret=NULL, api_key_set=0, is_enabled=0,
                        account_id=NULL, account_name=NULL,
-                       test_status=NULL, connected_at=NULL, updated_at=?
-                   WHERE provider=?""",
+                       test_status=NULL, connected_at=NULL, updated_at=%s
+                   WHERE provider=%s""",
                 (now, provider),
             )
             # Remove this provider from any routing
             db.execute(
-                "UPDATE payment_routing SET provider=NULL, updated_at=? WHERE provider=?",
+                "UPDATE payment_routing SET provider=NULL, updated_at=%s WHERE provider=%s",
                 (now, provider),
             )
             db.execute(
-                "UPDATE payment_routing SET fallback_provider=NULL, updated_at=? WHERE fallback_provider=?",
+                "UPDATE payment_routing SET fallback_provider=NULL, updated_at=%s WHERE fallback_provider=%s",
                 (now, provider),
             )
         return {"provider": provider, "disconnected": True}
@@ -191,7 +191,7 @@ class PaymentProviderService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             db.execute(
-                "UPDATE payment_provider_config SET last_tested_at=?, test_status=?, updated_at=? WHERE provider=?",
+                "UPDATE payment_provider_config SET last_tested_at=%s, test_status=%s, updated_at=%s WHERE provider=%s",
                 (now, "ok" if result["success"] else result.get("error", "failed"), now, provider),
             )
 
@@ -282,17 +282,17 @@ class PaymentProviderService:
 
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM payment_routing WHERE payment_type=?", (payment_type,)
+                "SELECT * FROM payment_routing WHERE payment_type=%s", (payment_type,)
             ).fetchone()
             if not row:
                 raise ValueError(f"Payment type '{payment_type}' not found.")
 
             db.execute(
-                "UPDATE payment_routing SET provider=?, fallback_provider=?, updated_at=? WHERE payment_type=?",
+                "UPDATE payment_routing SET provider=%s, fallback_provider=%s, updated_at=%s WHERE payment_type=%s",
                 (provider, fallback_provider, now, payment_type),
             )
             row = db.execute(
-                "SELECT * FROM payment_routing WHERE payment_type=?", (payment_type,)
+                "SELECT * FROM payment_routing WHERE payment_type=%s", (payment_type,)
             ).fetchone()
             return dict(row)
 
@@ -339,7 +339,7 @@ class PaymentProviderService:
                 """INSERT INTO payment_transactions
                    (id, agency_id, invoice_id, provider, payment_type, amount, currency,
                     status, provider_payment_id, provider_session_url, metadata_json, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (txn_id, agency_id, invoice_id, provider, payment_type, amount, currency,
                  result.get("status", "pending"),
                  result.get("payment_id", ""),
@@ -362,7 +362,7 @@ class PaymentProviderService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             txn = db.execute(
-                "SELECT * FROM payment_transactions WHERE provider_payment_id=?",
+                "SELECT * FROM payment_transactions WHERE provider_payment_id=%s",
                 (provider_payment_id,),
             ).fetchone()
             if not txn:
@@ -370,14 +370,14 @@ class PaymentProviderService:
             t = dict(txn)
 
             db.execute(
-                "UPDATE payment_transactions SET status='completed', completed_at=? WHERE id=?",
+                "UPDATE payment_transactions SET status='completed', completed_at=%s WHERE id=%s",
                 (now, t["id"]),
             )
 
             # Mark the invoice as paid
             if t.get("invoice_id"):
                 db.execute(
-                    "UPDATE invoices SET status='paid', paid_at=?, payment_method=?, stripe_payment_intent_id=? WHERE id=?",
+                    "UPDATE invoices SET status='paid', paid_at=%s, payment_method=%s, stripe_payment_intent_id=%s WHERE id=%s",
                     (now, provider, provider_payment_id, t["invoice_id"]),
                 )
 
@@ -393,7 +393,7 @@ class PaymentProviderService:
         """Process a refund for a completed payment."""
         with get_db() as db:
             txn = db.execute(
-                "SELECT * FROM payment_transactions WHERE id=? AND status='completed'",
+                "SELECT * FROM payment_transactions WHERE id=%s AND status='completed'",
                 (transaction_id,),
             ).fetchone()
             if not txn:
@@ -429,7 +429,7 @@ class PaymentProviderService:
                 """INSERT INTO payment_transactions
                    (id, agency_id, invoice_id, provider, payment_type, amount, currency,
                     status, provider_payment_id, metadata_json, created_at, completed_at)
-                   VALUES (?, ?, ?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, 'refund', %s, %s, %s, %s, %s, %s, %s)""",
                 (refund_id, t["agency_id"], t.get("invoice_id"), t["provider"],
                  refund_amount, t.get("currency", "GBP"),
                  "completed" if result.get("success") else "failed",
@@ -451,12 +451,12 @@ class PaymentProviderService:
         with get_db() as db:
             if agency_id:
                 rows = db.execute(
-                    "SELECT * FROM payment_transactions WHERE agency_id=? ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM payment_transactions WHERE agency_id=%s ORDER BY created_at DESC LIMIT %s",
                     (agency_id, limit),
                 ).fetchall()
             else:
                 rows = db.execute(
-                    "SELECT * FROM payment_transactions ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM payment_transactions ORDER BY created_at DESC LIMIT %s",
                     (limit,),
                 ).fetchall()
             return [dict(r) for r in rows]
@@ -482,7 +482,7 @@ class PaymentProviderService:
                     "quantity": 1,
                 }],
                 mode="payment",
-                success_url=success_url + "?session_id={CHECKOUT_SESSION_ID}",
+                success_url=success_url + "%ssession_id={CHECKOUT_SESSION_ID}",
                 cancel_url=cancel_url,
                 metadata=metadata or {},
             )
@@ -602,7 +602,7 @@ def _validate_provider_enabled(provider: str):
     """Raise if provider is not connected and enabled."""
     with get_db() as db:
         row = db.execute(
-            "SELECT is_enabled, api_key_set FROM payment_provider_config WHERE provider=?",
+            "SELECT is_enabled, api_key_set FROM payment_provider_config WHERE provider=%s",
             (provider,),
         ).fetchone()
         if not row:
@@ -618,7 +618,7 @@ def _resolve_provider(payment_type: str) -> Optional[str]:
     """Resolve which provider should handle a given payment type."""
     with get_db() as db:
         row = db.execute(
-            "SELECT provider, fallback_provider FROM payment_routing WHERE payment_type=? AND is_enabled=1",
+            "SELECT provider, fallback_provider FROM payment_routing WHERE payment_type=%s AND is_enabled=1",
             (payment_type,),
         ).fetchone()
         if not row:
@@ -628,7 +628,7 @@ def _resolve_provider(payment_type: str) -> Optional[str]:
         if provider:
             # Verify provider is still enabled
             prow = db.execute(
-                "SELECT is_enabled FROM payment_provider_config WHERE provider=? AND is_enabled=1",
+                "SELECT is_enabled FROM payment_provider_config WHERE provider=%s AND is_enabled=1",
                 (provider,),
             ).fetchone()
             if prow:
@@ -637,7 +637,7 @@ def _resolve_provider(payment_type: str) -> Optional[str]:
         fallback = r.get("fallback_provider")
         if fallback:
             prow = db.execute(
-                "SELECT is_enabled FROM payment_provider_config WHERE provider=? AND is_enabled=1",
+                "SELECT is_enabled FROM payment_provider_config WHERE provider=%s AND is_enabled=1",
                 (fallback,),
             ).fetchone()
             if prow:

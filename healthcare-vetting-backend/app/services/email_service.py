@@ -76,7 +76,7 @@ class EmailService:
                     """INSERT INTO email_notifications
                        (id, recipient_email, recipient_name, subject, body,
                         notification_type, related_id, status, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, 'sent', ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, 'sent', %s)""",
                     (generate_id(), recipient_email, recipient_name, subject,
                      body, notification_type, related_id, now),
                 )
@@ -91,7 +91,7 @@ class EmailService:
             for agency in agencies:
                 a = dict(agency)
                 candidates = db.execute(
-                    "SELECT candidate_id FROM agency_candidates WHERE agency_id=?",
+                    "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s",
                     (a["id"],),
                 ).fetchall()
                 candidate_ids = {dict(c)["candidate_id"] for c in candidates}
@@ -356,14 +356,14 @@ class EmailService:
             conditions = []
             params = []
             if recipient_email:
-                conditions.append("recipient_email=?")
+                conditions.append("recipient_email=%s")
                 params.append(recipient_email)
             if notification_type:
-                conditions.append("notification_type=?")
+                conditions.append("notification_type=%s")
                 params.append(notification_type)
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
-            query += " ORDER BY created_at DESC LIMIT ?"
+            query += " ORDER BY created_at DESC LIMIT %s"
             params.append(limit)
             rows = db.execute(query, params).fetchall()
             return [dict(r) for r in rows]

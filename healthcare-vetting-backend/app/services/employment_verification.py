@@ -25,7 +25,7 @@ class EmploymentVerificationService:
     def get_employment_history(candidate_id: str) -> list:
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM employment_history WHERE candidate_id=? ORDER BY start_date DESC",
+                "SELECT * FROM employment_history WHERE candidate_id=%s ORDER BY start_date DESC",
                 (candidate_id,),
             ).fetchall()
             return [dict(r) for r in rows]
@@ -34,7 +34,7 @@ class EmploymentVerificationService:
     def get_employment_entry(entry_id: str) -> dict | None:
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM employment_history WHERE id=?", (entry_id,)
+                "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             ).fetchone()
             return dict(row) if row else None
 
@@ -54,7 +54,7 @@ class EmploymentVerificationService:
     ) -> dict | None:
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM employment_history WHERE id=?", (entry_id,)
+                "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             ).fetchone()
             if not row:
                 return None
@@ -75,10 +75,10 @@ class EmploymentVerificationService:
 
             db.execute(
                 """UPDATE employment_history SET
-                   employer_name=?, job_title=?, start_date=?, end_date=?,
-                   is_current=?, reason_for_leaving=?, duties=?,
-                   verifier_name=?, verifier_email=?, verifier_job_title=?
-                   WHERE id=?""",
+                   employer_name=%s, job_title=%s, start_date=%s, end_date=%s,
+                   is_current=%s, reason_for_leaving=%s, duties=%s,
+                   verifier_name=%s, verifier_email=%s, verifier_job_title=%s
+                   WHERE id=%s""",
                 (
                     updates["employer_name"], updates["job_title"],
                     updates["start_date"], updates["end_date"],
@@ -90,7 +90,7 @@ class EmploymentVerificationService:
             )
 
             row = db.execute(
-                "SELECT * FROM employment_history WHERE id=?", (entry_id,)
+                "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             ).fetchone()
             return dict(row)
 
@@ -117,7 +117,7 @@ class EmploymentVerificationService:
                    (id, candidate_id, employer_name, job_title, start_date, end_date,
                     is_current, reason_for_leaving, duties,
                     verifier_name, verifier_email, verifier_job_title, source, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'manual', %s)""",
                 (
                     entry_id, candidate_id, employer_name, job_title,
                     start_date, end_date, 1 if is_current else 0,
@@ -128,7 +128,7 @@ class EmploymentVerificationService:
             )
 
             row = db.execute(
-                "SELECT * FROM employment_history WHERE id=?", (entry_id,)
+                "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             ).fetchone()
             return dict(row)
 
@@ -136,11 +136,11 @@ class EmploymentVerificationService:
     def delete_employment_entry(entry_id: str) -> bool:
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM employment_history WHERE id=?", (entry_id,)
+                "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             ).fetchone()
             if not row:
                 return False
-            db.execute("DELETE FROM employment_history WHERE id=?", (entry_id,))
+            db.execute("DELETE FROM employment_history WHERE id=%s", (entry_id,))
             return True
 
     # ── Verification Requests ────────────────────────────────────────
@@ -167,7 +167,7 @@ class EmploymentVerificationService:
         with get_db() as db:
             # Get employment entry for context
             emp = db.execute(
-                "SELECT * FROM employment_history WHERE id=?", (employment_id,)
+                "SELECT * FROM employment_history WHERE id=%s", (employment_id,)
             ).fetchone()
             employer_name = dict(emp)["employer_name"] if emp else None
 
@@ -180,7 +180,7 @@ class EmploymentVerificationService:
                    (id, candidate_id, employment_id, verifier_name, verifier_email,
                     verifier_job_title, employer_name, token, verification_code, status,
                     domain_verified, sent_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'sent', %s, %s)""",
                 (
                     ver_id, candidate_id, employment_id,
                     verifier_name, verifier_email, verifier_job_title,
@@ -193,8 +193,8 @@ class EmploymentVerificationService:
             # Also update the employment_history entry with verifier info
             db.execute(
                 """UPDATE employment_history SET
-                   verifier_name=?, verifier_email=?, verifier_job_title=?
-                   WHERE id=?""",
+                   verifier_name=%s, verifier_email=%s, verifier_job_title=%s
+                   WHERE id=%s""",
                 (verifier_name, verifier_email, verifier_job_title, employment_id),
             )
 
@@ -202,7 +202,7 @@ class EmploymentVerificationService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'employment_domain_mismatch', 'medium', ?, ?, ?)""",
+                       VALUES (%s, %s, 'employment_domain_mismatch', 'medium', %s, %s, %s)""",
                     (
                         generate_id(), candidate_id,
                         f"Employment verifier email domain does not match employer: {email_domain}",
@@ -214,7 +214,7 @@ class EmploymentVerificationService:
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'employment_verification', ?, 'sent', 'system', ?, ?)""",
+                   VALUES (%s, 'employment_verification', %s, 'sent', 'system', %s, %s)""",
                 (generate_id(), ver_id, json.dumps({"verifier_email": verifier_email}), now),
             )
 
@@ -223,7 +223,7 @@ class EmploymentVerificationService:
             # _simulate_verification_response() is retained for dev/demo seeding only.
 
             row = db.execute(
-                "SELECT * FROM employment_verifications WHERE id=?", (ver_id,)
+                "SELECT * FROM employment_verifications WHERE id=%s", (ver_id,)
             ).fetchone()
 
         # Send the actual verification request email
@@ -289,10 +289,10 @@ class EmploymentVerificationService:
 
         db.execute(
             """UPDATE employment_verifications SET
-               status=?, job_title_confirmed=?, dates_confirmed=?,
-               reason_for_leaving_confirmed=?, additional_comments=?,
-               fraud_flags=?, completed_at=?
-               WHERE id=?""",
+               status=%s, job_title_confirmed=%s, dates_confirmed=%s,
+               reason_for_leaving_confirmed=%s, additional_comments=%s,
+               fraud_flags=%s, completed_at=%s
+               WHERE id=%s""",
             (
                 status,
                 1 if job_title_confirmed else 0,
@@ -309,7 +309,7 @@ class EmploymentVerificationService:
             db.execute(
                 """INSERT INTO monitoring_alerts
                    (id, candidate_id, alert_type, severity, message, details, created_at)
-                   VALUES (?, ?, 'employment_verification_fraud', 'high', ?, ?, ?)""",
+                   VALUES (%s, %s, 'employment_verification_fraud', 'high', %s, %s, %s)""",
                 (
                     generate_id(), candidate_id,
                     "Employment verification fraud flags detected",
@@ -323,7 +323,7 @@ class EmploymentVerificationService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM employment_verifications WHERE id=?", (verification_id,)
+                "SELECT * FROM employment_verifications WHERE id=%s", (verification_id,)
             ).fetchone()
             if not row:
                 return None
@@ -332,7 +332,7 @@ class EmploymentVerificationService:
             new_count = ver_dict["reminder_count"] + 1
 
             db.execute(
-                "UPDATE employment_verifications SET reminder_count=? WHERE id=?",
+                "UPDATE employment_verifications SET reminder_count=%s WHERE id=%s",
                 (new_count, verification_id),
             )
 
@@ -341,7 +341,7 @@ class EmploymentVerificationService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'employment_verification_no_response', 'medium', ?, ?, ?)""",
+                       VALUES (%s, %s, 'employment_verification_no_response', 'medium', %s, %s, %s)""",
                     (
                         generate_id(), ver_dict["candidate_id"],
                         f"Employment verification from {ver_dict['verifier_name']} not received after {new_count} reminders. Candidate has been notified to chase the verifier.",
@@ -354,7 +354,7 @@ class EmploymentVerificationService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'candidate_chase_verifier', 'low', ?, ?, ?)""",
+                       VALUES (%s, %s, 'candidate_chase_verifier', 'low', %s, %s, %s)""",
                     (
                         generate_id(), ver_dict["candidate_id"],
                         f"Your employment verifier ({ver_dict['verifier_name']} at {ver_dict.get('verifier_email', 'N/A')}) has not responded after {new_count} reminder emails. Please contact them directly and ask them to complete the verification.",
@@ -395,29 +395,29 @@ class EmploymentVerificationService:
 
         with get_db() as db:
             cand = db.execute(
-                "SELECT first_name, last_name FROM candidates WHERE id=?", (candidate_id,)
+                "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
             ).fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
             emp = db.execute(
-                "SELECT employer_name, job_title, start_date, end_date FROM employment_history WHERE id=?",
+                "SELECT employer_name, job_title, start_date, end_date FROM employment_history WHERE id=%s",
                 (employment_id,)
             ).fetchone()
             emp_data = dict(emp) if emp else {}
 
             agency_link = db.execute(
-                "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1", (candidate_id,)
+                "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             ).fetchone()
             agency_name = "HealthVet AI"
             if agency_link:
                 agency = db.execute(
-                    "SELECT name FROM agencies WHERE id=?", (dict(agency_link)["agency_id"],)
+                    "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
                 ).fetchone()
                 if agency:
                     agency_name = dict(agency)["name"]
 
         from app.config import BASE_URL
-        verification_link = f"{BASE_URL}/verify?token={token}&type=employment"
+        verification_link = f"{BASE_URL}/verify%stoken={token}&type=employment"
 
         variables = {
             "candidate_name": candidate_name,
@@ -455,17 +455,17 @@ class EmploymentVerificationService:
 
         with get_db() as db:
             cand = db.execute(
-                "SELECT first_name, last_name FROM candidates WHERE id=?", (candidate_id,)
+                "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
             ).fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
             agency_link = db.execute(
-                "SELECT agency_id FROM agency_candidates WHERE candidate_id=? LIMIT 1", (candidate_id,)
+                "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             ).fetchone()
             agency_name = "HealthVet AI"
             if agency_link:
                 agency = db.execute(
-                    "SELECT name FROM agencies WHERE id=?", (dict(agency_link)["agency_id"],)
+                    "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
                 ).fetchone()
                 if agency:
                     agency_name = dict(agency)["name"]
@@ -497,7 +497,7 @@ class EmploymentVerificationService:
     def get_verifications_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM employment_verifications WHERE candidate_id=? ORDER BY sent_at DESC",
+                "SELECT * FROM employment_verifications WHERE candidate_id=%s ORDER BY sent_at DESC",
                 (candidate_id,),
             ).fetchall()
             return [dict(r) for r in rows]
@@ -506,7 +506,7 @@ class EmploymentVerificationService:
     def get_verifications_for_employment(employment_id: str) -> list:
         with get_db() as db:
             rows = db.execute(
-                "SELECT * FROM employment_verifications WHERE employment_id=? ORDER BY sent_at DESC",
+                "SELECT * FROM employment_verifications WHERE employment_id=%s ORDER BY sent_at DESC",
                 (employment_id,),
             ).fetchall()
             return [dict(r) for r in rows]

@@ -56,7 +56,7 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM subscription_tier_config WHERE tier_key=?", (tier_key,)
+                "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
             ).fetchone()
             if not row:
                 raise ValueError(f"Tier '{tier_key}' not found")
@@ -82,12 +82,12 @@ class BillingService:
 
             if updates:
                 updates["updated_at"] = now
-                set_clause = ", ".join(f"{k}=?" for k in updates.keys())
+                set_clause = ", ".join(f"{k}=%s" for k in updates.keys())
                 values = list(updates.values()) + [tier_key]
-                db.execute(f"UPDATE subscription_tier_config SET {set_clause} WHERE tier_key=?", values)
+                db.execute(f"UPDATE subscription_tier_config SET {set_clause} WHERE tier_key=%s", values)
 
             row = db.execute(
-                "SELECT * FROM subscription_tier_config WHERE tier_key=?", (tier_key,)
+                "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
             ).fetchone()
             r = dict(row)
             r["features"] = json.loads(r["features"]) if isinstance(r["features"], str) else r["features"]
@@ -107,7 +107,7 @@ class BillingService:
 
         with get_db() as db:
             existing = db.execute(
-                "SELECT id FROM subscription_tier_config WHERE tier_key=?", (tier_key,)
+                "SELECT id FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
             ).fetchone()
             if existing:
                 raise ValueError(f"Tier '{tier_key}' already exists")
@@ -118,7 +118,7 @@ class BillingService:
                    (id, tier_key, name, monthly_price, per_worker_price, max_workers, monthly_checks,
                     overage_rate, allow_rollover, monitoring_included, monitoring_cap, monitoring_addon_rate,
                     features, is_active, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s)""",
                 (tier_id, tier_key, data.get("name", tier_key.title()),
                  data.get("monthly_price", 0), data.get("per_worker_price", 0),
                  data.get("max_workers", 0), data.get("monthly_checks", 0),
@@ -128,7 +128,7 @@ class BillingService:
                  data.get("monitoring_cap", 0), data.get("monitoring_addon_rate", 0),
                  features, now),
             )
-            row = db.execute("SELECT * FROM subscription_tier_config WHERE id=?", (tier_id,)).fetchone()
+            row = db.execute("SELECT * FROM subscription_tier_config WHERE id=%s", (tier_id,)).fetchone()
             r = dict(row)
             r["features"] = json.loads(r["features"]) if isinstance(r["features"], str) else r["features"]
             return r
@@ -139,18 +139,18 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM subscription_tier_config WHERE tier_key=?", (tier_key,)
+                "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
             ).fetchone()
             if not row:
                 raise ValueError(f"Tier '{tier_key}' not found")
             active_count = db.execute(
-                "SELECT COUNT(*) FROM agency_subscriptions WHERE tier=? AND status='active'",
+                "SELECT COUNT(*) AS cnt FROM agency_subscriptions WHERE tier=%s AND status='active'",
                 (tier_key,),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
             if active_count > 0:
                 raise ValueError(f"Cannot delete tier '{tier_key}' - {active_count} active subscription(s) use it.")
             db.execute(
-                "UPDATE subscription_tier_config SET is_active=0, updated_at=? WHERE tier_key=?",
+                "UPDATE subscription_tier_config SET is_active=0, updated_at=%s WHERE tier_key=%s",
                 (now, tier_key),
             )
             return {"deleted": True, "tier_key": tier_key}
@@ -170,7 +170,7 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM partial_credit_rates WHERE check_type=?", (check_type,)
+                "SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)
             ).fetchone()
             if not row:
                 raise ValueError(f"Partial credit rate '{check_type}' not found")
@@ -185,11 +185,11 @@ class BillingService:
 
             if updates:
                 updates["updated_at"] = now
-                set_clause = ", ".join(f"{k}=?" for k in updates.keys())
+                set_clause = ", ".join(f"{k}=%s" for k in updates.keys())
                 values = list(updates.values()) + [check_type]
-                db.execute(f"UPDATE partial_credit_rates SET {set_clause} WHERE check_type=?", values)
+                db.execute(f"UPDATE partial_credit_rates SET {set_clause} WHERE check_type=%s", values)
 
-            row = db.execute("SELECT * FROM partial_credit_rates WHERE check_type=?", (check_type,)).fetchone()
+            row = db.execute("SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)).fetchone()
             return dict(row)
 
     @staticmethod
@@ -199,17 +199,17 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             existing = db.execute(
-                "SELECT id FROM partial_credit_rates WHERE check_type=?", (data["check_type"],)
+                "SELECT id FROM partial_credit_rates WHERE check_type=%s", (data["check_type"],)
             ).fetchone()
             if existing:
                 raise ValueError(f"Partial credit rate '{data['check_type']}' already exists")
 
             db.execute(
-                "INSERT INTO partial_credit_rates (id, check_type, label, credit_value, third_party_cost, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO partial_credit_rates (id, check_type, label, credit_value, third_party_cost, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
                 (rate_id, data["check_type"], data.get("label", data["check_type"]),
                  float(data.get("credit_value", 1.0)), float(data.get("third_party_cost", 0)), now),
             )
-            row = db.execute("SELECT * FROM partial_credit_rates WHERE id=?", (rate_id,)).fetchone()
+            row = db.execute("SELECT * FROM partial_credit_rates WHERE id=%s", (rate_id,)).fetchone()
             return dict(row)
 
     @staticmethod
@@ -217,11 +217,11 @@ class BillingService:
         """Delete a partial credit rate."""
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM partial_credit_rates WHERE check_type=?", (check_type,)
+                "SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)
             ).fetchone()
             if not row:
                 raise ValueError(f"Partial credit rate '{check_type}' not found")
-            db.execute("DELETE FROM partial_credit_rates WHERE check_type=?", (check_type,))
+            db.execute("DELETE FROM partial_credit_rates WHERE check_type=%s", (check_type,))
             return {"deleted": True, "check_type": check_type}
 
     @staticmethod
@@ -229,7 +229,7 @@ class BillingService:
         """Get current subscription for an agency."""
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             ).fetchone()
             if row:
@@ -248,7 +248,7 @@ class BillingService:
         with get_db() as db:
             # Get tier config from DB
             tier_row = db.execute(
-                "SELECT * FROM subscription_tier_config WHERE tier_key=? AND is_active=1", (tier,)
+                "SELECT * FROM subscription_tier_config WHERE tier_key=%s AND is_active=1", (tier,)
             ).fetchone()
             if not tier_row:
                 raise ValueError(f"Invalid or inactive credit pack: {tier}")
@@ -260,7 +260,7 @@ class BillingService:
 
             # Check if agency has an active credit pack with remaining credits
             existing = db.execute(
-                "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             ).fetchone()
 
@@ -269,7 +269,7 @@ class BillingService:
                 old_remaining = max(0, float(ex.get("credits_total") or 0) - float(ex.get("credits_used") or 0))
                 # Deactivate old pack - carry over remaining credits
                 db.execute(
-                    "UPDATE agency_subscriptions SET status='replaced', cancelled_at=? WHERE id=?",
+                    "UPDATE agency_subscriptions SET status='replaced', cancelled_at=%s WHERE id=%s",
                     (now_str, ex["id"]),
                 )
                 # Add remaining credits to new pack
@@ -283,8 +283,8 @@ class BillingService:
                     stripe_payment_method_id, stripe_subscription_id,
                     status, current_period_start, current_period_end, next_billing_date,
                     expires_at, pack_name, created_at)
-                   VALUES (?, ?, ?, ?, ?, 0, 99999, ?, 0, ?, 0, 0, 0, 0,
-                    ?, NULL, 'active', ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, 0, 99999, %s, 0, %s, 0, 0, 0, 0,
+                    %s, NULL, 'active', %s, %s, %s, %s, %s, %s)""",
                 (sub_id, agency_id, tier, billing_method,
                  pack_price, int(pack_credits), pack_credits,
                  stripe_payment_method_id,
@@ -296,7 +296,7 @@ class BillingService:
             inv_id = generate_id()
             db.execute(
                 """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                   VALUES (?, ?, 'credit_pack', ?, 0, ?, ?, ?)""",
+                   VALUES (%s, %s, 'credit_pack', %s, 0, %s, %s, %s)""",
                 (inv_id, agency_id,
                  f"{pack_name} - {int(tier_info['monthly_checks'])} Credits (12 months)",
                  pack_price,
@@ -305,14 +305,14 @@ class BillingService:
             )
 
             from app.services.email_service import EmailService
-            agency = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
+            agency = db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,)).fetchone()
             if agency:
                 a = dict(agency)
                 EmailService.send_subscription_confirmation(
                     a["email"], a["name"], pack_name, pack_price,
                 )
 
-            row = db.execute("SELECT * FROM agency_subscriptions WHERE id=?", (sub_id,)).fetchone()
+            row = db.execute("SELECT * FROM agency_subscriptions WHERE id=%s", (sub_id,)).fetchone()
             return dict(row)
 
     @staticmethod
@@ -321,7 +321,7 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             db.execute(
-                "UPDATE agency_subscriptions SET status='cancelled', cancelled_at=? WHERE agency_id=? AND status='active'",
+                "UPDATE agency_subscriptions SET status='cancelled', cancelled_at=%s WHERE agency_id=%s AND status='active'",
                 (now, agency_id),
             )
             return {"status": "cancelled", "cancelled_at": now}
@@ -339,7 +339,7 @@ class BillingService:
                 """SELECT s.*, a.name as agency_name, a.email as agency_email
                    FROM agency_subscriptions s
                    JOIN agencies a ON s.agency_id = a.id
-                   WHERE s.status='active' AND s.expires_at IS NOT NULL AND s.expires_at <= ?""",
+                   WHERE s.status='active' AND s.expires_at IS NOT NULL AND s.expires_at <= %s""",
                 (now_str,),
             ).fetchall()
 
@@ -371,7 +371,7 @@ class BillingService:
                     # Expire the pack
                     credits_remaining = max(0, float(s.get("credits_total") or 0) - float(s.get("credits_used") or 0))
                     db.execute(
-                        "UPDATE agency_subscriptions SET status='expired', cancelled_at=? WHERE id=?",
+                        "UPDATE agency_subscriptions SET status='expired', cancelled_at=%s WHERE id=%s",
                         (now_str, s["id"]),
                     )
 
@@ -382,7 +382,7 @@ class BillingService:
                             """INSERT INTO credit_transactions
                                (id, agency_id, check_type, credits_consumed, credit_balance_after,
                                 is_rollover, description, created_at)
-                               VALUES (?, ?, 'expiry', ?, 0, 0, ?, ?)""",
+                               VALUES (%s, %s, 'expiry', %s, 0, 0, %s, %s)""",
                             (txn_id, s["agency_id"], credits_remaining,
                              f"{round(credits_remaining, 1)} credits expired (12-month validity ended)", now_str),
                         )
@@ -406,7 +406,7 @@ class BillingService:
         """Get billing/invoice history for an agency."""
         with get_db() as db:
             rows = db.execute(
-                """SELECT * FROM invoices WHERE agency_id=?
+                """SELECT * FROM invoices WHERE agency_id=%s
                    ORDER BY created_at DESC""",
                 (agency_id,),
             ).fetchall()
@@ -418,10 +418,10 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             db.execute(
-                "UPDATE invoices SET status='paid', paid_at=? WHERE id=?",
+                "UPDATE invoices SET status='paid', paid_at=%s WHERE id=%s",
                 (now, invoice_id),
             )
-            row = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            row = db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
             return dict(row) if row else None
 
     @staticmethod
@@ -429,7 +429,7 @@ class BillingService:
         """Get remaining check credits for an agency's active credit pack."""
         with get_db() as db:
             sub = db.execute(
-                "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             ).fetchone()
             if not sub:
@@ -450,7 +450,7 @@ class BillingService:
             credits_remaining = max(0, credits_total - credits_used)
 
             tier_row = db.execute(
-                "SELECT * FROM subscription_tier_config WHERE tier_key=?", (s["tier"],)
+                "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (s["tier"],)
             ).fetchone()
             tier_name = dict(tier_row)["name"] if tier_row else s.get("pack_name") or s["tier"]
 
@@ -501,13 +501,13 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             sub = db.execute(
-                "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             ).fetchone()
 
             # Look up credit value for this check type
             pcr = db.execute(
-                "SELECT * FROM partial_credit_rates WHERE check_type=?", (check_type,)
+                "SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)
             ).fetchone()
             credit_value = float(dict(pcr)["credit_value"]) if pcr else 1.0
 
@@ -515,7 +515,7 @@ class BillingService:
                 inv_id = generate_id()
                 db.execute(
                     """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                       VALUES (?, ?, ?, 'vetting', ?, ?, ?, 'pending', ?)""",
+                       VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'pending', %s)""",
                     (inv_id, agency_id, candidate_id, check_description, cost_amount, sell_amount, now),
                 )
                 return {"invoice_id": inv_id, "status": "pending", "within_credit": False,
@@ -533,7 +533,7 @@ class BillingService:
                         inv_id = generate_id()
                         db.execute(
                             """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                               VALUES (?, ?, ?, 'vetting', ?, ?, ?, 'pending', ?)""",
+                               VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'pending', %s)""",
                             (inv_id, agency_id, candidate_id,
                              f"{check_description} (credit pack expired)",
                              cost_amount, sell_amount, now),
@@ -555,11 +555,11 @@ class BillingService:
                 inv_id = generate_id()
                 db.execute(
                     """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, paid_at, created_at)
-                       VALUES (?, ?, ?, 'vetting', ?, ?, ?, 'paid', ?, ?)""",
+                       VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'paid', %s, %s)""",
                     (inv_id, agency_id, candidate_id, check_description, cost_amount, 0, now, now),
                 )
                 db.execute(
-                    "UPDATE agency_subscriptions SET credits_used = credits_used + ? WHERE id=?",
+                    "UPDATE agency_subscriptions SET credits_used = credits_used + %s WHERE id=%s",
                     (credit_value, s["id"]),
                 )
                 # Record credit transaction
@@ -568,7 +568,7 @@ class BillingService:
                     """INSERT INTO credit_transactions
                        (id, agency_id, candidate_id, check_type, credits_consumed, credit_balance_after,
                         unit_cost, charge_amount, is_overage, description, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, 0, 0, %s, %s)""",
                     (txn_id, agency_id, candidate_id, check_type, credit_value,
                      credit_balance_after, cost_amount, check_description, now),
                 )
@@ -585,7 +585,7 @@ class BillingService:
                 inv_id = generate_id()
                 db.execute(
                     """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                       VALUES (?, ?, ?, 'vetting', ?, ?, ?, 'pending', ?)""",
+                       VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'pending', %s)""",
                     (inv_id, agency_id, candidate_id,
                      f"{check_description} (credits exhausted)",
                      cost_amount, sell_amount, now),
@@ -607,8 +607,8 @@ class BillingService:
                 """SELECT ct.*, c.first_name, c.last_name
                    FROM credit_transactions ct
                    LEFT JOIN candidates c ON ct.candidate_id = c.id
-                   WHERE ct.agency_id=?
-                   ORDER BY ct.created_at DESC LIMIT ?""",
+                   WHERE ct.agency_id=%s
+                   ORDER BY ct.created_at DESC LIMIT %s""",
                 (agency_id, limit),
             ).fetchall()
             return [dict(r) for r in rows]
@@ -626,7 +626,7 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             sub = db.execute(
-                "SELECT * FROM agency_subscriptions WHERE agency_id=? AND status='active' ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             ).fetchone()
             if not sub:
@@ -638,14 +638,14 @@ class BillingService:
             # Validate the auto-topup tier exists
             if enabled and auto_topup_tier:
                 tier_row = db.execute(
-                    "SELECT * FROM subscription_tier_config WHERE tier_key=? AND is_active=1",
+                    "SELECT * FROM subscription_tier_config WHERE tier_key=%s AND is_active=1",
                     (auto_topup_tier,),
                 ).fetchone()
                 if not tier_row:
                     raise ValueError(f"Invalid credit pack tier: {auto_topup_tier}")
 
             db.execute(
-                "UPDATE agency_subscriptions SET auto_topup=?, auto_topup_tier=? WHERE id=?",
+                "UPDATE agency_subscriptions SET auto_topup=%s, auto_topup_tier=%s WHERE id=%s",
                 (1 if enabled else 0, auto_topup_tier if enabled else None, s["id"]),
             )
 
@@ -663,7 +663,7 @@ class BillingService:
         """Get the billing mode for an agency."""
         with get_db() as db:
             row = db.execute(
-                "SELECT id, name, billing_mode, stripe_customer_id FROM agencies WHERE id=?",
+                "SELECT id, name, billing_mode, stripe_customer_id FROM agencies WHERE id=%s",
                 (agency_id,),
             ).fetchone()
             if not row:
@@ -684,7 +684,7 @@ class BillingService:
             raise ValueError(f"Invalid billing_mode. Valid: {', '.join(valid_modes)}")
 
         with get_db() as db:
-            row = db.execute("SELECT id, name FROM agencies WHERE id=?", (agency_id,)).fetchone()
+            row = db.execute("SELECT id, name FROM agencies WHERE id=%s", (agency_id,)).fetchone()
             if not row:
                 raise ValueError("Agency not found")
 
@@ -692,9 +692,9 @@ class BillingService:
             if stripe_customer_id is not None:
                 updates["stripe_customer_id"] = stripe_customer_id
 
-            set_clause = ", ".join(f"{k}=?" for k in updates.keys())
+            set_clause = ", ".join(f"{k}=%s" for k in updates.keys())
             values = list(updates.values()) + [agency_id]
-            db.execute(f"UPDATE agencies SET {set_clause} WHERE id=?", values)
+            db.execute(f"UPDATE agencies SET {set_clause} WHERE id=%s", values)
 
             return BillingService.get_agency_billing_mode(agency_id)
 
@@ -708,7 +708,7 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            inv = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            inv = db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
             if not inv:
                 raise ValueError("Invoice not found")
             invoice = dict(inv)
@@ -732,7 +732,7 @@ class BillingService:
                 )
                 # Update invoice with provider session info
                 db.execute(
-                    "UPDATE invoices SET stripe_session_id=?, payment_method=? WHERE id=?",
+                    "UPDATE invoices SET stripe_session_id=%s, payment_method=%s WHERE id=%s",
                     (result.get("payment_id", ""), result.get("provider", "stripe"), invoice_id),
                 )
                 return {
@@ -750,10 +750,10 @@ class BillingService:
             # Simulated fallback
             session_id = f"cs_simulated_{_secrets.token_hex(16)}"
             db.execute(
-                "UPDATE invoices SET stripe_session_id=?, payment_method='stripe' WHERE id=?",
+                "UPDATE invoices SET stripe_session_id=%s, payment_method='stripe' WHERE id=%s",
                 (session_id, invoice_id),
             )
-            checkout_url = f"{success_url}?session_id={session_id}&invoice_id={invoice_id}"
+            checkout_url = f"{success_url}%ssession_id={session_id}&invoice_id={invoice_id}"
 
             return {
                 "session_id": session_id,
@@ -772,7 +772,7 @@ class BillingService:
 
         with get_db() as db:
             inv = db.execute(
-                "SELECT * FROM invoices WHERE stripe_session_id=?", (session_id,)
+                "SELECT * FROM invoices WHERE stripe_session_id=%s", (session_id,)
             ).fetchone()
             if not inv:
                 raise ValueError("No invoice found for this session")
@@ -782,7 +782,7 @@ class BillingService:
                 return {"invoice_id": invoice["id"], "status": "already_paid"}
 
             db.execute(
-                "UPDATE invoices SET status='paid', paid_at=?, payment_method='stripe', stripe_payment_intent_id=? WHERE id=?",
+                "UPDATE invoices SET status='paid', paid_at=%s, payment_method='stripe', stripe_payment_intent_id=%s WHERE id=%s",
                 (now, f"pi_simulated_{session_id[-16:]}", invoice["id"]),
             )
 
@@ -800,7 +800,7 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            inv = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            inv = db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
             if not inv:
                 raise ValueError("Invoice not found")
             invoice = dict(inv)
@@ -838,7 +838,7 @@ class BillingService:
             payment_intent = f"pi_simulated_{_secrets.token_hex(8)}"
 
             db.execute(
-                "UPDATE invoices SET status='paid', paid_at=?, payment_method='stripe', stripe_payment_intent_id=? WHERE id=?",
+                "UPDATE invoices SET status='paid', paid_at=%s, payment_method='stripe', stripe_payment_intent_id=%s WHERE id=%s",
                 (now, payment_intent, invoice_id),
             )
 
@@ -872,7 +872,7 @@ class BillingService:
                 """SELECT i.*, a.name as agency_name, a.email as agency_email, a.billing_mode
                    FROM invoices i
                    JOIN agencies a ON i.agency_id = a.id
-                   WHERE i.status = 'pending' AND i.created_at <= ?
+                   WHERE i.status = 'pending' AND i.created_at <= %s
                    ORDER BY i.created_at ASC""",
                 (reminder_threshold,),
             ).fetchall()
@@ -918,7 +918,7 @@ class BillingService:
                     )
 
                     db.execute(
-                        "UPDATE invoices SET reminder_count = reminder_count + 1, reminder_sent_at=? WHERE id=?",
+                        "UPDATE invoices SET reminder_count = reminder_count + 1, reminder_sent_at=%s WHERE id=%s",
                         (now_str, inv["id"]),
                     )
 

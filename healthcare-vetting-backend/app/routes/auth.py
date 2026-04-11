@@ -43,7 +43,7 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 async def register_candidate(request: Request, data: CandidateRegisterWithInvite):
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        existing = db.execute("SELECT id FROM candidates WHERE email=?", (data.email,)).fetchone()
+        existing = db.execute("SELECT id FROM candidates WHERE email=%s", (data.email,)).fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -51,7 +51,7 @@ async def register_candidate(request: Request, data: CandidateRegisterWithInvite
         invite = None
         if data.invite_code:
             invite_row = db.execute(
-                "SELECT * FROM agency_invites WHERE invite_code=? AND status='pending'",
+                "SELECT * FROM agency_invites WHERE invite_code=%s AND status='pending'",
                 (data.invite_code,),
             ).fetchone()
             if not invite_row:
@@ -70,7 +70,7 @@ async def register_candidate(request: Request, data: CandidateRegisterWithInvite
                (id, email, password_hash, first_name, last_name, phone,
                 date_of_birth, address_line1, address_line2, city, postcode,
                 profession, registration_number, registration_body)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 candidate_id, data.email, hash_password(data.password),
                 data.first_name, data.last_name, data.phone,
@@ -83,11 +83,11 @@ async def register_candidate(request: Request, data: CandidateRegisterWithInvite
         # If invite code provided, link candidate to agency automatically
         if invite:
             db.execute(
-                "INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at) VALUES (?, ?, ?)",
+                "INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at) VALUES (%s, %s, %s)",
                 (invite["agency_id"], candidate_id, now),
             )
             db.execute(
-                "UPDATE agency_invites SET status='accepted', candidate_id=?, accepted_at=? WHERE id=?",
+                "UPDATE agency_invites SET status='accepted', candidate_id=%s, accepted_at=%s WHERE id=%s",
                 (candidate_id, now, invite["id"]),
             )
 
@@ -104,7 +104,7 @@ async def login_candidate(request: Request, data: CandidateLogin):
         raise HTTPException(status_code=423, detail="Account temporarily locked due to too many failed attempts. Try again in 15 minutes.")
 
     with get_db() as db:
-        user = db.execute("SELECT * FROM candidates WHERE email=?", (data.email,)).fetchone()
+        user = db.execute("SELECT * FROM candidates WHERE email=%s", (data.email,)).fetchone()
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -122,7 +122,7 @@ async def login_candidate(request: Request, data: CandidateLogin):
 @limiter.limit("5/minute")
 async def register_agency(request: Request, data: AgencyCreate):
     with get_db() as db:
-        existing = db.execute("SELECT id FROM agencies WHERE email=?", (data.email,)).fetchone()
+        existing = db.execute("SELECT id FROM agencies WHERE email=%s", (data.email,)).fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -130,7 +130,7 @@ async def register_agency(request: Request, data: AgencyCreate):
         db.execute(
             """INSERT INTO agencies
                (id, name, email, password_hash, contact_name, phone, plan)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 agency_id, data.name, data.email, hash_password(data.password),
                 data.contact_name, data.phone, data.plan,
@@ -149,7 +149,7 @@ async def login_agency(request: Request, data: AgencyLogin):
         raise HTTPException(status_code=423, detail="Account temporarily locked due to too many failed attempts. Try again in 15 minutes.")
 
     with get_db() as db:
-        user = db.execute("SELECT * FROM agencies WHERE email=?", (data.email,)).fetchone()
+        user = db.execute("SELECT * FROM agencies WHERE email=%s", (data.email,)).fetchone()
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -172,7 +172,7 @@ async def login_admin(request: Request, data: CandidateLogin):
         raise HTTPException(status_code=423, detail="Account temporarily locked. Try again in 15 minutes.")
 
     with get_db() as db:
-        admin = db.execute("SELECT * FROM admin_users WHERE email=? AND is_active=1", (data.email,)).fetchone()
+        admin = db.execute("SELECT * FROM admin_users WHERE email=%s AND is_active=1", (data.email,)).fetchone()
         if not admin:
             raise HTTPException(status_code=401, detail="Invalid admin credentials")
         admin_dict = dict(admin)
@@ -225,7 +225,7 @@ async def request_password_reset(request: Request, data: PasswordResetRequest):
         raise HTTPException(status_code=400, detail="Invalid user type")
 
     with get_db() as db:
-        user = db.execute(f"SELECT id, email FROM {table} WHERE email=?", (data.email,)).fetchone()
+        user = db.execute(f"SELECT id, email FROM {table} WHERE email=%s", (data.email,)).fetchone()
         if not user:
             # Don't reveal whether email exists — return success either way
             return {"message": "If the email is registered, a reset link has been sent."}
@@ -238,7 +238,7 @@ async def request_password_reset(request: Request, data: PasswordResetRequest):
     return {
         "message": "If the email is registered, a reset link has been sent.",
         "_demo_token": raw_token,  # Remove in production
-        "_demo_reset_url": f"/reset-password?token={raw_token}",
+        "_demo_reset_url": f"/reset-password%stoken={raw_token}",
     }
 
 
@@ -261,7 +261,7 @@ async def confirm_password_reset(request: Request, data: PasswordResetConfirm):
 
     new_hash = hash_password(data.new_password)
     with get_db() as db:
-        db.execute(f"UPDATE {table} SET password_hash=? WHERE id=?", (new_hash, result["user_id"]))
+        db.execute(f"UPDATE {table} SET password_hash=%s WHERE id=%s", (new_hash, result["user_id"]))
 
     consume_password_reset_token(result["token_id"])
     return {"message": "Password has been reset successfully"}

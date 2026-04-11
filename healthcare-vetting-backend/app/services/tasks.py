@@ -77,7 +77,7 @@ def deliver_webhook(subscription_id: str, event_type: str, payload: dict) -> dic
 
     with get_db() as db:
         sub = db.execute(
-            "SELECT * FROM webhook_subscriptions WHERE id=? AND is_active=1",
+            "SELECT * FROM webhook_subscriptions WHERE id=%s AND is_active=1",
             (subscription_id,),
         ).fetchone()
         if not sub:
@@ -115,14 +115,14 @@ def deliver_webhook(subscription_id: str, event_type: str, payload: dict) -> dic
                 """INSERT INTO webhook_deliveries
                    (id, subscription_id, event_type, payload, response_status,
                     response_body, attempt, status, created_at, delivered_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 1, 'delivered', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 1, 'delivered', %s, %s)""",
                 (delivery_id, subscription_id, event_type, json.dumps(payload),
                  response_status, response_body, now, now),
             )
 
             # Reset failure count on success
             db.execute(
-                "UPDATE webhook_subscriptions SET failure_count=0, last_triggered_at=? WHERE id=?",
+                "UPDATE webhook_subscriptions SET failure_count=0, last_triggered_at=%s WHERE id=%s",
                 (now, subscription_id),
             )
 
@@ -134,23 +134,23 @@ def deliver_webhook(subscription_id: str, event_type: str, payload: dict) -> dic
                 """INSERT INTO webhook_deliveries
                    (id, subscription_id, event_type, payload, response_body,
                     attempt, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, 1, 'failed', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, 1, 'failed', %s)""",
                 (delivery_id, subscription_id, event_type, json.dumps(payload),
                  error_msg, now),
             )
 
             # Increment failure count; disable after 10 consecutive failures
             db.execute(
-                "UPDATE webhook_subscriptions SET failure_count=failure_count+1 WHERE id=?",
+                "UPDATE webhook_subscriptions SET failure_count=failure_count+1 WHERE id=%s",
                 (subscription_id,),
             )
             failure_count = db.execute(
-                "SELECT failure_count FROM webhook_subscriptions WHERE id=?",
+                "SELECT failure_count FROM webhook_subscriptions WHERE id=%s",
                 (subscription_id,),
             ).fetchone()
             if failure_count and dict(failure_count)["failure_count"] >= 10:
                 db.execute(
-                    "UPDATE webhook_subscriptions SET is_active=0 WHERE id=?",
+                    "UPDATE webhook_subscriptions SET is_active=0 WHERE id=%s",
                     (subscription_id,),
                 )
                 logger.warning("Webhook subscription %s disabled after 10 failures", subscription_id)
@@ -195,7 +195,7 @@ def apply_retention_policies() -> dict:
         # Log retention run
         db.execute(
             """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-               VALUES (?, 'system', 'retention', 'retention_policy_applied', 'system', ?, ?)""",
+               VALUES (%s, 'system', 'retention', 'retention_policy_applied', 'system', %s, %s)""",
             (generate_id(), json.dumps({"deleted_records": deleted_count}), now_iso),
         )
 

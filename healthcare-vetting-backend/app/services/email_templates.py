@@ -65,7 +65,7 @@ def get_trust_signal_variables() -> dict:
         with get_db() as db:
             for key in TRUST_SIGNAL_DEFAULTS:
                 row = db.execute(
-                    "SELECT setting_value FROM system_settings WHERE setting_key=?",
+                    "SELECT setting_value FROM system_settings WHERE setting_key=%s",
                     (f"trust_{key}",),
                 ).fetchone()
                 if row and row["setting_value"]:
@@ -82,7 +82,7 @@ def get_invoice_settings() -> dict:
         with get_db() as db:
             for key in INVOICE_SETTINGS_DEFAULTS:
                 row = db.execute(
-                    "SELECT setting_value FROM system_settings WHERE setting_key=?",
+                    "SELECT setting_value FROM system_settings WHERE setting_key=%s",
                     (f"invoice_{key}",),
                 ).fetchone()
                 if row and row["setting_value"]:
@@ -193,7 +193,7 @@ DEFAULT_TEMPLATES = [
     <p style="color: #64748b; font-size: 12px;">If the button doesn't work, copy and paste this link: {{verification_link}}</p>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
     <div style="color: #64748b; font-size: 11px; line-height: 1.5;">
-        <p style="margin: 0 0 8px;"><strong>Why am I receiving this?</strong> {{agency_name}} is conducting pre-employment checks as required under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.</p>
+        <p style="margin: 0 0 8px;"><strong>Why am I receiving this%s</strong> {{agency_name}} is conducting pre-employment checks as required under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.</p>
         <p style="margin: 0 0 8px;">HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
         <p style="margin: 0;">We process personal data in accordance with UK GDPR. Your response will be retained for 6 years in line with regulatory requirements. See our privacy policy at {{privacy_url}}.</p>
     </div>
@@ -649,7 +649,7 @@ Reference: #{{invoice_ref}}
 ---
 {{company_name}} | {{company_reg_info}} | VAT No: {{vat_number}}
 {{company_address}}
-Questions? Contact {{company_email}} or call {{company_phone}}""",
+Questions%s Contact {{company_email}} or call {{company_phone}}""",
         "variables": json.dumps([
             {"key": "invoice_ref", "description": "Invoice reference number"},
             {"key": "invoice_date", "description": "Date the invoice was issued"},
@@ -856,7 +856,7 @@ class EmailTemplateService:
         with get_db() as db:
             for tpl in DEFAULT_TEMPLATES:
                 existing = db.execute(
-                    "SELECT id, subject, body_html FROM email_templates WHERE template_key=?",
+                    "SELECT id, subject, body_html FROM email_templates WHERE template_key=%s",
                     (tpl["template_key"],),
                 ).fetchone()
                 if not existing:
@@ -864,7 +864,7 @@ class EmailTemplateService:
                         """INSERT INTO email_templates
                            (id, template_key, name, description, subject,
                             body_html, body_text, category, variables, is_active)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1)""",
                         (
                             generate_id(),
                             tpl["template_key"],
@@ -883,9 +883,9 @@ class EmailTemplateService:
                     if ex["subject"] != tpl["subject"] or ex["body_html"] != tpl["body_html"]:
                         db.execute(
                             """UPDATE email_templates SET
-                               subject=?, body_html=?, body_text=?, variables=?,
-                               description=?, updated_at=?
-                               WHERE template_key=?""",
+                               subject=%s, body_html=%s, body_text=%s, variables=%s,
+                               description=%s, updated_at=%s
+                               WHERE template_key=%s""",
                             (
                                 tpl["subject"],
                                 tpl["body_html"],
@@ -910,7 +910,7 @@ class EmailTemplateService:
     def get_template(template_id: str) -> dict:
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM email_templates WHERE id=?", (template_id,)
+                "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             ).fetchone()
             return dict(row) if row else None
 
@@ -918,7 +918,7 @@ class EmailTemplateService:
     def get_template_by_key(template_key: str) -> dict:
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM email_templates WHERE template_key=?", (template_key,)
+                "SELECT * FROM email_templates WHERE template_key=%s", (template_key,)
             ).fetchone()
             return dict(row) if row else None
 
@@ -935,7 +935,7 @@ class EmailTemplateService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM email_templates WHERE id=?", (template_id,)
+                "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             ).fetchone()
             if not row:
                 return None
@@ -943,9 +943,9 @@ class EmailTemplateService:
 
             db.execute(
                 """UPDATE email_templates SET
-                   name=?, description=?, subject=?, body_html=?, body_text=?,
-                   is_active=?, updated_at=?
-                   WHERE id=?""",
+                   name=%s, description=%s, subject=%s, body_html=%s, body_text=%s,
+                   is_active=%s, updated_at=%s
+                   WHERE id=%s""",
                 (
                     name if name is not None else current["name"],
                     description if description is not None else current["description"],
@@ -958,7 +958,7 @@ class EmailTemplateService:
                 ),
             )
             row = db.execute(
-                "SELECT * FROM email_templates WHERE id=?", (template_id,)
+                "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             ).fetchone()
             return dict(row)
 
@@ -967,7 +967,7 @@ class EmailTemplateService:
         """Reset a template to its default content."""
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM email_templates WHERE id=?", (template_id,)
+                "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             ).fetchone()
             if not row:
                 return None
@@ -985,8 +985,8 @@ class EmailTemplateService:
             now = datetime.now(timezone.utc).isoformat()
             db.execute(
                 """UPDATE email_templates SET
-                   subject=?, body_html=?, body_text=?, updated_at=?
-                   WHERE id=?""",
+                   subject=%s, body_html=%s, body_text=%s, updated_at=%s
+                   WHERE id=%s""",
                 (
                     default["subject"],
                     default["body_html"],
@@ -996,7 +996,7 @@ class EmailTemplateService:
                 ),
             )
             row = db.execute(
-                "SELECT * FROM email_templates WHERE id=?", (template_id,)
+                "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             ).fetchone()
             return dict(row)
 
@@ -1026,7 +1026,7 @@ class EmailTemplateService:
                 """INSERT INTO email_templates
                    (id, template_key, name, description, subject, body_html, body_text,
                     category, variables, is_active, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)""",
                 (
                     template_id, template_key, name, description,
                     subject, body_html, body_text, category,
@@ -1034,7 +1034,7 @@ class EmailTemplateService:
                 ),
             )
             row = db.execute(
-                "SELECT * FROM email_templates WHERE id=?", (template_id,)
+                "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             ).fetchone()
             return dict(row)
 
@@ -1043,7 +1043,7 @@ class EmailTemplateService:
         """Delete a custom email template. Returns False if template is a default (protected)."""
         with get_db() as db:
             row = db.execute(
-                "SELECT * FROM email_templates WHERE id=?", (template_id,)
+                "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             ).fetchone()
             if not row:
                 return None  # not found
@@ -1056,7 +1056,7 @@ class EmailTemplateService:
             if is_default:
                 return False  # protected
 
-            db.execute("DELETE FROM email_templates WHERE id=?", (template_id,))
+            db.execute("DELETE FROM email_templates WHERE id=%s", (template_id,))
             return True
 
     # ── Rendering ─────────────────────────────────────────────────────
@@ -1135,7 +1135,7 @@ class EmailTemplateService:
                 """INSERT INTO email_send_log
                    (id, template_key, recipient_email, recipient_name, subject,
                     body_rendered, status, variables_used, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 'queued', %s, %s)""",
                 (
                     log_id, template_key, recipient_email, recipient_name,
                     rendered["subject"], rendered["body_html"],
@@ -1159,8 +1159,8 @@ class EmailTemplateService:
                 with get_db() as db:
                     db.execute(
                         """UPDATE email_send_log SET
-                           status='sent', provider=?, provider_message_id=?, sent_at=?
-                           WHERE id=?""",
+                           status='sent', provider=%s, provider_message_id=%s, sent_at=%s
+                           WHERE id=%s""",
                         (provider, result.get("message_id", ""), now, log_id),
                     )
                 logger.info(f"Email sent via {provider} to {recipient_email}: {rendered['subject']}")
@@ -1169,7 +1169,7 @@ class EmailTemplateService:
                 error_msg = str(e)
                 with get_db() as db:
                     db.execute(
-                        "UPDATE email_send_log SET status='failed', provider=?, error_message=? WHERE id=?",
+                        "UPDATE email_send_log SET status='failed', provider=%s, error_message=%s WHERE id=%s",
                         (provider, error_msg, log_id),
                     )
                 logger.error(f"{provider} delivery failed: {error_msg}")
@@ -1178,7 +1178,7 @@ class EmailTemplateService:
             # No provider configured — store as logged only
             with get_db() as db:
                 db.execute(
-                    "UPDATE email_send_log SET status='logged', sent_at=? WHERE id=?",
+                    "UPDATE email_send_log SET status='logged', sent_at=%s WHERE id=%s",
                     (now, log_id),
                 )
 
@@ -1188,7 +1188,7 @@ class EmailTemplateService:
                     """INSERT INTO email_notifications
                        (id, recipient_email, recipient_name, subject, body,
                         notification_type, status, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, 'sent', ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, 'sent', %s)""",
                     (
                         generate_id(), recipient_email, recipient_name,
                         rendered["subject"], rendered["body_text"] or rendered["body_html"],
@@ -1301,9 +1301,9 @@ class EmailTemplateService:
             query = "SELECT * FROM email_send_log"
             params = []
             if template_key:
-                query += " WHERE template_key=?"
+                query += " WHERE template_key=%s"
                 params.append(template_key)
-            query += " ORDER BY created_at DESC LIMIT ?"
+            query += " ORDER BY created_at DESC LIMIT %s"
             params.append(limit)
             rows = db.execute(query, params).fetchall()
             return [dict(r) for r in rows]

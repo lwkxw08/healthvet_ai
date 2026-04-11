@@ -26,7 +26,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
 
     candidate_id = current_user["sub"]
     with get_db() as db:
-        candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
         candidate = dict(candidate)
@@ -36,35 +36,35 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
 
         # 1. Identity verification
         id_check = db.execute(
-            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=? AND check_type='identity' ORDER BY created_at DESC LIMIT 1",
+            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='identity' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         ).fetchone()
         checks["identity"] = _format_check(id_check, "Identity Verification")
 
         # 2. DBS check
         dbs_check = db.execute(
-            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=? AND check_type='dbs' ORDER BY created_at DESC LIMIT 1",
+            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='dbs' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         ).fetchone()
         checks["dbs"] = _format_check(dbs_check, "DBS Check")
 
         # 3. Right to Work
         rtw_check = db.execute(
-            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=? AND check_type='right_to_work' ORDER BY created_at DESC LIMIT 1",
+            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='right_to_work' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         ).fetchone()
         checks["right_to_work"] = _format_check(rtw_check, "Right to Work")
 
         # 4. Professional Registration
         reg_check = db.execute(
-            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=? AND check_type='professional_registration' ORDER BY created_at DESC LIMIT 1",
+            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='professional_registration' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         ).fetchone()
         checks["professional_registration"] = _format_check(reg_check, "Professional Registration")
 
         # 5. References
         refs = db.execute(
-            "SELECT * FROM references_ WHERE candidate_id=? ORDER BY created_at DESC",
+            "SELECT * FROM references_ WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         ).fetchall()
         ref_statuses = [dict(r) for r in refs] if refs else []
@@ -78,7 +78,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
 
         # 6. Employment verification
         emp_vers = db.execute(
-            "SELECT * FROM employment_verifications WHERE candidate_id=? ORDER BY created_at DESC",
+            "SELECT * FROM employment_verifications WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         ).fetchall()
         emp_list = [dict(e) for e in emp_vers] if emp_vers else []
@@ -92,14 +92,14 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
 
         # 7. Training & qualifications
         training_check = db.execute(
-            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=? AND check_type='training' ORDER BY created_at DESC LIMIT 1",
+            "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='training' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         ).fetchone()
         checks["training"] = _format_check(training_check, "Training & Qualifications")
 
         # 8. Documents uploaded
         docs = db.execute(
-            "SELECT * FROM candidate_documents WHERE candidate_id=? ORDER BY uploaded_at DESC",
+            "SELECT * FROM candidate_documents WHERE candidate_id=%s ORDER BY uploaded_at DESC",
             (candidate_id,),
         ).fetchall()
         doc_list = [dict(d) for d in docs] if docs else []
@@ -111,7 +111,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
 
         # Pre-notifications pending
         notifications = db.execute(
-            "SELECT * FROM candidate_pre_notifications WHERE candidate_id=? AND status='pending' ORDER BY created_at DESC",
+            "SELECT * FROM candidate_pre_notifications WHERE candidate_id=%s AND status='pending' ORDER BY created_at DESC",
             (candidate_id,),
         ).fetchall()
         pending_notifications = [dict(n) for n in notifications] if notifications else []
@@ -143,7 +143,7 @@ async def candidate_timeline(request: Request, current_user: dict = Depends(get_
     with get_db() as db:
         # Compliance checks
         rows = db.execute(
-            "SELECT check_type, status, created_at, updated_at FROM compliance_checks WHERE candidate_id=? ORDER BY created_at DESC",
+            "SELECT check_type, status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         ).fetchall()
         for r in rows:
@@ -158,7 +158,7 @@ async def candidate_timeline(request: Request, current_user: dict = Depends(get_
 
         # References
         refs = db.execute(
-            "SELECT referee_name, status, created_at FROM references_ WHERE candidate_id=? ORDER BY created_at DESC",
+            "SELECT referee_name, status, created_at FROM references_ WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         ).fetchall()
         for r in refs:
@@ -172,7 +172,7 @@ async def candidate_timeline(request: Request, current_user: dict = Depends(get_
 
         # Employment verifications
         emps = db.execute(
-            "SELECT employer_name, status, created_at FROM employment_verifications WHERE candidate_id=? ORDER BY created_at DESC",
+            "SELECT employer_name, status, created_at FROM employment_verifications WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         ).fetchall()
         for e in emps:
@@ -186,7 +186,7 @@ async def candidate_timeline(request: Request, current_user: dict = Depends(get_
 
         # Documents
         docs = db.execute(
-            "SELECT document_type, uploaded_at FROM candidate_documents WHERE candidate_id=? ORDER BY uploaded_at DESC",
+            "SELECT document_type, uploaded_at FROM candidate_documents WHERE candidate_id=%s ORDER BY uploaded_at DESC",
             (candidate_id,),
         ).fetchall()
         for d in docs:
@@ -244,7 +244,7 @@ async def upload_document(
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         )""")
         db.execute(
-            "INSERT INTO candidate_documents (id, candidate_id, document_type, file_name, file_path, file_size, description, uploaded_at) VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO candidate_documents (id, candidate_id, document_type, file_name, file_path, file_size, description, uploaded_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (doc_id, candidate_id, document_type, file.filename, file_path, file_size, description, now),
         )
 
@@ -267,7 +267,7 @@ async def list_documents(request: Request, current_user: dict = Depends(get_curr
     with get_db() as db:
         try:
             docs = db.execute(
-                "SELECT id, document_type, file_name, file_size, description, uploaded_at FROM candidate_documents WHERE candidate_id=? ORDER BY uploaded_at DESC",
+                "SELECT id, document_type, file_name, file_size, description, uploaded_at FROM candidate_documents WHERE candidate_id=%s ORDER BY uploaded_at DESC",
                 (candidate_id,),
             ).fetchall()
             return {"documents": [dict(d) for d in docs]}
@@ -284,7 +284,7 @@ async def delete_document(doc_id: str, request: Request, current_user: dict = De
     candidate_id = current_user["sub"]
     with get_db() as db:
         doc = db.execute(
-            "SELECT * FROM candidate_documents WHERE id=? AND candidate_id=?",
+            "SELECT * FROM candidate_documents WHERE id=%s AND candidate_id=%s",
             (doc_id, candidate_id),
         ).fetchone()
         if not doc:
@@ -293,7 +293,7 @@ async def delete_document(doc_id: str, request: Request, current_user: dict = De
         # Delete from disk
         if os.path.exists(doc["file_path"]):
             os.remove(doc["file_path"])
-        db.execute("DELETE FROM candidate_documents WHERE id=?", (doc_id,))
+        db.execute("DELETE FROM candidate_documents WHERE id=%s", (doc_id,))
 
     return {"deleted": True}
 
@@ -309,14 +309,14 @@ async def confirm_pre_notification(notification_id: str, request: Request, curre
 
     with get_db() as db:
         notif = db.execute(
-            "SELECT * FROM candidate_pre_notifications WHERE id=? AND candidate_id=?",
+            "SELECT * FROM candidate_pre_notifications WHERE id=%s AND candidate_id=%s",
             (notification_id, candidate_id),
         ).fetchone()
         if not notif:
             raise HTTPException(status_code=404, detail="Notification not found")
 
         db.execute(
-            "UPDATE candidate_pre_notifications SET status='confirmed', candidate_confirmed_at=? WHERE id=?",
+            "UPDATE candidate_pre_notifications SET status='confirmed', candidate_confirmed_at=%s WHERE id=%s",
             (now, notification_id),
         )
 
@@ -367,7 +367,7 @@ async def bulk_upload_documents(
 
             file_size = os.path.getsize(file_path)
             db.execute(
-                "INSERT INTO candidate_documents (id, candidate_id, document_type, file_name, file_path, file_size, description, uploaded_at) VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO candidate_documents (id, candidate_id, document_type, file_name, file_path, file_size, description, uploaded_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (doc_id, candidate_id, doc_type, file.filename, file_path, file_size, "", now),
             )
             results.append({
@@ -441,14 +441,14 @@ def _get_check_snapshot(candidate_id: str) -> dict:
     with get_db() as db:
         for check_type in ["identity", "dbs", "right_to_work", "professional_registration", "training"]:
             row = db.execute(
-                "SELECT status FROM compliance_checks WHERE candidate_id=? AND check_type=? ORDER BY created_at DESC LIMIT 1",
+                "SELECT status FROM compliance_checks WHERE candidate_id=%s AND check_type=%s ORDER BY created_at DESC LIMIT 1",
                 (candidate_id, check_type),
             ).fetchone()
             snapshot[check_type] = dict(row)["status"] if row else "not_started"
 
         # References
         refs = db.execute(
-            "SELECT status FROM references_ WHERE candidate_id=?",
+            "SELECT status FROM references_ WHERE candidate_id=%s",
             (candidate_id,),
         ).fetchall()
         if refs:
@@ -459,7 +459,7 @@ def _get_check_snapshot(candidate_id: str) -> dict:
 
         # Employment
         emps = db.execute(
-            "SELECT status FROM employment_verifications WHERE candidate_id=?",
+            "SELECT status FROM employment_verifications WHERE candidate_id=%s",
             (candidate_id,),
         ).fetchall()
         if emps:
