@@ -188,7 +188,7 @@ def apply_retention_policies() -> dict:
             if category in category_map:
                 table, date_col = category_map[category]
                 result = db.execute(
-                    f"DELETE FROM {table} WHERE {date_col} < datetime('now', '-{days} days')",
+                    f"DELETE FROM {table} WHERE {date_col}::timestamp < NOW() - INTERVAL '{days} days'",
                 )
                 deleted_count += result.rowcount
 

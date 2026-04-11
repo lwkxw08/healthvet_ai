@@ -364,7 +364,7 @@ class TrustIDService:
             row = db.execute(
                 """SELECT COUNT(*) as cnt FROM trustid_checks
                    WHERE status='pending_admin'
-                   AND created_at < datetime('now', '-24 hours')"""
+                   AND created_at::timestamp < NOW() - INTERVAL '24 hours'"""
             ).fetchone()
             counts["overdue"] = dict(row)["cnt"]
             return counts

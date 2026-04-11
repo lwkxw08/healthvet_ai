@@ -321,7 +321,7 @@ class AuditTrailService:
                         table, date_col = category_map[category]
                         try:
                             affected = db.execute(
-                                f"SELECT COUNT(*) AS cnt FROM {table} WHERE {date_col} < datetime('now', '-{days} days')",
+                                f"SELECT COUNT(*) AS cnt FROM {table} WHERE {date_col}::timestamp < NOW() - INTERVAL '{days} days'",
                             ).fetchone()["cnt"]
                         except Exception:
                             pass
