@@ -8,34 +8,32 @@
 export const brand = {
   // ── Core Identity ──────────────────────────────────────────────
   name: "HealthVet AI",
-  tagline: "Automated Compliance Vetting for Healthcare Agencies",
+  tagline: "Automated Compliance Vetting for Regulated Industries",
   description:
-    "Streamline DBS checks, right-to-work verification, identity validation, and professional registration — all from one intelligent platform.",
+    "Streamline background checks, identity verification, right-to-work validation, and professional registration — all from one intelligent platform built for any regulated industry.",
 
   // ── Logo ───────────────────────────────────────────────────────
-  // Replace with your own logo file in /public/images/logo.svg (or .png)
-  // Set to "" to use the text-only logo fallback
   logoUrl: "",
   logoAlt: "HealthVet AI logo",
 
   // ── Colours (Tailwind classes) ─────────────────────────────────
   colors: {
-    primary: "blue-600",       // buttons, links, accents
+    primary: "blue-600",
     primaryHover: "blue-700",
-    primaryLight: "blue-50",   // light backgrounds
-    primaryDark: "blue-900",   // dark text on light bg
-    accent: "emerald-500",     // success / secondary accent
+    primaryLight: "blue-50",
+    primaryDark: "blue-900",
+    accent: "emerald-500",
     accentHover: "emerald-600",
-    gradient: "from-blue-600 to-indigo-700", // hero gradient
+    gradient: "from-blue-600 to-indigo-700",
   },
 
   // ── Navigation ─────────────────────────────────────────────────
   nav: {
     links: [
       { label: "Features", href: "#features" },
+      { label: "Industries", href: "#industries" },
       { label: "How It Works", href: "#how-it-works" },
       { label: "Pricing", href: "#pricing" },
-      { label: "Compliance", href: "#compliance" },
       { label: "Contact", href: "#contact" },
     ],
     ctaLabel: "Get Started",
@@ -44,84 +42,209 @@ export const brand = {
 
   // ── Hero Section ───────────────────────────────────────────────
   hero: {
+    badge: "Trusted across regulated industries in the UK",
     headline: "Compliance Vetting, Simplified.",
     subheadline:
-      "Automate DBS checks, identity verification, right-to-work, and professional registration for your healthcare workforce — in one platform.",
+      "Automate background checks, identity verification, right-to-work, and professional registration for your workforce — in one platform built for healthcare, education, social care, construction, and more.",
     ctaPrimary: "Request a Demo",
     ctaPrimaryHref: "#contact",
     ctaSecondary: "See How It Works",
     ctaSecondaryHref: "#how-it-works",
-    image: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800&q=80",
-    imageAlt: "Healthcare professional using laptop with stethoscope nearby",
+    image: "https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&q=80",
+    imageAlt: "Team reviewing compliance dashboard on laptop",
+    stats: [
+      { value: "80%", label: "Faster Onboarding" },
+      { value: "15h+", label: "Saved Per Week" },
+      { value: "99.9%", label: "Uptime SLA" },
+    ],
+  },
+
+  // ── Social Proof Bar ──────────────────────────────────────────
+  socialProof: {
+    headline: "Trusted across regulated industries",
+    logos: ["NHS Trusts", "Care Homes", "Schools & Academies", "Construction Firms", "Staffing Agencies"],
   },
 
   // ── Features ───────────────────────────────────────────────────
-  features: [
-    {
-      icon: "Shield",
-      title: "DBS & Background Checks",
-      description:
-        "Automated DBS check submission and tracking with TrustID integration. Standard, Enhanced, and Enhanced with Barred List — all managed centrally.",
-    },
-    {
-      icon: "UserCheck",
-      title: "Identity Verification",
-      description:
-        "Secure digital identity verification with document scanning, selfie matching, and fraud detection powered by AI.",
-    },
-    {
-      icon: "FileCheck",
-      title: "Right to Work",
-      description:
-        "Automated RTW checks with share-code validation, visa expiry tracking, and imposter check declaration for full compliance.",
-    },
-    {
-      icon: "Award",
-      title: "Professional Registration",
-      description:
-        "NMC, GMC, HCPC, and GPhC registration verification with automatic expiry monitoring and renewal alerts.",
-    },
-    {
-      icon: "BarChart3",
-      title: "Compliance Dashboard",
-      description:
-        "Real-time compliance scoring per candidate, per agency, per industry. Weighted checks, configurable thresholds, and audit-ready reports.",
-    },
-    {
-      icon: "Brain",
-      title: "AI-Powered Insights",
-      description:
-        "CV gap analysis, reference sentiment scoring, anomaly detection, and smart scheduling — powered by GPT-4o-mini with rule-based fallbacks.",
-    },
-  ],
+  features: {
+    headline: "Everything You Need for Compliant Staffing",
+    subheadline: "One platform replaces spreadsheets, phone calls, and manual chasing. Automate every step of the vetting process — for any industry.",
+    items: [
+      {
+        icon: "Shield",
+        title: "Background Checks",
+        description:
+          "Automated DBS check submission and tracking. Standard, Enhanced, and Enhanced with Barred List — all managed centrally with real-time status updates.",
+      },
+      {
+        icon: "UserCheck",
+        title: "Identity Verification",
+        description:
+          "Secure digital identity verification with document scanning, selfie matching, and fraud detection powered by AI.",
+      },
+      {
+        icon: "FileCheck",
+        title: "Right to Work",
+        description:
+          "Automated RTW checks with share-code validation, visa expiry tracking, and imposter check declaration for full compliance.",
+      },
+      {
+        icon: "Award",
+        title: "Professional Registration",
+        description:
+          "NMC, GMC, HCPC, GPhC, CSCS, and teaching body registration verification with automatic expiry monitoring and renewal alerts.",
+      },
+      {
+        icon: "BarChart3",
+        title: "Compliance Dashboard",
+        description:
+          "Real-time compliance scoring per candidate, per agency, per industry. Weighted checks, configurable thresholds, and audit-ready reports.",
+      },
+      {
+        icon: "Brain",
+        title: "AI-Powered Insights",
+        description:
+          "CV gap analysis, reference sentiment scoring, anomaly detection, and smart scheduling — powered by AI with rule-based fallbacks.",
+      },
+    ],
+  },
+
+  // ── Industry Compliance Carousel ──────────────────────────────
+  industries: {
+    headline: "Built for Every Regulated Industry",
+    subheadline:
+      "One platform, configured for your sector. Select an industry below to see the specific compliance checks we automate.",
+    sectors: [
+      {
+        name: "Healthcare",
+        icon: "Heart",
+        color: "rose",
+        checks: [
+          { label: "Enhanced DBS with Barred List", icon: "Shield" },
+          { label: "NMC / GMC / HCPC Registration", icon: "Award" },
+          { label: "Right to Work Verification", icon: "FileCheck" },
+          { label: "CQC Compliance Ready", icon: "ClipboardCheck" },
+          { label: "Occupational Health Clearance", icon: "UserCheck" },
+          { label: "Mandatory Training Records", icon: "FileSearch" },
+          { label: "Reference Verification (2+ refs)", icon: "UserCheck" },
+          { label: "Hepatitis B / Immunisation Status", icon: "Heart" },
+        ],
+      },
+      {
+        name: "Education",
+        icon: "GraduationCap",
+        color: "amber",
+        checks: [
+          { label: "Enhanced DBS with Children's Barred List", icon: "Shield" },
+          { label: "Teaching Regulation Agency (TRA) Check", icon: "Award" },
+          { label: "QTS / QTLS Verification", icon: "Award" },
+          { label: "Section 128 Direction Check", icon: "ClipboardCheck" },
+          { label: "Prohibition Order Check", icon: "FileSearch" },
+          { label: "Right to Work Verification", icon: "FileCheck" },
+          { label: "Overseas Criminal Record Check", icon: "Shield" },
+          { label: "Reference Verification (2+ refs)", icon: "UserCheck" },
+        ],
+      },
+      {
+        name: "Social Care",
+        icon: "Users",
+        color: "purple",
+        checks: [
+          { label: "Enhanced DBS with Adults' Barred List", icon: "Shield" },
+          { label: "Social Work England Registration", icon: "Award" },
+          { label: "CQC Compliance Checks", icon: "ClipboardCheck" },
+          { label: "Right to Work Verification", icon: "FileCheck" },
+          { label: "Safeguarding Training Records", icon: "FileSearch" },
+          { label: "Mental Capacity Act Training", icon: "Brain" },
+          { label: "Reference Verification (2+ refs)", icon: "UserCheck" },
+          { label: "Health Declaration", icon: "Heart" },
+        ],
+      },
+      {
+        name: "Construction",
+        icon: "HardHat",
+        color: "orange",
+        checks: [
+          { label: "CSCS Card Verification", icon: "Award" },
+          { label: "Standard DBS Check", icon: "Shield" },
+          { label: "Right to Work Verification", icon: "FileCheck" },
+          { label: "CITB Training Records", icon: "FileSearch" },
+          { label: "Health & Safety Certifications", icon: "ClipboardCheck" },
+          { label: "CPCS / NPORS Licence Checks", icon: "Award" },
+          { label: "Asbestos Awareness Certification", icon: "Shield" },
+          { label: "Working at Height Certificate", icon: "FileSearch" },
+        ],
+      },
+      {
+        name: "Finance & Legal",
+        icon: "Landmark",
+        color: "sky",
+        checks: [
+          { label: "Basic / Standard DBS Check", icon: "Shield" },
+          { label: "FCA / SRA Registration Check", icon: "Award" },
+          { label: "Credit Check (CIFAS / Experian)", icon: "BarChart3" },
+          { label: "Right to Work Verification", icon: "FileCheck" },
+          { label: "Anti-Money Laundering (AML) Training", icon: "Lock" },
+          { label: "Professional Indemnity Insurance", icon: "ClipboardCheck" },
+          { label: "Reference Verification (2+ refs)", icon: "UserCheck" },
+          { label: "Conflict of Interest Declaration", icon: "FileSearch" },
+        ],
+      },
+      {
+        name: "Security",
+        icon: "ShieldCheck",
+        color: "slate",
+        checks: [
+          { label: "Enhanced DBS Check", icon: "Shield" },
+          { label: "SIA Licence Verification", icon: "Award" },
+          { label: "Right to Work Verification", icon: "FileCheck" },
+          { label: "Counter-Terrorism Training", icon: "Lock" },
+          { label: "First Aid Certification", icon: "Heart" },
+          { label: "Physical Fitness Declaration", icon: "UserCheck" },
+          { label: "Reference Verification (2+ refs)", icon: "UserCheck" },
+          { label: "CCTV Operation Certification", icon: "FileSearch" },
+        ],
+      },
+    ],
+    globalBadges: [
+      { label: "GDPR Compliant", icon: "Lock" },
+      { label: "ICO Registered", icon: "Building2" },
+      { label: "Tamper-Evident Audit Trail", icon: "FileSearch" },
+      { label: "Data Portability (Art. 20)", icon: "Download" },
+    ],
+  },
 
   // ── How It Works ───────────────────────────────────────────────
-  howItWorks: [
-    {
-      step: "1",
-      title: "Invite Candidates",
-      description:
-        "Agency sends a single invitation link. Candidate fills in personal details, uploads documents, and provides referee contacts.",
-    },
-    {
-      step: "2",
-      title: "Automated Processing",
-      description:
-        "Background checks, reference requests, and employment verifications are triggered automatically. No manual chasing required.",
-    },
-    {
-      step: "3",
-      title: "Real-Time Tracking",
-      description:
-        "Admin dashboard shows live compliance scores, pending tasks, and alerts. Notification bell keeps you on top of every action item.",
-    },
-    {
-      step: "4",
-      title: "Shift-Ready Candidates",
-      description:
-        "Once all checks pass, candidates are marked shift-ready. Agencies see a clear green light before deploying staff.",
-    },
-  ],
+  howItWorks: {
+    headline: "From Invite to Work-Ready in 4 Steps",
+    subheadline: "Our platform handles the entire compliance journey — so you can focus on placing candidates, not chasing paperwork.",
+    steps: [
+      {
+        step: "1",
+        title: "Invite Candidates",
+        description:
+          "Send a single invitation link. Candidates fill in personal details, upload documents, and provide referee contacts — all in one portal.",
+      },
+      {
+        step: "2",
+        title: "Automated Processing",
+        description:
+          "Background checks, reference requests, and employment verifications are triggered automatically. No manual chasing required.",
+      },
+      {
+        step: "3",
+        title: "Real-Time Tracking",
+        description:
+          "Admin dashboard shows live compliance scores, pending tasks, and alerts. Notification bell keeps you on top of every action item.",
+      },
+      {
+        step: "4",
+        title: "Work-Ready Candidates",
+        description:
+          "Once all checks pass, candidates are marked work-ready. Agencies see a clear green light before deploying staff.",
+      },
+    ],
+  },
 
   // ── Pricing ────────────────────────────────────────────────────
   pricing: {
@@ -180,21 +303,6 @@ export const brand = {
     ],
   },
 
-  // ── Compliance / Trust Signals ─────────────────────────────────
-  compliance: {
-    headline: "Built for Regulated Industries",
-    subheadline:
-      "Designed from the ground up to meet UK healthcare compliance requirements — and configurable for education, social care, construction, and more.",
-    badges: [
-      { label: "GDPR Compliant", icon: "Lock" },
-      { label: "ICO Registered", icon: "Building2" },
-      { label: "CQC Ready", icon: "ClipboardCheck" },
-      { label: "NHS Compatible", icon: "Heart" },
-      { label: "Tamper-Evident Audit Trail", icon: "FileSearch" },
-      { label: "Data Portability (Art. 20)", icon: "Download" },
-    ],
-  },
-
   // ── Testimonials ───────────────────────────────────────────────
   testimonials: [
     {
@@ -227,7 +335,7 @@ export const brand = {
       "Book a 15-minute demo and see how we can cut your vetting time by 80%.",
     email: "hello@healthvet.ai",
     phone: "+44 (0) 20 1234 5678",
-    formFields: ["name", "email", "company", "message"],
+    formFields: ["name", "email", "company", "industry", "message"],
   },
 
   // ── Footer ─────────────────────────────────────────────────────
@@ -246,12 +354,12 @@ export const brand = {
         ],
       },
       {
-        title: "Company",
+        title: "Industries",
         links: [
-          { label: "About", href: "#" },
-          { label: "Careers", href: "#" },
-          { label: "Blog", href: "#" },
-          { label: "Contact", href: "#contact" },
+          { label: "Healthcare", href: "#industries" },
+          { label: "Education", href: "#industries" },
+          { label: "Social Care", href: "#industries" },
+          { label: "Construction", href: "#industries" },
         ],
       },
       {
@@ -268,10 +376,10 @@ export const brand = {
 
   // ── Images (Unsplash) ─────────────────────────────────────────
   images: {
-    hero: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800&q=80",
+    hero: "https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&q=80",
     howItWorks: "https://images.unsplash.com/photo-1516841273335-e39b37888115?w=800&q=80",
-    compliance: "https://images.unsplash.com/photo-1584432810601-6c7f27d2362b?w=800&q=80",
-    about: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=800&q=80",
+    compliance: "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?w=800&q=80",
+    about: "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=800&q=80",
   },
 } as const;
 

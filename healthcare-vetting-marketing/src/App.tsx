@@ -4,7 +4,7 @@ import {
   Shield, UserCheck, FileCheck, Award, BarChart3, Brain,
   Lock, Building2, ClipboardCheck, Heart, FileSearch, Download,
   Menu, X, ChevronRight, ArrowRight, Check, Star, Phone, Mail,
-  Zap, Clock
+  Zap, Clock, ChevronLeft, GraduationCap, Users, HardHat, Landmark, ShieldCheck
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -14,7 +14,7 @@ import { useState } from 'react'
 const iconMap: Record<string, React.ElementType> = {
   Shield, UserCheck, FileCheck, Award, BarChart3, Brain,
   Lock, Building2, ClipboardCheck, Heart, FileSearch, Download,
-  Zap, Clock
+  Zap, Clock, GraduationCap, Users, HardHat, Landmark, ShieldCheck
 }
 
 function Icon({ name, size = 24, className = '' }: { name: string; size?: number; className?: string }) {
@@ -104,7 +104,7 @@ function Hero() {
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-12 items-center">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 text-blue-700 px-4 py-1.5 text-sm font-medium mb-6">
-            <Zap size={14} /> Trusted by 50+ UK healthcare agencies
+            <Zap size={14} /> {brand.hero.badge}
           </div>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 leading-tight tracking-tight">
             {brand.hero.headline}
@@ -123,11 +123,7 @@ function Hero() {
 
           {/* Quick stats */}
           <div className="mt-12 grid grid-cols-3 gap-6">
-            {[
-              { value: '80%', label: 'Faster Onboarding' },
-              { value: '15h+', label: 'Saved Per Week' },
-              { value: '99.9%', label: 'Uptime SLA' },
-            ].map(s => (
+            {brand.hero.stats.map(s => (
               <div key={s.label}>
                 <p className="text-2xl font-bold text-blue-600">{s.value}</p>
                 <p className="text-sm text-slate-500">{s.label}</p>
@@ -143,7 +139,7 @@ function Hero() {
             src={brand.hero.image}
             alt={brand.hero.imageAlt}
             className="relative rounded-2xl shadow-2xl w-full object-cover aspect-square lg:aspect-auto lg:h-auto"
-            onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/e2e8f0/475569?text=Healthcare+Compliance' }}
+            onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/e2e8f0/475569?text=Compliance+Platform' }}
           />
           {/* Floating card */}
           <div className="absolute -bottom-6 -left-6 bg-white rounded-xl shadow-xl p-4 flex items-center gap-3 border border-slate-100">
@@ -151,8 +147,8 @@ function Hero() {
               <Check size={20} className="text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-slate-900">DBS Check Complete</p>
-              <p className="text-xs text-slate-500">Candidate shift-ready</p>
+              <p className="text-sm font-semibold text-slate-900">All Checks Complete</p>
+              <p className="text-xs text-slate-500">Candidate work-ready</p>
             </div>
           </div>
         </div>
@@ -165,15 +161,14 @@ function Hero() {
 /*  Logos / Social Proof Bar                                          */
 /* ------------------------------------------------------------------ */
 function LogoBar() {
-  const logos = ['NHS Trusts', 'CQC Regulated', 'Care Homes', 'Nursing Agencies', 'Staffing Groups']
   return (
     <section className="py-12 bg-white border-b border-slate-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
         <p className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-8">
-          Trusted across the UK healthcare sector
+          {brand.socialProof.headline}
         </p>
         <div className="flex flex-wrap justify-center gap-8 md:gap-16">
-          {logos.map(name => (
+          {brand.socialProof.logos.map(name => (
             <div key={name} className="flex items-center gap-2 text-slate-400">
               <Building2 size={20} />
               <span className="text-sm font-medium">{name}</span>
@@ -195,15 +190,15 @@ function Features() {
         <div className="text-center max-w-3xl mx-auto mb-16">
           <span className="inline-block text-sm font-semibold text-blue-600 uppercase tracking-wider mb-3">Features</span>
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
-            Everything You Need for Compliant Staffing
+            {brand.features.headline}
           </h2>
           <p className="mt-4 text-lg text-slate-600">
-            One platform replaces spreadsheets, phone calls, and manual chasing. Automate every step of the vetting process.
+            {brand.features.subheadline}
           </p>
         </div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {brand.features.map((f, i) => (
+          {brand.features.items.map((f, i) => (
             <div key={i} className="group relative bg-white rounded-2xl border border-slate-200 p-8 hover:border-blue-300 hover:shadow-lg hover:shadow-blue-50 transition-all duration-300">
               <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-5 group-hover:bg-blue-100 transition-colors">
                 <Icon name={f.icon} size={24} className="text-blue-600" />
@@ -228,18 +223,18 @@ function HowItWorks() {
         <div className="text-center max-w-3xl mx-auto mb-16">
           <span className="inline-block text-sm font-semibold text-blue-600 uppercase tracking-wider mb-3">How It Works</span>
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
-            From Invite to Shift-Ready in 4 Steps
+            {brand.howItWorks.headline}
           </h2>
           <p className="mt-4 text-lg text-slate-600">
-            Our platform handles the entire compliance journey — so you can focus on placing candidates, not chasing paperwork.
+            {brand.howItWorks.subheadline}
           </p>
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {brand.howItWorks.map((step, i) => (
+          {brand.howItWorks.steps.map((step, i) => (
             <div key={i} className="relative">
               {/* Connector line */}
-              {i < brand.howItWorks.length - 1 && (
+              {i < brand.howItWorks.steps.length - 1 && (
                 <div className="hidden lg:block absolute top-8 left-full w-full h-0.5 bg-blue-200 -translate-x-4 z-0" />
               )}
               <div className="relative bg-white rounded-2xl p-8 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
@@ -258,49 +253,94 @@ function HowItWorks() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Compliance / Trust Signals                                        */
+/*  Industry Compliance Carousel                                      */
 /* ------------------------------------------------------------------ */
-function Compliance() {
+function IndustryCarousel() {
+  const sectors = brand.industries.sectors
+  const [activeIdx, setActiveIdx] = useState(0)
+  const active = sectors[activeIdx]
+
+  const prev = () => setActiveIdx(i => (i - 1 + sectors.length) % sectors.length)
+  const next = () => setActiveIdx(i => (i + 1) % sectors.length)
+
   return (
-    <section id="compliance" className="py-20 lg:py-28 bg-white">
+    <section id="industries" className="py-20 lg:py-28 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-16 items-center">
-          <div>
-            <span className="inline-block text-sm font-semibold text-blue-600 uppercase tracking-wider mb-3">Compliance</span>
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
-              {brand.compliance.headline}
-            </h2>
-            <p className="mt-4 text-lg text-slate-600 leading-relaxed">
-              {brand.compliance.subheadline}
-            </p>
+        {/* Header */}
+        <div className="text-center max-w-3xl mx-auto mb-12">
+          <span className="inline-block text-sm font-semibold text-blue-600 uppercase tracking-wider mb-3">Industries</span>
+          <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
+            {brand.industries.headline}
+          </h2>
+          <p className="mt-4 text-lg text-slate-600 leading-relaxed">
+            {brand.industries.subheadline}
+          </p>
+        </div>
 
-            <div className="mt-10 grid grid-cols-2 gap-4">
-              {brand.compliance.badges.map((b, i) => (
-                <div key={i} className="flex items-center gap-3 bg-slate-50 rounded-xl p-4 border border-slate-100">
-                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                    <Icon name={b.icon} size={20} className="text-blue-600" />
-                  </div>
-                  <span className="text-sm font-medium text-slate-700">{b.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Industry Tabs — scrollable on mobile */}
+        <div className="relative mb-10">
+          <div className="flex items-center gap-2">
+            <button onClick={prev} className="shrink-0 w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors">
+              <ChevronLeft size={18} />
+            </button>
 
-          <div className="relative">
-            <img
-              src={brand.images.compliance}
-              alt="Healthcare compliance professional reviewing documents"
-              className="rounded-2xl shadow-xl w-full object-cover aspect-video"
-              onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x500/e2e8f0/475569?text=Compliance+Ready' }}
-            />
-            <div className="absolute -top-4 -right-4 bg-white rounded-xl shadow-lg p-4 border border-slate-100">
-              <div className="flex items-center gap-2">
-                <Lock size={16} className="text-emerald-600" />
-                <span className="text-sm font-semibold text-slate-900">GDPR Compliant</span>
+            <div className="flex-1 overflow-x-auto scrollbar-hide">
+              <div className="flex gap-2 min-w-max px-1 py-1">
+                {sectors.map((s, i) => (
+                  <button
+                    key={s.name}
+                    onClick={() => setActiveIdx(i)}
+                    className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium whitespace-nowrap transition-all ${
+                      i === activeIdx
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Icon name={s.icon} size={16} className={i === activeIdx ? 'text-white' : 'text-slate-500'} />
+                    {s.name}
+                  </button>
+                ))}
               </div>
-              <p className="text-xs text-slate-500 mt-1">End-to-end data protection</p>
+            </div>
+
+            <button onClick={next} className="shrink-0 w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors">
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Active industry checks */}
+        <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl border border-slate-200 p-8 lg:p-12">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
+              <Icon name={active.icon} size={24} className="text-blue-600" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-slate-900">{active.name} Compliance</h3>
+              <p className="text-sm text-slate-500">{active.checks.length} automated checks</p>
             </div>
           </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {active.checks.map((c, i) => (
+              <div key={i} className="flex items-start gap-3 bg-white rounded-xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <Icon name={c.icon} size={18} className="text-blue-600" />
+                </div>
+                <span className="text-sm font-medium text-slate-700 leading-snug">{c.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Global trust badges */}
+        <div className="mt-10 flex flex-wrap justify-center gap-4">
+          {brand.industries.globalBadges.map((b, i) => (
+            <div key={i} className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-600">
+              <Icon name={b.icon} size={16} className="text-blue-600" />
+              {b.label}
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -504,7 +544,7 @@ function Contact() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Company Name</label>
-                  <input type="text" required placeholder="Acme Healthcare Staffing" className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                  <input type="text" required placeholder="Acme Staffing Ltd" className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">How many candidates do you process per month?</label>
@@ -545,7 +585,7 @@ function CtaBanner() {
           Start Vetting Smarter Today
         </h2>
         <p className="mt-4 text-lg text-blue-100">
-          Join agencies across the UK who trust {brand.name} to keep their workforce compliant.
+          Join organisations across the UK who trust {brand.name} to keep their workforce compliant.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-4">
           <a href="#contact" className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-blue-700 shadow-lg hover:bg-blue-50 transition-colors">
@@ -632,7 +672,7 @@ function App() {
       <LogoBar />
       <Features />
       <HowItWorks />
-      <Compliance />
+      <IndustryCarousel />
       <Pricing />
       <Testimonials />
       <Contact />
