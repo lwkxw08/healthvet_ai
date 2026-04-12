@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { submissionsApi, candidatesApi, trustidApi } from "../api/client";
-import { LogOut, RefreshCw, ChevronRight, CheckCircle, XCircle, Clock, AlertTriangle, Loader2 } from "lucide-react";
+import { submissionsApi, candidatesApi, trustidApi, documentsApi } from "../api/client";
+import { LogOut, RefreshCw, ChevronRight, CheckCircle, XCircle, Clock, AlertTriangle, Loader2, Upload } from "lucide-react";
 
 const SECTIONS = [
   { key: "personal", label: "Personal Details" },
@@ -369,6 +369,7 @@ export default function CandidateOnboarding() {
             trustidSubmitted={trustidSubmitted}
             submittingTrustid={submittingTrustid}
             onSubmitTrustid={submitTrustidChecks}
+            token={token || undefined}
           />
         ) : (
           <ConsentStep
@@ -577,6 +578,7 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
                         trustidSubmitted={trustidSubmitted}
                         submittingTrustid={submittingTrustid}
                         onSubmitTrustid={onSubmitTrustid}
+                        token={token || undefined}
                       />
                       <div className="flex justify-end gap-3 mt-4">
                         <button onClick={cancelEditing} className="px-4 py-2 rounded-lg border border-slate-600 bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer text-sm">
@@ -606,7 +608,7 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
   );
 }
 
-function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isManualMode, trustidChecks, trustidSubmitted, submittingTrustid, onSubmitTrustid }: {
+function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isManualMode, trustidChecks, trustidSubmitted, submittingTrustid, onSubmitTrustid, token }: {
   section: { key: string; label: string };
   data: Record<string, unknown>;
   candidateInfo: Record<string, unknown>;
@@ -617,10 +619,28 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
   trustidSubmitted: boolean;
   submittingTrustid: boolean;
   onSubmitTrustid: () => void;
+  token?: string;
 }) {
   const hasSubmittedTrustid = trustidSubmitted || trustidChecks.length > 0;
   const inputClass = "w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
   const labelClass = "block text-slate-400 text-xs mb-1.5 font-medium";
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleFileUpload = async (file: File, fieldName: string, category: string) => {
+    if (!token) { setUploadError("Not authenticated"); return; }
+    setUploading(fieldName);
+    setUploadError(null);
+    try {
+      const result = await documentsApi.upload(token, file, category);
+      onUpdate(fieldName, file.name);
+      onUpdate(fieldName.replace("_name", "_id"), (result as Record<string, unknown>).id || (result as Record<string, unknown>).document_id || "");
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(null);
+    }
+  };
 
   useEffect(() => {
     if (section.key === "personal" && candidateInfo && Object.keys(data).length === 0) {
@@ -702,21 +722,26 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
                 <option value="residence_permit">Residence Permit</option>
               </select>
             </div>
+            {uploadError && <p className="text-red-400 text-xs mt-2 mb-2">{uploadError}</p>}
             <div className="mt-4"><label className={labelClass}>Upload Identity Document *</label>
-              <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${data.document_file_name ? "border-green-500/50 bg-green-500/10" : "border-slate-600 bg-slate-800/50 hover:border-blue-500/50 hover:bg-slate-800"}`}
-                onClick={() => onUpdate("document_file_name", "uploaded_document_" + Date.now() + ".pdf")}>
-                {data.document_file_name
-                  ? <><CheckCircle className="text-green-400 mx-auto mb-2" size={24} /><p className="text-green-400 text-sm">Document uploaded: {data.document_file_name as string}</p></>
-                  : <p className="text-slate-400 text-sm">Click to upload your identity document (PDF, JPG, PNG)</p>}
-              </div>
+              <label className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all block ${data.document_file_name ? "border-green-500/50 bg-green-500/10" : "border-slate-600 bg-slate-800/50 hover:border-blue-500/50 hover:bg-slate-800"}`}>
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, "document_file_name", "identity_document"); }} />
+                {uploading === "document_file_name"
+                  ? <><Loader2 className="text-blue-400 mx-auto mb-2 animate-spin" size={24} /><p className="text-blue-400 text-sm">Uploading...</p></>
+                  : data.document_file_name
+                    ? <><CheckCircle className="text-green-400 mx-auto mb-2" size={24} /><p className="text-green-400 text-sm">Document uploaded: {data.document_file_name as string}</p></>
+                    : <><Upload className="text-slate-400 mx-auto mb-2" size={24} /><p className="text-slate-400 text-sm">Click to upload your identity document (PDF, JPG, PNG)</p></>}
+              </label>
             </div>
             <div className="mt-4"><label className={labelClass}>Take / Upload Selfie *</label>
-              <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${data.selfie_file_name ? "border-green-500/50 bg-green-500/10" : "border-slate-600 bg-slate-800/50 hover:border-blue-500/50 hover:bg-slate-800"}`}
-                onClick={() => onUpdate("selfie_file_name", "selfie_" + Date.now() + ".jpg")}>
-                {data.selfie_file_name
-                  ? <><CheckCircle className="text-green-400 mx-auto mb-2" size={24} /><p className="text-green-400 text-sm">Selfie captured</p></>
-                  : <p className="text-slate-400 text-sm">Click to take or upload a selfie photo</p>}
-              </div>
+              <label className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all block ${data.selfie_file_name ? "border-green-500/50 bg-green-500/10" : "border-slate-600 bg-slate-800/50 hover:border-blue-500/50 hover:bg-slate-800"}`}>
+                <input type="file" accept=".jpg,.jpeg,.png" capture="user" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, "selfie_file_name", "identity_document"); }} />
+                {uploading === "selfie_file_name"
+                  ? <><Loader2 className="text-blue-400 mx-auto mb-2 animate-spin" size={24} /><p className="text-blue-400 text-sm">Uploading...</p></>
+                  : data.selfie_file_name
+                    ? <><CheckCircle className="text-green-400 mx-auto mb-2" size={24} /><p className="text-green-400 text-sm">Selfie uploaded: {data.selfie_file_name as string}</p></>
+                    : <><Upload className="text-slate-400 mx-auto mb-2" size={24} /><p className="text-slate-400 text-sm">Click to take or upload a selfie photo (JPG, PNG)</p></>}
+              </label>
             </div>
           </>
         );
@@ -847,12 +872,14 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
         return (
           <>
             <div><label className={labelClass}>Upload CV (PDF, DOCX, TXT)</label>
-              <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${data.cv_file_name ? "border-green-500/50 bg-green-500/10" : "border-slate-600 bg-slate-800/50 hover:border-blue-500/50 hover:bg-slate-800"}`}
-                onClick={() => onUpdate("cv_file_name", "cv_upload_" + Date.now() + ".pdf")}>
-                {data.cv_file_name
-                  ? <><CheckCircle className="text-green-400 mx-auto mb-2" size={24} /><p className="text-green-400 text-sm">CV uploaded: {data.cv_file_name as string}</p></>
-                  : <p className="text-slate-400 text-sm">Click to upload your CV</p>}
-              </div>
+              <label className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all block ${data.cv_file_name ? "border-green-500/50 bg-green-500/10" : "border-slate-600 bg-slate-800/50 hover:border-blue-500/50 hover:bg-slate-800"}`}>
+                <input type="file" accept=".pdf,.doc,.docx,.txt" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, "cv_file_name", "cv"); }} />
+                {uploading === "cv_file_name"
+                  ? <><Loader2 className="text-blue-400 mx-auto mb-2 animate-spin" size={24} /><p className="text-blue-400 text-sm">Uploading...</p></>
+                  : data.cv_file_name
+                    ? <><CheckCircle className="text-green-400 mx-auto mb-2" size={24} /><p className="text-green-400 text-sm">CV uploaded: {data.cv_file_name as string}</p></>
+                    : <><Upload className="text-slate-400 mx-auto mb-2" size={24} /><p className="text-slate-400 text-sm">Click to upload your CV (PDF, DOCX, TXT)</p></>}
+              </label>
             </div>
             <div className="mt-4"><label className={labelClass}>Or paste CV text</label>
               <textarea className={`${inputClass} min-h-[120px] font-inherit`} placeholder="Paste your CV content here..." value={(data.cv_text as string) || ""} onChange={e => onUpdate("cv_text", e.target.value)} />
