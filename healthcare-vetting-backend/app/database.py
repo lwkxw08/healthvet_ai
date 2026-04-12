@@ -271,11 +271,10 @@ def migrate_db():
         )
 
     # Seed default partial credit rates if table is empty
-    try:
+    pcr_count = 0
+    if _table_exists(cursor, "partial_credit_rates"):
         cursor.execute("SELECT COUNT(*) AS cnt FROM partial_credit_rates")
         pcr_count = cursor.fetchone()["cnt"]
-    except Exception:
-        pcr_count = 0
     if pcr_count == 0:
         from app.utils.auth import generate_id as _gid
         pcr_defaults = [
@@ -294,11 +293,10 @@ def migrate_db():
             )
 
     # Seed default subscription tier config if table is empty
-    try:
+    stc_count = 0
+    if _table_exists(cursor, "subscription_tier_config"):
         cursor.execute("SELECT COUNT(*) AS cnt FROM subscription_tier_config")
         stc_count = cursor.fetchone()["cnt"]
-    except Exception:
-        stc_count = 0
     if stc_count == 0:
         from app.utils.auth import generate_id as _gid2
         import json as _json
@@ -350,11 +348,10 @@ def migrate_db():
         )""")
 
     # Seed default industry templates if table is empty
-    try:
+    tmpl_count = 0
+    if _table_exists(cursor, "industry_templates"):
         cursor.execute("SELECT COUNT(*) AS cnt FROM industry_templates")
         tmpl_count = cursor.fetchone()["cnt"]
-    except Exception:
-        tmpl_count = 0
     if tmpl_count == 0:
         from app.utils.auth import generate_id as _tid
         import json as _tjson
@@ -445,10 +442,10 @@ def migrate_db():
                 )
 
     # Seed expanded pricing elements if not present
-    try:
-        existing_pricing_types = {row["check_type"] for row in cursor.execute("SELECT check_type FROM pricing_settings").fetchall()}
-    except Exception:
-        existing_pricing_types = set()
+    existing_pricing_types = set()
+    if _table_exists(cursor, "pricing_settings"):
+        cursor.execute("SELECT check_type FROM pricing_settings")
+        existing_pricing_types = {row["check_type"] for row in cursor.fetchall()}
     expanded_pricing = [
         ("standard_dbs", "Standard DBS Check", 18.0, 45.0),
         ("enhanced_dbs", "Enhanced DBS Check (no barred)", 38.0, 65.0),
@@ -649,16 +646,10 @@ def migrate_db():
         )""")
 
     # Add verification_code column to employment_verifications
-    try:
-        cursor.execute("SELECT verification_code FROM employment_verifications LIMIT 1")
-    except Exception:
-        cursor.execute("ALTER TABLE employment_verifications ADD COLUMN verification_code TEXT")
+    _add_column_if_missing(cursor, "employment_verifications", "verification_code", "TEXT")
 
     # Add verification_code column to references_
-    try:
-        cursor.execute("SELECT verification_code FROM references_ LIMIT 1")
-    except Exception:
-        cursor.execute("ALTER TABLE references_ ADD COLUMN verification_code TEXT")
+    _add_column_if_missing(cursor, "references_", "verification_code", "TEXT")
 
     # ── 1.4 Auth & Security Hardening ──────────────────────────────────────────
     # Create admin_users table (replaces hardcoded admin login)
@@ -918,11 +909,10 @@ def migrate_db():
     )""")
 
     # Seed default TrustID config if empty
-    try:
+    tid_count = 0
+    if _table_exists(cursor, "trustid_config"):
         cursor.execute("SELECT COUNT(*) AS cnt FROM trustid_config")
         tid_count = cursor.fetchone()["cnt"]
-    except Exception:
-        tid_count = 0
     if tid_count == 0:
         from app.utils.auth import generate_id as _tid_gen
         for ct, label in [
