@@ -34,16 +34,8 @@ function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
         {/* Logo */}
         <a href="#" className="flex items-center gap-2">
-          {brand.logoUrl ? (
-            <img src={brand.logoUrl} alt={brand.logoAlt} className="h-8" />
-          ) : (
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center">
-                <Shield size={18} className="text-white" />
-              </div>
-              <span className="text-xl font-bold text-slate-900">{brand.name}</span>
-            </div>
-          )}
+          <img src={brand.logoUrl || ''} alt={brand.logoAlt} className="h-10" />
+          <span className="text-xl font-bold text-slate-900">{brand.name}</span>
         </a>
 
         {/* Desktop nav */}
@@ -611,16 +603,8 @@ function Footer() {
           {/* Brand column */}
           <div className="lg:col-span-2">
             <div className="flex items-center gap-2 mb-4">
-              {brand.logoUrl ? (
-                <img src={brand.logoUrl} alt={brand.logoAlt} className="h-8 brightness-200" />
-              ) : (
-                <>
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                    <Shield size={18} className="text-white" />
-                  </div>
-                  <span className="text-xl font-bold text-white">{brand.name}</span>
-                </>
-              )}
+              <img src={brand.logoUrl || ''} alt={brand.logoAlt} className="h-10 brightness-200" />
+              <span className="text-xl font-bold text-white">{brand.name}</span>
             </div>
             <p className="text-slate-400 text-sm leading-relaxed max-w-xs">
               {brand.description}
