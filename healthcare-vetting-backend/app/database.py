@@ -941,6 +941,9 @@ def migrate_db():
         created_at TEXT DEFAULT (NOW()::text)
     )""")
 
+    # Migrate admin email from old healthvet.ai domain to viperai.io
+    cursor.execute("UPDATE admin_users SET email = REPLACE(email, '@healthvet.ai', '@viperai.io') WHERE email LIKE '%@healthvet.ai'")
+
     # Seed default admin user if admin_users table is empty
     cursor.execute("SELECT COUNT(*) AS cnt FROM admin_users")
     admin_count = cursor.fetchone()["cnt"]
