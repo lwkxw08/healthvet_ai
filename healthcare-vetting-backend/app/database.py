@@ -354,8 +354,8 @@ def migrate_db():
 
     # Seed default industry templates if table is empty
     try:
-        tmpl_cursor.execute("SELECT COUNT(*) AS cnt FROM industry_templates")
-    count = cursor.fetchone()["cnt"]
+        cursor.execute("SELECT COUNT(*) AS cnt FROM industry_templates")
+        tmpl_count = cursor.fetchone()["cnt"]
     except Exception:
         tmpl_count = 0
     if tmpl_count == 0:
@@ -854,8 +854,8 @@ def migrate_db():
     )""")
 
     # Seed default payment routing if empty
-    routing_cursor.execute("SELECT COUNT(*) AS cnt FROM payment_routing")
-    count = cursor.fetchone()["cnt"]
+    cursor.execute("SELECT COUNT(*) AS cnt FROM payment_routing")
+    routing_count = cursor.fetchone()["cnt"]
     if routing_count == 0:
         from app.utils.auth import generate_id as _gen_id
         default_routes = [
@@ -873,8 +873,8 @@ def migrate_db():
             )
 
     # Seed default provider entries if empty
-    ppc_cursor.execute("SELECT COUNT(*) AS cnt FROM payment_provider_config")
-    count = cursor.fetchone()["cnt"]
+    cursor.execute("SELECT COUNT(*) AS cnt FROM payment_provider_config")
+    ppc_count = cursor.fetchone()["cnt"]
     if ppc_count == 0:
         from app.utils.auth import generate_id as _gen_id2
         for provider, name in [("stripe", "Stripe"), ("gocardless", "GoCardless")]:
@@ -923,8 +923,8 @@ def migrate_db():
 
     # Seed default TrustID config if empty
     try:
-        tid_cursor.execute("SELECT COUNT(*) AS cnt FROM trustid_config")
-    count = cursor.fetchone()["cnt"]
+        cursor.execute("SELECT COUNT(*) AS cnt FROM trustid_config")
+        tid_count = cursor.fetchone()["cnt"]
     except Exception:
         tid_count = 0
     if tid_count == 0:
