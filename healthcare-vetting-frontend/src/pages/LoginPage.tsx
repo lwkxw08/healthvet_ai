@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { authApi, agencyInvitesApi } from "../api/client";
-import { Shield, UserPlus, Building2, Lock, Mail, KeyRound, ArrowLeft, CheckCircle } from "lucide-react";
+import { UserPlus, Building2, Lock, Mail, KeyRound, ArrowLeft, CheckCircle } from "lucide-react";
 
 type LoginTab = "candidate" | "agency" | "admin";
 type Mode = "login" | "register" | "forgot_password" | "reset_password";

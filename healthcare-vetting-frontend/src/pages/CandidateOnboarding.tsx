@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { submissionsApi, candidatesApi, trustidApi } from "../api/client";
-import { Shield, LogOut, RefreshCw, ChevronRight, CheckCircle, XCircle, Clock, AlertTriangle, Loader2 } from "lucide-react";
+import { LogOut, RefreshCw, ChevronRight, CheckCircle, XCircle, Clock, AlertTriangle, Loader2 } from "lucide-react";
 
 const SECTIONS = [
   { key: "personal", label: "Personal Details" },
