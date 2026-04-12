@@ -31,7 +31,8 @@ class TriggerEngine:
         with get_db() as db:
             sub = db.execute(
                 "SELECT * FROM candidate_submissions WHERE id=%s", (submission_id,)
-            ).fetchone()
+            )
+            sub = db.fetchone()
             if not sub:
                 return {"error": "Submission not found"}
 
@@ -48,7 +49,8 @@ class TriggerEngine:
             # Load all section draft data
             drafts = db.execute(
                 "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (submission_id,)
-            ).fetchall()
+            )
+            drafts = db.fetchall()
             section_data = {}
             for d in drafts:
                 dd = dict(d)
@@ -94,7 +96,8 @@ class TriggerEngine:
                     cand = db.execute(
                         "SELECT first_name, last_name, email, date_of_birth FROM candidates WHERE id=%s",
                         (candidate_id,),
-                    ).fetchone()
+                    )
+                    cand = db.fetchone()
                     cand_data = dict(cand) if cand else {}
 
                 candidate_name = f"{cand_data.get('first_name', '')} {cand_data.get('last_name', '')}".strip()
@@ -155,7 +158,8 @@ class TriggerEngine:
             # If this is a re-vet, mark the re-vet request as completed
             revet = db.execute(
                 "SELECT id FROM revet_requests WHERE submission_id=%s", (submission_id,)
-            ).fetchone()
+            )
+            revet = db.fetchone()
             if revet:
                 db.execute(
                     "UPDATE revet_requests SET status='completed', completed_at=%s WHERE id=%s",
@@ -182,7 +186,8 @@ class TriggerEngine:
                 cand = db.execute(
                     "SELECT first_name, last_name, date_of_birth FROM candidates WHERE id=%s",
                     (candidate_id,),
-                ).fetchone()
+                )
+                cand = db.fetchone()
                 cand_data = dict(cand) if cand else {}
 
             IdentityVerificationService.create_sdk_token(candidate_id)
@@ -248,14 +253,13 @@ class TriggerEngine:
             if entries:
                 # Get existing entries to avoid duplicates
                 with get_db() as db:
+                    db.execute(
+                        "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=%s",
+                        (candidate_id,),
+                    )
                     existing = {
                         (row["employer_name"], row["job_title"])
-                        for row in [
-                            dict(r) for r in db.execute(
-                                "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=%s",
-                                (candidate_id,),
-                            ).fetchall()
-                        ]
+                        for row in [dict(r) for r in db.fetchall()]
                     }
                 for entry in entries:
                     if entry.get("employer_name") and entry.get("job_title"):
@@ -291,7 +295,8 @@ class TriggerEngine:
                 cand = db.execute(
                     "SELECT registration_body, registration_number FROM candidates WHERE id=%s",
                     (candidate_id,),
-                ).fetchone()
+                )
+                cand = db.fetchone()
                 if cand:
                     cand_data = dict(cand)
                     body = data.get("registration_body") or cand_data.get("registration_body")
@@ -332,13 +337,15 @@ class TriggerEngine:
                 entries = db.execute(
                     "SELECT * FROM employment_history WHERE candidate_id=%s AND verifier_name IS NOT NULL AND verifier_email IS NOT NULL",
                     (candidate_id,),
-                ).fetchall()
+                )
+                entries = db.fetchall()
 
                 # Get existing verifications to avoid duplicates
                 existing = db.execute(
                     "SELECT employment_id FROM employment_verifications WHERE candidate_id=%s",
                     (candidate_id,),
-                ).fetchall()
+                )
+                existing = db.fetchall()
                 existing_ids = {dict(e)["employment_id"] for e in existing}
 
             sent = 0

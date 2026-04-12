@@ -78,7 +78,8 @@ async def list_scheduled_reports(user=Depends(get_current_user)):
         rows = db.execute(
             "SELECT * FROM scheduled_reports WHERE agency_id=%s ORDER BY created_at DESC",
             (agency_id,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -116,7 +117,8 @@ async def update_scheduled_report(report_id: str, data: dict, user=Depends(get_c
         existing = db.execute(
             "SELECT id FROM scheduled_reports WHERE id=%s AND agency_id=%s",
             (report_id, agency_id),
-        ).fetchone()
+        )
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Report not found")
 
@@ -160,18 +162,23 @@ async def admin_analytics_overview(user=Depends(get_current_admin)):
     from app.services.analytics_reporting import AnalyticsReportingService
 
     with get_db() as db:
-        total_agencies = db.execute("SELECT COUNT(*) AS cnt FROM agencies").fetchone()["cnt"]
-        total_candidates = db.execute("SELECT COUNT(*) AS cnt FROM candidates").fetchone()["cnt"]
+        db.execute("SELECT COUNT(*) AS cnt FROM agencies")
+        total_agencies = db.fetchone()
+        db.execute("SELECT COUNT(*) AS cnt FROM candidates")
+        total_candidates = db.fetchone()
         total_checks = 0
         for table in ["identity_checks", "dbs_checks", "right_to_work_checks", "registration_checks"]:
             try:
-                total_checks += db.execute(f"SELECT COUNT(*) AS cnt FROM {table}").fetchone()["cnt"]
+                db.execute(f"SELECT COUNT(*) AS cnt FROM {table}")
+                row = db.fetchone()
+                total_checks += row["cnt"] if row else 0
             except Exception:
                 pass
 
-        active_subs = db.execute(
+        db.execute(
             "SELECT COUNT(*) AS cnt FROM agency_subscriptions WHERE status='active'"
-        ).fetchone()["cnt"]
+        )
+        active_subs = db.fetchone()["cnt"]
 
     time_to_clear = AnalyticsReportingService.get_time_to_clear()
     response_rates = AnalyticsReportingService.get_verification_response_rates()

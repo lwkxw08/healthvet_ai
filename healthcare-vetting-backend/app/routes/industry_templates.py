@@ -53,14 +53,16 @@ async def list_templates(admin=Depends(get_current_admin)):
     with get_db() as db:
         templates = db.execute(
             "SELECT * FROM industry_templates ORDER BY is_default DESC, name ASC"
-        ).fetchall()
+        )
+        templates = db.fetchall()
         result = []
         for t in templates:
             td = dict(t)
             checks = db.execute(
                 "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
                 (td["id"],),
-            ).fetchall()
+            )
+            checks = db.fetchall()
             td["checks"] = [dict(c) for c in checks]
             for c in td["checks"]:
                 try:
@@ -71,7 +73,8 @@ async def list_templates(admin=Depends(get_current_admin)):
             agency_count = db.execute(
                 "SELECT COUNT(*) as cnt FROM agencies WHERE industry_template_id=%s",
                 (td["id"],),
-            ).fetchone()
+            )
+            agency_count = db.fetchone()
             td["agency_count"] = dict(agency_count)["cnt"] if agency_count else 0
             result.append(td)
         return result
@@ -81,14 +84,16 @@ async def list_templates(admin=Depends(get_current_admin)):
 async def get_template(template_id: str, admin=Depends(get_current_admin)):
     """Get a single industry template with checks."""
     with get_db() as db:
-        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
+        db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,))
+        t = db.fetchone()
         if not t:
             raise HTTPException(status_code=404, detail="Template not found")
         td = dict(t)
         checks = db.execute(
             "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
             (template_id,),
-        ).fetchall()
+        )
+        checks = db.fetchall()
         td["checks"] = [dict(c) for c in checks]
         for c in td["checks"]:
             try:
@@ -105,7 +110,8 @@ async def create_template(data: TemplateCreateInput, admin=Depends(get_current_a
     template_id = generate_id()
     with get_db() as db:
         # Check for duplicate name
-        existing = db.execute("SELECT id FROM industry_templates WHERE name=%s", (data.name,)).fetchone()
+        db.execute("SELECT id FROM industry_templates WHERE name=%s", (data.name,))
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="Template with this name already exists")
 
@@ -133,7 +139,8 @@ async def update_template(template_id: str, data: TemplateUpdateInput, admin=Dep
     """Update an industry template and its checks."""
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
+        db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,))
+        t = db.fetchone()
         if not t:
             raise HTTPException(status_code=404, detail="Template not found")
 
@@ -181,7 +188,8 @@ async def update_template(template_id: str, data: TemplateUpdateInput, admin=Dep
 async def delete_template(template_id: str, admin=Depends(get_current_admin)):
     """Delete an industry template (only if no agencies are using it)."""
     with get_db() as db:
-        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
+        db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,))
+        t = db.fetchone()
         if not t:
             raise HTTPException(status_code=404, detail="Template not found")
         if dict(t).get("is_default"):
@@ -190,7 +198,8 @@ async def delete_template(template_id: str, admin=Depends(get_current_admin)):
         # Check if any agencies are using this template
         agency_count = db.execute(
             "SELECT COUNT(*) as cnt FROM agencies WHERE industry_template_id=%s", (template_id,)
-        ).fetchone()
+        )
+        agency_count = db.fetchone()
         if dict(agency_count)["cnt"] > 0:
             raise HTTPException(status_code=400, detail=f"Cannot delete: {dict(agency_count)['cnt']} agencies are using this template")
 
@@ -205,7 +214,8 @@ async def clone_template(template_id: str, admin=Depends(get_current_admin)):
     """Clone an existing template to create a new one."""
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
+        db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,))
+        t = db.fetchone()
         if not t:
             raise HTTPException(status_code=404, detail="Template not found")
         td = dict(t)
@@ -227,7 +237,8 @@ async def clone_template(template_id: str, admin=Depends(get_current_admin)):
         # Clone checks
         checks = db.execute(
             "SELECT * FROM industry_template_checks WHERE template_id=%s", (template_id,)
-        ).fetchall()
+        )
+        checks = db.fetchall()
         for c in checks:
             cd = dict(c)
             db.execute(
@@ -244,10 +255,12 @@ async def clone_template(template_id: str, admin=Depends(get_current_admin)):
 async def assign_template_to_agency(data: AgencyTemplateAssign, admin=Depends(get_current_admin)):
     """Assign an industry template to an agency."""
     with get_db() as db:
-        agency = db.execute("SELECT id FROM agencies WHERE id=%s", (data.agency_id,)).fetchone()
+        db.execute("SELECT id FROM agencies WHERE id=%s", (data.agency_id,))
+        agency = db.fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
-        template = db.execute("SELECT id FROM industry_templates WHERE id=%s", (data.template_id,)).fetchone()
+        db.execute("SELECT id FROM industry_templates WHERE id=%s", (data.template_id,))
+        template = db.fetchone()
         if not template:
             raise HTTPException(status_code=404, detail="Template not found")
 
@@ -260,32 +273,37 @@ async def assign_template_to_agency(data: AgencyTemplateAssign, admin=Depends(ge
 async def get_agency_template(agency_id: str, admin=Depends(get_current_admin)):
     """Get the industry template assigned to an agency."""
     with get_db() as db:
-        agency = db.execute("SELECT id, industry_template_id FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT id, industry_template_id FROM agencies WHERE id=%s", (agency_id,))
+        agency = db.fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
         ad = dict(agency)
         template_id = ad.get("industry_template_id")
         if not template_id:
             # Return default template
-            default = db.execute("SELECT * FROM industry_templates WHERE is_default=1 LIMIT 1").fetchone()
+            db.execute("SELECT * FROM industry_templates WHERE is_default=1 LIMIT 1")
+            default = db.fetchone()
             if default:
                 td = dict(default)
                 checks = db.execute(
                     "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
                     (td["id"],),
-                ).fetchall()
+                )
+                checks = db.fetchall()
                 td["checks"] = [dict(c) for c in checks]
                 return td
             return None
 
-        t = db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,)).fetchone()
+        db.execute("SELECT * FROM industry_templates WHERE id=%s", (template_id,))
+        t = db.fetchone()
         if not t:
             return None
         td = dict(t)
         checks = db.execute(
             "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
             (template_id,),
-        ).fetchall()
+        )
+        checks = db.fetchall()
         td["checks"] = [dict(c) for c in checks]
         for c in td["checks"]:
             try:
@@ -305,5 +323,6 @@ async def list_templates_for_agency(current_user: dict = Depends(get_current_use
     with get_db() as db:
         templates = db.execute(
             "SELECT id, name, description, compliance_label, compliance_threshold FROM industry_templates WHERE is_active=1 ORDER BY is_default DESC, name ASC"
-        ).fetchall()
+        )
+        templates = db.fetchall()
         return [dict(t) for t in templates]

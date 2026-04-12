@@ -45,7 +45,8 @@ async def create_submission(body: CreateSubmissionRequest, request: Request, cur
             revet = db.execute(
                 "SELECT * FROM revet_requests WHERE token=%s AND candidate_id=%s AND status='pending'",
                 (body.revet_token, candidate_id),
-            ).fetchone()
+            )
+            revet = db.fetchone()
             if not revet:
                 raise HTTPException(status_code=404, detail="Invalid or expired re-vet token")
             revet_data = dict(revet)
@@ -56,7 +57,8 @@ async def create_submission(body: CreateSubmissionRequest, request: Request, cur
             existing = db.execute(
                 "SELECT id FROM candidate_submissions WHERE candidate_id=%s AND submission_type='full' AND status='draft'",
                 (candidate_id,),
-            ).fetchone()
+            )
+            existing = db.fetchone()
             if existing:
                 # Return existing draft
                 return await get_submission(dict(existing)["id"], current_user)
@@ -106,7 +108,8 @@ async def get_current_submission(current_user: dict = Depends(get_current_user))
                WHERE candidate_id=%s AND status IN ('submitted', 'processing', 'completed')
                ORDER BY submitted_at DESC LIMIT 1""",
             (candidate_id,),
-        ).fetchone()
+        )
+        active = db.fetchone()
 
         if active:
             sub = dict(active)
@@ -114,7 +117,8 @@ async def get_current_submission(current_user: dict = Depends(get_current_user))
             # Load draft data
             drafts = db.execute(
                 "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (sub["id"],)
-            ).fetchall()
+            )
+            drafts = db.fetchall()
             sub["sections"] = {}
             for d in drafts:
                 dd = dict(d)
@@ -130,14 +134,16 @@ async def get_current_submission(current_user: dict = Depends(get_current_user))
                WHERE candidate_id=%s AND status='draft'
                ORDER BY created_at DESC LIMIT 1""",
             (candidate_id,),
-        ).fetchone()
+        )
+        draft = db.fetchone()
 
         if draft:
             sub = dict(draft)
             sub["sections_requested"] = json.loads(sub["sections_requested"]) if sub["sections_requested"] else []
             drafts = db.execute(
                 "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (sub["id"],)
-            ).fetchall()
+            )
+            drafts = db.fetchall()
             sub["sections"] = {}
             for d in drafts:
                 dd = dict(d)
@@ -156,7 +162,8 @@ async def get_submission(submission_id: str, current_user: dict = Depends(get_cu
     with get_db() as db:
         sub = db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s", (submission_id,)
-        ).fetchone()
+        )
+        sub = db.fetchone()
         if not sub:
             raise HTTPException(status_code=404, detail="Submission not found")
 
@@ -170,7 +177,8 @@ async def get_submission(submission_id: str, current_user: dict = Depends(get_cu
         # Load section data
         drafts = db.execute(
             "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (submission_id,)
-        ).fetchall()
+        )
+        drafts = db.fetchall()
         result["sections"] = {}
         for d in drafts:
             dd = dict(d)
@@ -202,7 +210,8 @@ async def save_section(
         sub = db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s AND candidate_id=%s",
             (submission_id, candidate_id),
-        ).fetchone()
+        )
+        sub = db.fetchone()
         if not sub:
             raise HTTPException(status_code=404, detail="Submission not found")
         if dict(sub)["status"] != "draft":
@@ -212,7 +221,8 @@ async def save_section(
         existing = db.execute(
             "SELECT id FROM candidate_draft_data WHERE submission_id=%s AND section=%s",
             (submission_id, section),
-        ).fetchone()
+        )
+        existing = db.fetchone()
 
         data_json = json.dumps(body.data)
         if existing:
@@ -284,7 +294,8 @@ async def update_section_post_submission(
         sub = db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s AND candidate_id=%s",
             (submission_id, candidate_id),
-        ).fetchone()
+        )
+        sub = db.fetchone()
         if not sub:
             raise HTTPException(status_code=404, detail="Submission not found")
 
@@ -306,7 +317,8 @@ async def update_section_post_submission(
         existing = db.execute(
             "SELECT id FROM candidate_draft_data WHERE submission_id=%s AND section=%s",
             (submission_id, section),
-        ).fetchone()
+        )
+        existing = db.fetchone()
 
         data_json = json.dumps(body.data)
         if existing:
@@ -341,14 +353,13 @@ async def update_section_post_submission(
             emp_entries = body.data.get("employment_entries", [])
             if emp_entries:
                 with get_db() as db:
+                    db.execute(
+                        "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=%s",
+                        (candidate_id,),
+                    )
                     existing_emp = {
                         (row["employer_name"], row["job_title"])
-                        for row in [
-                            dict(r) for r in db.execute(
-                                "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=%s",
-                                (candidate_id,),
-                            ).fetchall()
-                        ]
+                        for row in [dict(r) for r in db.fetchall()]
                     }
                 for ent in emp_entries:
                     if ent.get("employer_name") and ent.get("job_title"):
@@ -377,14 +388,13 @@ async def update_section_post_submission(
             from app.services.employment_verification import EmploymentVerificationService
             entries = body.data.get("employment_entries", [])
             with get_db() as db:
+                db.execute(
+                    "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=%s",
+                    (candidate_id,),
+                )
                 existing_employers = {
                     (row["employer_name"], row["job_title"])
-                    for row in [
-                        dict(r) for r in db.execute(
-                            "SELECT employer_name, job_title FROM employment_history WHERE candidate_id=%s",
-                            (candidate_id,),
-                        ).fetchall()
-                    ]
+                    for row in [dict(r) for r in db.fetchall()]
                 }
             for entry in entries:
                 if entry.get("employer_name") and entry.get("job_title"):
@@ -435,7 +445,8 @@ async def validate_submission(submission_id: str, current_user: dict = Depends(g
         sub = db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s AND candidate_id=%s",
             (submission_id, current_user["sub"]),
-        ).fetchone()
+        )
+        sub = db.fetchone()
         if not sub:
             raise HTTPException(status_code=404, detail="Submission not found")
 
@@ -444,7 +455,8 @@ async def validate_submission(submission_id: str, current_user: dict = Depends(g
 
         drafts = db.execute(
             "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (submission_id,)
-        ).fetchall()
+        )
+        drafts = db.fetchall()
         sections = {}
         for d in drafts:
             dd = dict(d)
@@ -531,7 +543,8 @@ async def submit_with_consent(
         sub = db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s AND candidate_id=%s",
             (submission_id, candidate_id),
-        ).fetchone()
+        )
+        sub = db.fetchone()
         if not sub:
             raise HTTPException(status_code=404, detail="Submission not found")
         if dict(sub)["status"] != "draft":
@@ -582,7 +595,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
     with get_db() as db:
         sub = db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s", (submission_id,)
-        ).fetchone()
+        )
+        sub = db.fetchone()
         if not sub:
             raise HTTPException(status_code=404, detail="Submission not found")
 
@@ -599,7 +613,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         cand = db.execute(
             "SELECT first_name, last_name, email, phone, date_of_birth FROM candidates WHERE id=%s",
             (candidate_id,),
-        ).fetchone()
+        )
+        cand = db.fetchone()
         if cand:
             cand_data = dict(cand)
             has_name = bool(cand_data.get("first_name") and cand_data.get("last_name"))
@@ -620,7 +635,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         identity = db.execute(
             "SELECT status, result FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC LIMIT 1",
             (candidate_id,),
-        ).fetchone()
+        )
+        identity = db.fetchone()
         if identity:
             id_data = dict(identity)
             if id_data["result"] == "clear":
@@ -636,7 +652,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         rtw = db.execute(
             "SELECT status, verified FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC LIMIT 1",
             (candidate_id,),
-        ).fetchone()
+        )
+        rtw = db.fetchone()
         if rtw:
             rtw_data = dict(rtw)
             if rtw_data["verified"]:
@@ -650,7 +667,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         dbs = db.execute(
             "SELECT status, result FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC LIMIT 1",
             (candidate_id,),
-        ).fetchone()
+        )
+        dbs = db.fetchone()
         if dbs:
             dbs_data = dict(dbs)
             if dbs_data["result"] == "clear":
@@ -666,7 +684,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         cv = db.execute(
             "SELECT status FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC LIMIT 1",
             (candidate_id,),
-        ).fetchone()
+        )
+        cv = db.fetchone()
         if cv:
             check_statuses["cv"] = {"status": "verified", "label": "CV Validated"}
         else:
@@ -676,7 +695,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         reg = db.execute(
             "SELECT is_active FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC LIMIT 1",
             (candidate_id,),
-        ).fetchone()
+        )
+        reg = db.fetchone()
         if reg:
             if dict(reg)["is_active"]:
                 check_statuses["registration"] = {"status": "verified", "label": "Registration Active"}
@@ -688,7 +708,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         # References
         refs = db.execute(
             "SELECT status FROM references_ WHERE candidate_id=%s", (candidate_id,)
-        ).fetchall()
+        )
+        refs = db.fetchall()
         completed_refs = sum(1 for r in refs if dict(r)["status"] == "completed")
         total_refs = len(refs)
         if completed_refs >= 2:
@@ -702,11 +723,13 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         emp_count = db.execute(
             "SELECT COUNT(*) as cnt FROM employment_verifications WHERE candidate_id=%s AND status='completed'",
             (candidate_id,),
-        ).fetchone()
+        )
+        emp_count = db.fetchone()
         emp_total = db.execute(
             "SELECT COUNT(*) as cnt FROM employment_history WHERE candidate_id=%s",
             (candidate_id,),
-        ).fetchone()
+        )
+        emp_total = db.fetchone()
         emp_done = dict(emp_count)["cnt"] if emp_count else 0
         emp_all = dict(emp_total)["cnt"] if emp_total else 0
         if emp_done > 0:
@@ -720,7 +743,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         training = db.execute(
             "SELECT COUNT(*) as cnt FROM training_certificates WHERE candidate_id=%s",
             (candidate_id,),
-        ).fetchone()
+        )
+        training = db.fetchone()
         if training and dict(training)["cnt"] > 0:
             check_statuses["training"] = {"status": "verified", "label": f"{dict(training)['cnt']} Certificates Recorded"}
         else:
@@ -730,7 +754,8 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         compliance = db.execute(
             "SELECT score, overall_status, cqc_ready FROM compliance_records WHERE candidate_id=%s",
             (candidate_id,),
-        ).fetchone()
+        )
+        compliance = db.fetchone()
 
         return {
             "submission_id": submission_id,
@@ -756,7 +781,8 @@ async def get_revet_info(token: str):
                JOIN candidates c ON rr.candidate_id = c.id
                WHERE rr.token=%s AND rr.status='pending'""",
             (token,),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Invalid or expired re-vet link")
 

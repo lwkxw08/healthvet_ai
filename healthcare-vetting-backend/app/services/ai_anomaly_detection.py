@@ -286,12 +286,14 @@ def get_anomaly_history(agency_id: Optional[str] = None, limit: int = 20) -> lis
                 rows = db.execute(
                     "SELECT id, agency_id, total_scanned, anomalies_found, high_severity, medium_severity, low_severity, created_at FROM ai_anomaly_scans WHERE agency_id=%s ORDER BY created_at DESC LIMIT %s",
                     (agency_id, limit),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             else:
                 rows = db.execute(
                     "SELECT id, agency_id, total_scanned, anomalies_found, high_severity, medium_severity, low_severity, created_at FROM ai_anomaly_scans ORDER BY created_at DESC LIMIT %s",
                     (limit,),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             return [dict(r) for r in rows]
         except Exception:
             return []

@@ -34,13 +34,15 @@ async def get_notifications(
         query += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
-        rows = db.execute(query, params).fetchall()
+        db.execute(query, params)
+        rows = db.fetchall()
 
         # Get unread count
         unread_count = db.execute(
             "SELECT COUNT(*) as cnt FROM in_app_notifications WHERE user_id=%s AND user_type=%s AND is_read=0",
             (user_id, user_type),
-        ).fetchone()
+        )
+        unread_count = db.fetchone()
 
         return {
             "notifications": [dict(r) for r in rows],
@@ -59,7 +61,8 @@ async def get_unread_count(current_user: dict = Depends(get_current_user)):
         row = db.execute(
             "SELECT COUNT(*) as cnt FROM in_app_notifications WHERE user_id=%s AND user_type=%s AND is_read=0",
             (user_id, user_type),
-        ).fetchone()
+        )
+        row = db.fetchone()
         return {"unread_count": dict(row)["cnt"] if row else 0}
 
 
@@ -74,7 +77,8 @@ async def mark_notification_read(notification_id: str, current_user: dict = Depe
         row = db.execute(
             "SELECT * FROM in_app_notifications WHERE id=%s AND user_id=%s AND user_type=%s",
             (notification_id, user_id, user_type),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Notification not found")
 
@@ -110,7 +114,8 @@ async def delete_notification(notification_id: str, current_user: dict = Depends
         row = db.execute(
             "SELECT * FROM in_app_notifications WHERE id=%s AND user_id=%s AND user_type=%s",
             (notification_id, user_id, user_type),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Notification not found")
 
@@ -165,7 +170,8 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
                    WHERE ac.agency_id=%s""",
                 (user_id,),
-            ).fetchall()
+            )
+            candidates = db.fetchall()
 
             for cand in candidates:
                 cd = dict(cand)
@@ -175,7 +181,8 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
                 dbs = db.execute(
                     "SELECT next_renewal FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC LIMIT 1",
                     (cd["id"],),
-                ).fetchone()
+                )
+                dbs = db.fetchone()
                 if dbs and dict(dbs).get("next_renewal"):
                     try:
                         renewal = datetime.fromisoformat(dict(dbs)["next_renewal"])
@@ -197,7 +204,8 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
                 comp = db.execute(
                     "SELECT overall_status, score FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
                     (cd["id"],),
-                ).fetchone()
+                )
+                comp = db.fetchone()
                 if comp:
                     cd2 = dict(comp)
                     if cd2["overall_status"] == "compliant":
@@ -221,7 +229,8 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
             pending_invoices = db.execute(
                 "SELECT COUNT(*) as cnt, COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)), 0) as total FROM invoices WHERE agency_id=%s AND status='pending'",
                 (user_id,),
-            ).fetchone()
+            )
+            pending_invoices = db.fetchone()
             if pending_invoices:
                 pi = dict(pending_invoices)
                 if pi["cnt"] > 0:
@@ -238,7 +247,8 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
             comp = db.execute(
                 "SELECT overall_status, score, flags FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
                 (user_id,),
-            ).fetchone()
+            )
+            comp = db.fetchone()
             if comp:
                 cd = dict(comp)
                 if cd["overall_status"] == "compliant":
@@ -262,7 +272,8 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
             # System overview notifications
             pending_inv = db.execute(
                 "SELECT COUNT(*) as cnt FROM invoices WHERE status='pending'"
-            ).fetchone()
+            )
+            pending_inv = db.fetchone()
             if pending_inv and dict(pending_inv)["cnt"] > 0:
                 create_notification(
                     user_id, user_type,
@@ -274,7 +285,8 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
 
             flagged = db.execute(
                 "SELECT COUNT(*) as cnt FROM candidates WHERE compliance_status IN ('flagged', 'incomplete')"
-            ).fetchone()
+            )
+            flagged = db.fetchone()
             if flagged and dict(flagged)["cnt"] > 0:
                 create_notification(
                     user_id, user_type,

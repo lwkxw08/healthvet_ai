@@ -36,7 +36,8 @@ class AuditTrailService:
             # Get the hash of the last audit entry for the chain
             prev = db.execute(
                 "SELECT id, chain_hash FROM audit_trail ORDER BY created_at DESC, rowid DESC LIMIT 1"
-            ).fetchone()
+            )
+            prev = db.fetchone()
             prev_hash = dict(prev)["chain_hash"] if prev else "GENESIS"
 
             # Build the chain hash: SHA-256(prev_hash + log_id + entity + action + actor + timestamp)
@@ -81,7 +82,8 @@ class AuditTrailService:
             rows = db.execute(
                 "SELECT * FROM audit_trail ORDER BY created_at ASC, rowid ASC LIMIT %s",
                 (limit,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
 
             if not rows:
                 return {"status": "empty", "verified": 0, "broken_at": None}
@@ -150,7 +152,8 @@ class AuditTrailService:
             rows = db.execute(
                 f"SELECT * FROM audit_trail {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
                 tuple(params) + (limit, offset),
-            ).fetchall()
+            )
+            rows = db.fetchall()
 
             items = []
             for row in rows:
@@ -194,7 +197,8 @@ class AuditTrailService:
             rows = db.execute(
                 f"SELECT * FROM data_access_log {where} ORDER BY created_at DESC LIMIT %s",
                 tuple(params) + (limit,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
 
             return {"items": [dict(r) for r in rows], "total": len(rows)}
 
@@ -218,13 +222,15 @@ class AuditTrailService:
             audit_entries = db.execute(
                 f"SELECT * FROM audit_trail {where} ORDER BY created_at ASC",
                 tuple(params),
-            ).fetchall()
+            )
+            audit_entries = db.fetchall()
 
             # Data access entries
             access_entries = db.execute(
                 f"SELECT * FROM data_access_log {where} ORDER BY created_at ASC",
                 tuple(params),
-            ).fetchall()
+            )
+            access_entries = db.fetchall()
 
             # Chain integrity
             integrity = AuditTrailService.verify_chain_integrity()
@@ -232,7 +238,8 @@ class AuditTrailService:
             # Retention policy status
             retention_policies = []
             try:
-                policies = db.execute("SELECT * FROM gdpr_retention_policies").fetchall()
+                db.execute("SELECT * FROM gdpr_retention_policies")
+                policies = db.fetchall()
                 retention_policies = [dict(p) for p in policies]
             except Exception:
                 pass
@@ -256,7 +263,8 @@ class AuditTrailService:
             # Find candidate
             candidate = db.execute(
                 "SELECT * FROM candidates WHERE email=%s", (candidate_email,)
-            ).fetchone()
+            )
+            candidate = db.fetchone()
             if not candidate:
                 return {"status": "not_found", "email": candidate_email}
 
@@ -273,7 +281,8 @@ class AuditTrailService:
                            UNION SELECT id FROM right_to_work_checks WHERE candidate_id=%s))
                    ORDER BY created_at ASC""",
                 (candidate_id, candidate_id, candidate_id, candidate_id),
-            ).fetchall()
+            )
+            mutations = db.fetchall()
 
             # All data access events for this candidate
             access_events = db.execute(
@@ -281,7 +290,8 @@ class AuditTrailService:
                    WHERE (entity_type='candidate' AND entity_id=%s)
                    ORDER BY created_at ASC""",
                 (candidate_id,),
-            ).fetchall()
+            )
+            access_events = db.fetchall()
 
             return {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -302,7 +312,8 @@ class AuditTrailService:
         with get_db() as db:
             policies = []
             try:
-                rows = db.execute("SELECT * FROM gdpr_retention_policies").fetchall()
+                db.execute("SELECT * FROM gdpr_retention_policies")
+                rows = db.fetchall()
                 for row in rows:
                     p = dict(row)
                     category = p["data_category"]
@@ -338,7 +349,8 @@ class AuditTrailService:
                 """SELECT created_at, details FROM audit_logs
                    WHERE action='retention_policy_applied'
                    ORDER BY created_at DESC LIMIT 1""",
-            ).fetchone()
+            )
+            last_run = db.fetchone()
 
             return {
                 "policies": policies,

@@ -52,7 +52,8 @@ class PaymentProviderService:
         with get_db() as db:
             rows = db.execute(
                 "SELECT * FROM payment_provider_config ORDER BY provider"
-            ).fetchall()
+            )
+            rows = db.fetchall()
             providers = []
             for row in rows:
                 r = dict(row)
@@ -76,7 +77,8 @@ class PaymentProviderService:
             row = db.execute(
                 "SELECT * FROM payment_provider_config WHERE provider=%s",
                 (provider,),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return None
             d = dict(row)
@@ -102,7 +104,8 @@ class PaymentProviderService:
         with get_db() as db:
             row = db.execute(
                 "SELECT id FROM payment_provider_config WHERE provider=%s", (provider,)
-            ).fetchone()
+            )
+            row = db.fetchone()
 
             if row:
                 db.execute(
@@ -263,7 +266,8 @@ class PaymentProviderService:
         with get_db() as db:
             rows = db.execute(
                 "SELECT * FROM payment_routing ORDER BY payment_type"
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -283,7 +287,8 @@ class PaymentProviderService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM payment_routing WHERE payment_type=%s", (payment_type,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 raise ValueError(f"Payment type '{payment_type}' not found.")
 
@@ -293,7 +298,8 @@ class PaymentProviderService:
             )
             row = db.execute(
                 "SELECT * FROM payment_routing WHERE payment_type=%s", (payment_type,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row)
 
     # ── Payment Processing ────────────────────────────────────────────
@@ -364,7 +370,8 @@ class PaymentProviderService:
             txn = db.execute(
                 "SELECT * FROM payment_transactions WHERE provider_payment_id=%s",
                 (provider_payment_id,),
-            ).fetchone()
+            )
+            txn = db.fetchone()
             if not txn:
                 return {"confirmed": False, "error": "Transaction not found"}
             t = dict(txn)
@@ -395,7 +402,8 @@ class PaymentProviderService:
             txn = db.execute(
                 "SELECT * FROM payment_transactions WHERE id=%s AND status='completed'",
                 (transaction_id,),
-            ).fetchone()
+            )
+            txn = db.fetchone()
             if not txn:
                 raise ValueError("Transaction not found or not completed.")
             t = dict(txn)
@@ -453,12 +461,14 @@ class PaymentProviderService:
                 rows = db.execute(
                     "SELECT * FROM payment_transactions WHERE agency_id=%s ORDER BY created_at DESC LIMIT %s",
                     (agency_id, limit),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             else:
                 rows = db.execute(
                     "SELECT * FROM payment_transactions ORDER BY created_at DESC LIMIT %s",
                     (limit,),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             return [dict(r) for r in rows]
 
     # ── Stripe Helpers ────────────────────────────────────────────────
@@ -604,7 +614,8 @@ def _validate_provider_enabled(provider: str):
         row = db.execute(
             "SELECT is_enabled, api_key_set FROM payment_provider_config WHERE provider=%s",
             (provider,),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             raise ValueError(f"Provider '{provider}' not found.")
         r = dict(row)
@@ -620,7 +631,8 @@ def _resolve_provider(payment_type: str) -> Optional[str]:
         row = db.execute(
             "SELECT provider, fallback_provider FROM payment_routing WHERE payment_type=%s AND is_enabled=1",
             (payment_type,),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             return None
         r = dict(row)
@@ -630,7 +642,8 @@ def _resolve_provider(payment_type: str) -> Optional[str]:
             prow = db.execute(
                 "SELECT is_enabled FROM payment_provider_config WHERE provider=%s AND is_enabled=1",
                 (provider,),
-            ).fetchone()
+            )
+            prow = db.fetchone()
             if prow:
                 return provider
         # Try fallback
@@ -639,7 +652,8 @@ def _resolve_provider(payment_type: str) -> Optional[str]:
             prow = db.execute(
                 "SELECT is_enabled FROM payment_provider_config WHERE provider=%s AND is_enabled=1",
                 (fallback,),
-            ).fetchone()
+            )
+            prow = db.fetchone()
             if prow:
                 return fallback
         return None

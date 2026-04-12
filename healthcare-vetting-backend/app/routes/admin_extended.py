@@ -48,12 +48,14 @@ async def override_candidate_check(
 
     with get_db() as db:
         # Verify candidate exists
-        cand = db.execute("SELECT id FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT id FROM candidates WHERE id=%s", (candidate_id,))
+        cand = db.fetchone()
         if not cand:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         # Find existing check record(s)
-        rows = db.execute(f"SELECT id FROM {table} WHERE candidate_id=%s", (candidate_id,)).fetchall()
+        db.execute(f"SELECT id FROM {table} WHERE candidate_id=%s", (candidate_id,))
+        rows = db.fetchall()
 
         if rows:
             # Update the most recent check
@@ -139,7 +141,8 @@ async def update_agency_status(
         raise HTTPException(status_code=400, detail=f"Invalid status. Valid: {valid_statuses}")
 
     with get_db() as db:
-        agency = db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+        agency = db.fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
 
@@ -152,7 +155,8 @@ async def update_agency_status(
             (log_id, "agency", agency_id, f"status_changed_to_{data.status}",
              current_user["sub"], data.reason or "", now))
 
-        row = db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -200,7 +204,8 @@ async def admin_edit_candidate(
         raise HTTPException(status_code=400, detail="No fields to update")
 
     with get_db() as db:
-        cand = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        cand = db.fetchone()
         if not cand:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -219,7 +224,8 @@ async def admin_edit_candidate(
             (log_id, "candidate", candidate_id, "admin_edit_profile",
              current_user["sub"], json.dumps(changes), now))
 
-        row = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -251,7 +257,8 @@ async def admin_create_agency(data: CreateAgencyRequest, current_user: dict = De
     agency_id = generate_id()
 
     with get_db() as db:
-        existing = db.execute("SELECT id FROM agencies WHERE email=%s", (data.email,)).fetchone()
+        db.execute("SELECT id FROM agencies WHERE email=%s", (data.email,))
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Agency with this email already exists")
 
@@ -265,7 +272,8 @@ async def admin_create_agency(data: CreateAgencyRequest, current_user: dict = De
             "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "agency", agency_id, "admin_created_agency", current_user["sub"], f"Created agency: {data.name}", now))
 
-        row = db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -277,7 +285,8 @@ async def admin_create_candidate(data: CreateCandidateRequest, current_user: dic
     cand_id = generate_id()
 
     with get_db() as db:
-        existing = db.execute("SELECT id FROM candidates WHERE email=%s", (data.email,)).fetchone()
+        db.execute("SELECT id FROM candidates WHERE email=%s", (data.email,))
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Candidate with this email already exists")
 
@@ -291,7 +300,8 @@ async def admin_create_candidate(data: CreateCandidateRequest, current_user: dic
             "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "candidate", cand_id, "admin_created_candidate", current_user["sub"], f"Created candidate: {data.first_name} {data.last_name}", now))
 
-        row = db.execute("SELECT * FROM candidates WHERE id=%s", (cand_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (cand_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -302,7 +312,8 @@ async def admin_delete_agency(agency_id: str, current_user: dict = Depends(get_c
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        agency = db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+        agency = db.fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
 
@@ -328,7 +339,8 @@ async def admin_delete_candidate(candidate_id: str, current_user: dict = Depends
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        cand = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        cand = db.fetchone()
         if not cand:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -363,7 +375,8 @@ async def get_alert_settings(current_user: dict = Depends(get_current_user)):
     """Get current alert threshold settings."""
     require_admin(current_user)
     with get_db() as db:
-        rows = db.execute("SELECT * FROM alert_settings ORDER BY setting_key").fetchall()
+        db.execute("SELECT * FROM alert_settings ORDER BY setting_key")
+        rows = db.fetchall()
         if not rows:
             # Return defaults
             return {
@@ -387,7 +400,8 @@ async def update_alert_settings(data: AlertSettings, current_user: dict = Depend
 
     with get_db() as db:
         for key, value in updates.items():
-            existing = db.execute("SELECT id FROM alert_settings WHERE setting_key=%s", (key,)).fetchone()
+            db.execute("SELECT id FROM alert_settings WHERE setting_key=%s", (key,))
+            existing = db.fetchone()
             if existing:
                 db.execute("UPDATE alert_settings SET setting_value=%s, updated_at=%s WHERE setting_key=%s",
                            (value, now, key))
@@ -403,7 +417,8 @@ async def update_alert_settings(data: AlertSettings, current_user: dict = Depend
              current_user["sub"], json.dumps(updates), now))
 
         # Return updated settings
-        rows = db.execute("SELECT * FROM alert_settings ORDER BY setting_key").fetchall()
+        db.execute("SELECT * FROM alert_settings ORDER BY setting_key")
+        rows = db.fetchall()
         return {dict(r)["setting_key"]: dict(r)["setting_value"] for r in rows}
 
 
@@ -437,12 +452,14 @@ async def get_audit_logs(
 
         # Get total count
         count_query = query.replace("SELECT *", "SELECT COUNT(*) as cnt")
-        total = dict(db.execute(count_query, params).fetchone())["cnt"]
+        db.execute(count_query, params)
+        total = dict(db.fetchone())["cnt"]
 
         query += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
-        rows = db.execute(query, params).fetchall()
+        db.execute(query, params)
+        rows = db.fetchall()
         return {
             "total": total,
             "limit": limit,
@@ -499,7 +516,8 @@ async def admin_edit_check_data(
         if set(data.fields.keys()) & protected:
             raise HTTPException(status_code=400, detail="Cannot edit id or candidate_id fields")
 
-        row = db.execute(f"SELECT * FROM {table} WHERE id=%s AND candidate_id=%s", (check_id, candidate_id)).fetchone()
+        db.execute(f"SELECT * FROM {table} WHERE id=%s AND candidate_id=%s", (check_id, candidate_id))
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Check record not found")
 
@@ -521,7 +539,8 @@ async def admin_edit_check_data(
         from app.services.compliance_engine import ComplianceEngine
         ComplianceEngine.evaluate_candidate(candidate_id)
 
-        updated = db.execute(f"SELECT * FROM {table} WHERE id=%s", (check_id,)).fetchone()
+        db.execute(f"SELECT * FROM {table} WHERE id=%s", (check_id,))
+        updated = db.fetchone()
         return dict(updated)
 
 
@@ -604,7 +623,8 @@ async def retrigger_reference_verification(
             (log_id, "reference", ref_id, "admin_retrigger_reference",
              current_user["sub"], details, now))
 
-        updated = db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,)).fetchone()
+        db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,))
+        updated = db.fetchone()
         return dict(updated)
 
 
@@ -700,7 +720,8 @@ async def retrigger_employment_verification(
             (log_id, "employment_verification", ver_id, "admin_retrigger_employment",
              current_user["sub"], details, now))
 
-        updated = db.execute("SELECT * FROM employment_verifications WHERE id=%s", (ver_id,)).fetchone()
+        db.execute("SELECT * FROM employment_verifications WHERE id=%s", (ver_id,))
+        updated = db.fetchone()
         return dict(updated)
 
 
@@ -712,7 +733,8 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
     require_admin(current_user)
 
     with get_db() as db:
-        cand = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        cand = db.fetchone()
         if not cand:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -725,7 +747,8 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
         emp_history = [dict(r) for r in db.execute("SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,)).fetchall()]
         emp_ver = [dict(r) for r in db.execute("SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,)).fetchall()]
         training = [dict(r) for r in db.execute("SELECT * FROM training_certificates WHERE candidate_id=%s", (candidate_id,)).fetchall()]
-        compliance = db.execute("SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,))
+        compliance = db.fetchone()
         alerts = [dict(r) for r in db.execute("SELECT * FROM monitoring_alerts WHERE candidate_id=%s AND is_resolved=0", (candidate_id,)).fetchall()]
         fraud = [dict(r) for r in db.execute("SELECT * FROM fraud_flags WHERE candidate_id=%s AND is_resolved=0", (candidate_id,)).fetchall()]
 
@@ -771,7 +794,8 @@ async def get_candidates_monitoring_status(current_user: dict = Depends(get_curr
                JOIN agency_candidates ac ON c.id = ac.candidate_id
                LEFT JOIN agencies a ON ac.agency_id = a.id
                ORDER BY ac.annual_monitoring DESC, c.last_name ASC"""
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -791,7 +815,8 @@ async def update_agency_discount(
         raise HTTPException(status_code=400, detail="Discount must be between 0 and 100")
 
     with get_db() as db:
-        agency = db.execute("SELECT id, name FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT id, name FROM agencies WHERE id=%s", (agency_id,))
+        agency = db.fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
         db.execute("UPDATE agencies SET discount_percent=%s WHERE id=%s", (data.discount_percent, agency_id))
@@ -809,7 +834,8 @@ async def get_agency_discount(agency_id: str, current_user: dict = Depends(get_c
     """Get the discount percentage for a specific agency."""
     require_admin(current_user)
     with get_db() as db:
-        row = db.execute("SELECT discount_percent FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT discount_percent FROM agencies WHERE id=%s", (agency_id,))
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Agency not found")
         return {"agency_id": agency_id, "discount_percent": dict(row).get("discount_percent", 0) or 0}
@@ -831,7 +857,8 @@ async def adjust_invoice(
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        inv = db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
+        db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+        inv = db.fetchone()
         if not inv:
             raise HTTPException(status_code=404, detail="Invoice not found")
         inv_dict = dict(inv)
@@ -864,7 +891,8 @@ async def list_all_invoices(current_user: dict = Depends(get_current_user)):
                FROM invoices i
                LEFT JOIN agencies a ON i.agency_id = a.id
                ORDER BY i.created_at DESC"""
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -876,7 +904,8 @@ async def update_invoice_status(
     require_admin(current_user)
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        inv = db.execute("SELECT id FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
+        db.execute("SELECT id FROM invoices WHERE id=%s", (invoice_id,))
+        inv = db.fetchone()
         if not inv:
             raise HTTPException(status_code=404, detail="Invoice not found")
         db.execute("UPDATE invoices SET status='paid', paid_at=%s WHERE id=%s", (now, invoice_id))

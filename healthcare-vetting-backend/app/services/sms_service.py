@@ -202,12 +202,14 @@ class SMSService:
                 rows = db.execute(
                     "SELECT * FROM sms_notifications WHERE user_id=%s ORDER BY created_at DESC LIMIT %s OFFSET %s",
                     (user_id, limit, offset),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             else:
                 rows = db.execute(
                     "SELECT * FROM sms_notifications ORDER BY created_at DESC LIMIT %s OFFSET %s",
                     (limit, offset),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod

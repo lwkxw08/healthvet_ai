@@ -25,7 +25,8 @@ class AuditPackService:
     def generate_candidate_audit(candidate_id: str) -> bytes:
         """Generate a full audit pack PDF for a single candidate."""
         with get_db() as db:
-            candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+            db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+            candidate = db.fetchone()
             if not candidate:
                 raise ValueError("Candidate not found")
             c = dict(candidate)
@@ -34,47 +35,58 @@ class AuditPackService:
             identity = db.execute(
                 "SELECT * FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            identity = db.fetchall()
             rtw = db.execute(
                 "SELECT * FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rtw = db.fetchall()
             dbs = db.execute(
                 "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            dbs = db.fetchall()
             cv = db.execute(
                 "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            cv = db.fetchall()
             reg = db.execute(
                 "SELECT * FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            reg = db.fetchall()
             refs = db.execute(
                 "SELECT * FROM references_ WHERE candidate_id=%s",
                 (candidate_id,),
-            ).fetchall()
+            )
+            refs = db.fetchall()
             emp_history = db.execute(
                 "SELECT * FROM employment_history WHERE candidate_id=%s ORDER BY start_date DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            emp_history = db.fetchall()
             emp_verifications = db.execute(
                 "SELECT * FROM employment_verifications WHERE candidate_id=%s",
                 (candidate_id,),
-            ).fetchall()
+            )
+            emp_verifications = db.fetchall()
             compliance = db.execute(
                 "SELECT * FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
-            ).fetchone()
+            )
+            compliance = db.fetchone()
             audit_logs = db.execute(
                 "SELECT * FROM audit_logs WHERE entity_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            audit_logs = db.fetchall()
             alerts = db.execute(
                 "SELECT * FROM monitoring_alerts WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            alerts = db.fetchall()
 
             # Try to get training certificates
             training = []
@@ -82,7 +94,8 @@ class AuditPackService:
                 training = db.execute(
                     "SELECT * FROM training_certificates WHERE candidate_id=%s",
                     (candidate_id,),
-                ).fetchall()
+                )
+                training = db.fetchall()
             except Exception:
                 pass
 
@@ -477,7 +490,8 @@ class AuditPackService:
     def generate_agency_audit(agency_id: str) -> bytes:
         """Generate an agency-wide audit summary PDF."""
         with get_db() as db:
-            agency = db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+            db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+            agency = db.fetchone()
             if not agency:
                 raise ValueError("Agency not found")
             a = dict(agency)
@@ -487,7 +501,8 @@ class AuditPackService:
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
                    WHERE ac.agency_id=%s""",
                 (agency_id,),
-            ).fetchall()
+            )
+            candidates = db.fetchall()
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4,

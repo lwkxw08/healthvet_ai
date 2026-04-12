@@ -302,14 +302,16 @@ async def submit_imposter_declaration(
 
     with get_db() as db:
         # Look up agency email from the database
-        agency_row = db.execute("SELECT email FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT email FROM agencies WHERE id=%s", (agency_id,))
+        agency_row = db.fetchone()
         agency_email = dict(agency_row)["email"] if agency_row else "unknown"
 
         # Check if declaration already exists (non-editable - only one allowed)
         existing = db.execute(
             "SELECT id FROM imposter_declarations WHERE candidate_id=%s AND agency_id=%s",
             (data.candidate_id, agency_id),
-        ).fetchone()
+        )
+        existing = db.fetchone()
         if existing:
             raise HTTPException(
                 status_code=409,
@@ -347,7 +349,8 @@ async def submit_imposter_declaration(
             ),
         )
 
-        row = db.execute("SELECT * FROM imposter_declarations WHERE id=%s", (declaration_id,)).fetchone()
+        db.execute("SELECT * FROM imposter_declarations WHERE id=%s", (declaration_id,))
+        row = db.fetchone()
 
     # Re-evaluate compliance now that declaration is in place
     ComplianceEngine.evaluate_candidate(data.candidate_id)
@@ -362,5 +365,6 @@ async def get_imposter_declarations(candidate_id: str, current_user: dict = Depe
         rows = db.execute(
             "SELECT * FROM imposter_declarations WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]

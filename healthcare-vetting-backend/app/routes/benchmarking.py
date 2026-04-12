@@ -18,7 +18,8 @@ async def get_agency_benchmarks(current_user: dict = Depends(get_current_user)):
     require_admin(current_user)
 
     with get_db() as db:
-        agencies = [dict(r) for r in db.execute("SELECT * FROM agencies").fetchall()]
+        db.execute("SELECT * FROM agencies")
+        agencies = [dict(r) for r in db.fetchall()]
         benchmarks = []
 
         for agency in agencies:
@@ -32,7 +33,8 @@ async def get_agency_benchmarks(current_user: dict = Depends(get_current_user)):
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
                    WHERE ac.agency_id=%s""",
                 (aid,),
-            ).fetchall()
+            )
+            candidates = db.fetchall()
             cands = [dict(r) for r in candidates]
 
             total = len(cands)
@@ -47,7 +49,8 @@ async def get_agency_benchmarks(current_user: dict = Depends(get_current_user)):
                 comp_row = db.execute(
                     "SELECT last_evaluated FROM compliance_records WHERE candidate_id=%s AND overall_status='compliant' ORDER BY last_evaluated DESC LIMIT 1",
                     (c["id"],),
-                ).fetchone()
+                )
+                comp_row = db.fetchone()
                 if comp_row and c.get("created_at"):
                     try:
                         created = datetime.fromisoformat(c["created_at"])
@@ -64,14 +67,16 @@ async def get_agency_benchmarks(current_user: dict = Depends(get_current_user)):
             inv_row = db.execute(
                 "SELECT COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)),0) as rev, COALESCE(SUM(cost_amount),0) as cost, COUNT(*) as cnt FROM invoices WHERE agency_id=%s",
                 (aid,),
-            ).fetchone()
+            )
+            inv_row = db.fetchone()
             inv = dict(inv_row) if inv_row else {"rev": 0, "cost": 0, "cnt": 0}
 
             # Subscription info
             sub_row = db.execute(
                 "SELECT tier, status FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (aid,),
-            ).fetchone()
+            )
+            sub_row = db.fetchone()
             sub = dict(sub_row) if sub_row else None
 
             # CQC ready count
@@ -80,7 +85,8 @@ async def get_agency_benchmarks(current_user: dict = Depends(get_current_user)):
                    JOIN agency_candidates ac ON cr.candidate_id = ac.candidate_id
                    WHERE ac.agency_id=%s AND cr.cqc_ready=1""",
                 (aid,),
-            ).fetchone()
+            )
+            cqc_ready = db.fetchone()
             cqc_count = dict(cqc_ready)["cnt"] if cqc_ready else 0
 
             # Shift readiness breakdown
@@ -91,7 +97,8 @@ async def get_agency_benchmarks(current_user: dict = Depends(get_current_user)):
                 cr = db.execute(
                     "SELECT score, cqc_ready, identity_verified, right_to_work_valid, dbs_valid, registration_active, references_verified, training_compliant FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
                     (c["id"],),
-                ).fetchone()
+                )
+                cr = db.fetchone()
                 if cr:
                     crd = dict(cr)
                     required_keys = ["identity_verified", "right_to_work_valid", "dbs_valid",
@@ -159,30 +166,33 @@ async def get_benchmarking_trends(current_user: dict = Depends(get_current_user)
     with get_db() as db:
         # Monthly candidate registrations
         monthly_registrations = db.execute(
-            """SELECT strftime('%Y-%m', created_at) as month, COUNT(*) AS cnt as count
+            """SELECT TO_CHAR(created_at::timestamp, 'YYYY-MM') as month, COUNT(*) AS cnt
                FROM candidates
                GROUP BY month ORDER BY month"""
-        ).fetchall()
+        )
+        monthly_registrations = db.fetchall()
 
         # Monthly invoice revenue
         monthly_revenue = db.execute(
-            """SELECT strftime('%Y-%m', created_at) as month,
+            """SELECT TO_CHAR(created_at::timestamp, 'YYYY-MM') as month,
                       COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)), 0) as revenue,
                       COALESCE(SUM(cost_amount), 0) as cost,
-                      COUNT(*) AS cnt as invoice_count
+                      COUNT(*) AS cnt
                FROM invoices
                GROUP BY month ORDER BY month"""
-        ).fetchall()
+        )
+        monthly_revenue = db.fetchall()
 
         # Monthly compliance completions
         monthly_compliance = db.execute(
-            """SELECT strftime('%Y-%m', last_evaluated) as month,
-                      COUNT(*) AS cnt as total,
+            """SELECT TO_CHAR(last_evaluated::timestamp, 'YYYY-MM') as month,
+                      COUNT(*) AS cnt,
                       SUM(CASE WHEN overall_status='compliant' THEN 1 ELSE 0 END) as compliant,
                       SUM(CASE WHEN cqc_ready=1 THEN 1 ELSE 0 END) as cqc_ready
                FROM compliance_records
                GROUP BY month ORDER BY month"""
-        ).fetchall()
+        )
+        monthly_compliance = db.fetchall()
 
         return {
             "monthly_registrations": [dict(r) for r in monthly_registrations],

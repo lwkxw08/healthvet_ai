@@ -310,14 +310,17 @@ def get_reference_analyses(candidate_id: Optional[str] = None, reference_id: Opt
                 rows = db.execute(
                     "SELECT * FROM ai_reference_analyses WHERE reference_id=%s ORDER BY created_at DESC",
                     (reference_id,),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             elif candidate_id:
                 rows = db.execute(
                     "SELECT * FROM ai_reference_analyses WHERE candidate_id=%s ORDER BY created_at DESC",
                     (candidate_id,),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             else:
-                rows = db.execute("SELECT * FROM ai_reference_analyses ORDER BY created_at DESC LIMIT 50").fetchall()
+                db.execute("SELECT * FROM ai_reference_analyses ORDER BY created_at DESC LIMIT 50")
+                rows = db.fetchall()
             results = []
             for r in rows:
                 d = dict(r)

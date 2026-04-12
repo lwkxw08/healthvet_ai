@@ -44,7 +44,8 @@ async def onfido_webhook(request: Request):
             )
 
             # Get candidate_id and re-evaluate compliance
-            check = db.execute("SELECT candidate_id FROM identity_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT candidate_id FROM identity_checks WHERE id=%s", (check_id,))
+            check = db.fetchone()
             if check:
                 ComplianceEngine.evaluate_candidate(dict(check)["candidate_id"])
 
@@ -90,7 +91,8 @@ async def dbs_provider_webhook(request: Request):
             check = db.execute(
                 "SELECT candidate_id FROM dbs_checks WHERE application_ref=%s",
                 (application_ref,),
-            ).fetchone()
+            )
+            check = db.fetchone()
             if check:
                 ComplianceEngine.evaluate_candidate(dict(check)["candidate_id"])
 
@@ -192,7 +194,8 @@ async def stripe_webhook(request: Request):
                 # Check if this invoice is for a credit_pack purchase
                 inv_row = db.execute(
                     "SELECT check_type, description FROM invoices WHERE id=%s", (invoice_id,)
-                ).fetchone()
+                )
+                inv_row = db.fetchone()
                 if inv_row and dict(inv_row).get("check_type") == "credit_pack":
                     # Invoice is a credit pack — look up agency's pending subscription
                     pending_sub = db.execute(
@@ -200,12 +203,14 @@ async def stripe_webhook(request: Request):
                            WHERE agency_id=%s AND status='active'
                            ORDER BY created_at DESC LIMIT 1""",
                         (agency_id,),
-                    ).fetchone()
+                    )
+                    pending_sub = db.fetchone()
                     if not pending_sub:
                         # No active sub yet — try to find the tier from available tiers
                         tier_row = db.execute(
                             "SELECT tier_key FROM subscription_tier_config WHERE is_active=1 ORDER BY monthly_price ASC LIMIT 1"
-                        ).fetchone()
+                        )
+                        tier_row = db.fetchone()
                         if tier_row:
                             try:
                                 BillingService.create_subscription(
@@ -254,5 +259,6 @@ async def list_webhook_events(limit: int = 50):
         rows = db.execute(
             "SELECT * FROM webhook_events ORDER BY created_at DESC LIMIT %s",
             (limit,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]

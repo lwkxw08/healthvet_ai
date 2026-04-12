@@ -84,7 +84,8 @@ async def request_data_export(
 
     with get_db() as db:
         # Personal data
-        candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        candidate = db.fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
         c = dict(candidate)
@@ -95,62 +96,72 @@ async def request_data_export(
         consents = db.execute(
             "SELECT * FROM consent_logs WHERE candidate_id=%s ORDER BY timestamp DESC",
             (candidate_id,),
-        ).fetchall()
+        )
+        consents = db.fetchall()
         export["sections"]["consent_history"] = [dict(r) for r in consents]
 
         # Identity checks
         identity = db.execute(
             "SELECT * FROM identity_checks WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        identity = db.fetchall()
         export["sections"]["identity_checks"] = [dict(r) for r in identity]
 
         # Right to work
         rtw = db.execute(
             "SELECT * FROM right_to_work_checks WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        rtw = db.fetchall()
         export["sections"]["right_to_work_checks"] = [dict(r) for r in rtw]
 
         # DBS checks
         dbs = db.execute(
             "SELECT * FROM dbs_checks WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        dbs = db.fetchall()
         export["sections"]["dbs_checks"] = [dict(r) for r in dbs]
 
         # CV analyses
         cv = db.execute(
             "SELECT * FROM cv_analyses WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        cv = db.fetchall()
         export["sections"]["cv_analyses"] = [dict(r) for r in cv]
 
         # Registration checks
         reg = db.execute(
             "SELECT * FROM registration_checks WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        reg = db.fetchall()
         export["sections"]["registration_checks"] = [dict(r) for r in reg]
 
         # References
         refs = db.execute(
             "SELECT * FROM references_ WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        refs = db.fetchall()
         export["sections"]["references"] = [dict(r) for r in refs]
 
         # Employment history
         emp = db.execute(
             "SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        emp = db.fetchall()
         export["sections"]["employment_history"] = [dict(r) for r in emp]
 
         # Employment verifications
         emp_v = db.execute(
             "SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        emp_v = db.fetchall()
         export["sections"]["employment_verifications"] = [dict(r) for r in emp_v]
 
         # Training certificates
         try:
             training = db.execute(
                 "SELECT * FROM training_certificates WHERE candidate_id=%s", (candidate_id,),
-            ).fetchall()
+            )
+            training = db.fetchall()
             export["sections"]["training_certificates"] = [dict(r) for r in training]
         except Exception:
             export["sections"]["training_certificates"] = []
@@ -158,25 +169,29 @@ async def request_data_export(
         # Compliance records
         comp = db.execute(
             "SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        comp = db.fetchall()
         export["sections"]["compliance_records"] = [dict(r) for r in comp]
 
         # Submissions
         subs = db.execute(
             "SELECT * FROM candidate_submissions WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        subs = db.fetchall()
         export["sections"]["submissions"] = [dict(r) for r in subs]
 
         # Imposter declarations
         imp = db.execute(
             "SELECT * FROM imposter_declarations WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        imp = db.fetchall()
         export["sections"]["imposter_declarations"] = [dict(r) for r in imp]
 
         # Monitoring alerts
         alerts = db.execute(
             "SELECT * FROM monitoring_alerts WHERE candidate_id=%s", (candidate_id,),
-        ).fetchall()
+        )
+        alerts = db.fetchall()
         export["sections"]["monitoring_alerts"] = [dict(r) for r in alerts]
 
         # Audit log for this export
@@ -216,7 +231,8 @@ async def request_erasure(
     erasure_id = generate_id()
 
     with get_db() as db:
-        candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        candidate = db.fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -360,7 +376,8 @@ async def get_consent_history(
         rows = db.execute(
             "SELECT * FROM consent_logs WHERE candidate_id=%s ORDER BY timestamp DESC",
             (candidate_id,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -380,7 +397,8 @@ async def withdraw_consent(
         existing = db.execute(
             "SELECT * FROM consent_logs WHERE id=%s AND candidate_id=%s",
             (consent_id, candidate_id),
-        ).fetchone()
+        )
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Consent record not found")
 
@@ -423,7 +441,8 @@ async def get_consent_summary(
                    WHERE candidate_id=%s AND consent_type=%s
                    ORDER BY timestamp DESC LIMIT 1""",
                 (candidate_id, consent_type),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if row:
                 r = dict(row)
                 summary[consent_type] = {
@@ -470,7 +489,8 @@ async def verify_consent(
                WHERE candidate_id=%s AND consent_type=%s
                ORDER BY timestamp DESC LIMIT 1""",
             (candidate_id, consent_type),
-        ).fetchone()
+        )
+        row = db.fetchone()
 
         if not row:
             return {
@@ -497,7 +517,8 @@ async def list_dpias(current_user: dict = Depends(get_current_admin)):
     with get_db() as db:
         rows = db.execute(
             "SELECT * FROM gdpr_dpias ORDER BY created_at DESC",
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -534,7 +555,8 @@ async def update_dpia(
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        existing = db.execute("SELECT id FROM gdpr_dpias WHERE id=%s", (dpia_id,)).fetchone()
+        db.execute("SELECT id FROM gdpr_dpias WHERE id=%s", (dpia_id,))
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="DPIA not found")
 
@@ -558,7 +580,8 @@ async def list_retention_policies(current_user: dict = Depends(get_current_admin
     with get_db() as db:
         rows = db.execute(
             "SELECT * FROM gdpr_retention_policies ORDER BY data_category",
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -575,7 +598,8 @@ async def create_retention_policy(
         existing = db.execute(
             "SELECT id FROM gdpr_retention_policies WHERE data_category=%s",
             (data.data_category,),
-        ).fetchone()
+        )
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="Retention policy for this category already exists")
 
@@ -601,7 +625,8 @@ async def update_retention_policy(
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        existing = db.execute("SELECT id FROM gdpr_retention_policies WHERE id=%s", (policy_id,)).fetchone()
+        db.execute("SELECT id FROM gdpr_retention_policies WHERE id=%s", (policy_id,))
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Retention policy not found")
 
@@ -624,7 +649,8 @@ async def delete_retention_policy(
 ):
     """Delete a retention policy."""
     with get_db() as db:
-        existing = db.execute("SELECT id FROM gdpr_retention_policies WHERE id=%s", (policy_id,)).fetchone()
+        db.execute("SELECT id FROM gdpr_retention_policies WHERE id=%s", (policy_id,))
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Retention policy not found")
         db.execute("DELETE FROM gdpr_retention_policies WHERE id=%s", (policy_id,))
@@ -639,7 +665,8 @@ async def list_erasure_requests(current_user: dict = Depends(get_current_admin))
     with get_db() as db:
         rows = db.execute(
             "SELECT * FROM gdpr_erasure_requests ORDER BY created_at DESC",
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -697,7 +724,8 @@ async def download_data_export(
         raise HTTPException(status_code=403, detail="Agencies cannot export candidate data directly")
 
     with get_db() as db:
-        candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        candidate = db.fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
         c = dict(candidate)
@@ -715,7 +743,8 @@ async def download_data_export(
 
         # Helper to write a section
         def _write_section(title: str, query: str, params: tuple) -> None:
-            rows = db.execute(query, params).fetchall()
+            db.execute(query, params)
+            rows = db.fetchall()
             writer.writerow([f"== {title} =="])
             if rows:
                 headers = list(dict(rows[0]).keys())
@@ -782,14 +811,16 @@ async def data_portability_package(
     zip_buffer = io.BytesIO()
 
     with get_db() as db:
-        candidate = db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        candidate = db.fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
         c = dict(candidate)
         c.pop("password_hash", None)
 
         def _fetch_section(query: str, params: tuple) -> list[dict]:
-            rows = db.execute(query, params).fetchall()
+            db.execute(query, params)
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
         sections = {

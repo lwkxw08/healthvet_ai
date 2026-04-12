@@ -36,7 +36,8 @@ class MonitoringService:
                    JOIN candidates c ON d.candidate_id = c.id
                    WHERE d.update_service_registered = 1
                    AND d.certificate_number IS NOT NULL""",
-            ).fetchall()
+            )
+            checks = db.fetchall()
 
             for check in checks:
                 check_dict = dict(check)
@@ -75,7 +76,8 @@ class MonitoringService:
                 """SELECT r.*, c.first_name, c.last_name FROM right_to_work_checks r
                    JOIN candidates c ON r.candidate_id = c.id
                    WHERE r.visa_expiry IS NOT NULL AND r.verified = 1""",
-            ).fetchall()
+            )
+            checks = db.fetchall()
 
             for check in checks:
                 check_dict = dict(check)
@@ -102,7 +104,8 @@ class MonitoringService:
                        WHERE candidate_id=%s AND alert_type='visa_expiry'
                        AND is_resolved=0""",
                     (check_dict["candidate_id"],),
-                ).fetchone()
+                )
+                existing = db.fetchone()
 
                 if not existing:
                     alert_id = generate_id()
@@ -140,7 +143,8 @@ class MonitoringService:
                 """SELECT r.*, c.first_name, c.last_name FROM registration_checks r
                    JOIN candidates c ON r.candidate_id = c.id
                    WHERE r.next_check IS NOT NULL AND r.is_active = 1""",
-            ).fetchall()
+            )
+            checks = db.fetchall()
 
             for check in checks:
                 check_dict = dict(check)
@@ -185,7 +189,8 @@ class MonitoringService:
                 """SELECT r.*, c.first_name, c.last_name FROM registration_checks r
                    JOIN candidates c ON r.candidate_id = c.id
                    WHERE r.is_active = 1""",
-            ).fetchall()
+            )
+            checks = db.fetchall()
 
             for check in checks:
                 check_dict = dict(check)
@@ -232,7 +237,8 @@ class MonitoringService:
                 query += " WHERE " + " AND ".join(conditions)
 
             query += " ORDER BY created_at DESC"
-            rows = db.execute(query, params).fetchall()
+            db.execute(query, params)
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -246,7 +252,8 @@ class MonitoringService:
             if unresolved_only:
                 query += " AND is_resolved=0"
             query += " ORDER BY created_at DESC"
-            rows = db.execute(query, candidate_ids).fetchall()
+            db.execute(query, candidate_ids)
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -257,7 +264,8 @@ class MonitoringService:
                 "UPDATE monitoring_alerts SET is_resolved=1, resolved_at=%s WHERE id=%s",
                 (now, alert_id),
             )
-            row = db.execute("SELECT * FROM monitoring_alerts WHERE id=%s", (alert_id,)).fetchone()
+            db.execute("SELECT * FROM monitoring_alerts WHERE id=%s", (alert_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -271,9 +279,11 @@ class MonitoringService:
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
                        WHERE ac.agency_id=%s""",
                     (agency_id,),
-                ).fetchall()
+                )
+                candidates = db.fetchall()
             else:
-                candidates = db.execute("SELECT * FROM candidates").fetchall()
+                db.execute("SELECT * FROM candidates")
+                candidates = db.fetchall()
 
             total = len(candidates)
             compliant = sum(1 for c in candidates if dict(c)["compliance_status"] == "compliant")
@@ -282,7 +292,8 @@ class MonitoringService:
 
             alerts = db.execute(
                 "SELECT COUNT(*) as cnt FROM monitoring_alerts WHERE is_resolved=0",
-            ).fetchone()
+            )
+            alerts = db.fetchone()
 
             checks_in_progress = db.execute(
                 """SELECT COUNT(*) as cnt FROM (
@@ -292,7 +303,8 @@ class MonitoringService:
                     UNION ALL
                     SELECT candidate_id FROM right_to_work_checks WHERE status='processing'
                 )""",
-            ).fetchone()
+            )
+            checks_in_progress = db.fetchone()
 
             return {
                 "total_candidates": total,

@@ -299,7 +299,8 @@ def store_document_record(
 def get_document(doc_id: str) -> dict | None:
     _ensure_table()
     with get_db() as db:
-        row = db.execute("SELECT * FROM documents WHERE id=%s", (doc_id,)).fetchone()
+        db.execute("SELECT * FROM documents WHERE id=%s", (doc_id,))
+        row = db.fetchone()
         return dict(row) if row else None
 
 
@@ -319,7 +320,8 @@ def list_documents(owner_id: str | None = None, candidate_id: str | None = None,
         if category:
             clauses.append("category=%s"); params.append(category)
         where = " AND ".join(clauses) if clauses else "1=1"
-        rows = db.execute(f"SELECT * FROM documents WHERE {where} ORDER BY created_at DESC LIMIT %s", (*params, limit)).fetchall()
+        db.execute(f"SELECT * FROM documents WHERE {where} ORDER BY created_at DESC LIMIT %s", (*params, limit))
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -353,7 +355,8 @@ def enforce_retention_policy() -> int:
     with get_db() as db:
         expired = db.execute(
             "SELECT id, storage_key, thumbnail_key FROM documents WHERE retention_expires_at < %s", (now,)
-        ).fetchall()
+        )
+        expired = db.fetchall()
         count = 0
         for row in expired:
             try:

@@ -88,7 +88,8 @@ class JobProcessingService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM background_jobs WHERE id=%s", (job_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return None
             r = dict(row)
@@ -129,7 +130,8 @@ class JobProcessingService:
                     FROM background_jobs {where}
                     ORDER BY created_at DESC LIMIT %s OFFSET %s""",
                 tuple(params) + (limit, offset),
-            ).fetchall()
+            )
+            rows = db.fetchall()
 
             # Stats
             stats = {}
@@ -157,7 +159,8 @@ class JobProcessingService:
                    WHERE status=%s
                    ORDER BY completed_at DESC LIMIT %s""",
                 (STATUS_DEAD, limit),
-            ).fetchall()
+            )
+            rows = db.fetchall()
 
             items = []
             for row in rows:
@@ -179,7 +182,8 @@ class JobProcessingService:
             row = db.execute(
                 "SELECT * FROM background_jobs WHERE id=%s AND status=%s",
                 (job_id, STATUS_DEAD),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return {"status": "not_found"}
 
@@ -210,7 +214,8 @@ class JobProcessingService:
             row = db.execute(
                 "SELECT status, celery_task_id FROM background_jobs WHERE id=%s",
                 (job_id,),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return {"status": "not_found"}
 
@@ -359,7 +364,8 @@ def _handle_job_failure(job_id: str, task_name: str, args: tuple,
         row = db.execute(
             "SELECT attempt, max_retries FROM background_jobs WHERE id=%s",
             (job_id,),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             return
 

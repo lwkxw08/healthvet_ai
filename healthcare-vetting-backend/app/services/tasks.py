@@ -79,7 +79,8 @@ def deliver_webhook(subscription_id: str, event_type: str, payload: dict) -> dic
         sub = db.execute(
             "SELECT * FROM webhook_subscriptions WHERE id=%s AND is_active=1",
             (subscription_id,),
-        ).fetchone()
+        )
+        sub = db.fetchone()
         if not sub:
             return {"delivery_id": delivery_id, "status": "subscription_inactive"}
 
@@ -147,7 +148,8 @@ def deliver_webhook(subscription_id: str, event_type: str, payload: dict) -> dic
             failure_count = db.execute(
                 "SELECT failure_count FROM webhook_subscriptions WHERE id=%s",
                 (subscription_id,),
-            ).fetchone()
+            )
+            failure_count = db.fetchone()
             if failure_count and dict(failure_count)["failure_count"] >= 10:
                 db.execute(
                     "UPDATE webhook_subscriptions SET is_active=0 WHERE id=%s",
@@ -170,7 +172,8 @@ def apply_retention_policies() -> dict:
     with get_db() as db:
         policies = db.execute(
             "SELECT * FROM gdpr_retention_policies WHERE auto_delete=1",
-        ).fetchall()
+        )
+        policies = db.fetchall()
 
         for policy in policies:
             p = dict(policy)

@@ -50,7 +50,8 @@ class AnalyticsReportingService:
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
                    WHERE ac.agency_id=%s""",
                 (agency_id,),
-            ).fetchone()
+            )
+            avg_score_row = db.fetchone()
             avg_score = round(list(avg_score_row.values())[0] or 0, 1)
 
             # Active alerts
@@ -115,7 +116,8 @@ class AnalyticsReportingService:
                             FROM {table} t
                             {agency_filter} t.{end_col} IS NOT NULL AND t.{start_col} IS NOT NULL""",
                         tuple(params),
-                    ).fetchone()
+                    )
+                    row = db.fetchone()
                     if row:
                         results[check_type] = {
                             "avg_days": round(row["avg_days"] or 0, 1),
@@ -135,7 +137,8 @@ class AnalyticsReportingService:
                                COUNT(*) AS total
                         FROM employment_verifications
                         WHERE completed_at IS NOT NULL AND sent_at IS NOT NULL""",
-                ).fetchone()
+                )
+                row = db.fetchone()
                 if row:
                     results["employment_verification"] = {
                         "avg_days": round(row["avg_days"] or 0, 1),
@@ -155,7 +158,8 @@ class AnalyticsReportingService:
                               COUNT(*) AS total
                        FROM references_
                        WHERE completed_at IS NOT NULL AND created_at IS NOT NULL""",
-                ).fetchone()
+                )
+                row = db.fetchone()
                 if row:
                     results["references"] = {
                         "avg_days": round(row["avg_days"] or 0, 1),
@@ -176,10 +180,14 @@ class AnalyticsReportingService:
 
             # Employment verifications
             try:
-                total_ev = db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE sent_at IS NOT NULL").fetchone()["cnt"]
-                completed_ev = db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status IN ('verified', 'completed')").fetchone()["cnt"]
-                disputed_ev = db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status='disputed'").fetchone()["cnt"]
-                pending_ev = db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status='sent'").fetchone()["cnt"]
+                db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE sent_at IS NOT NULL")
+                total_ev = db.fetchone()
+                db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status IN ('verified', 'completed')")
+                completed_ev = db.fetchone()
+                db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status='disputed'")
+                disputed_ev = db.fetchone()
+                db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status='sent'")
+                pending_ev = db.fetchone()
                 rates["employment_verification"] = {
                     "total_sent": total_ev,
                     "completed": completed_ev,
@@ -192,9 +200,12 @@ class AnalyticsReportingService:
 
             # References
             try:
-                total_ref = db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE created_at IS NOT NULL").fetchone()["cnt"]
-                completed_ref = db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE status='completed'").fetchone()["cnt"]
-                pending_ref = db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE status IN ('sent', 'pending')").fetchone()["cnt"]
+                db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE created_at IS NOT NULL")
+                total_ref = db.fetchone()
+                db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE status='completed'")
+                completed_ref = db.fetchone()
+                db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE status IN ('sent', 'pending')")
+                pending_ref = db.fetchone()
                 rates["references"] = {
                     "total_sent": total_ref,
                     "completed": completed_ref,
@@ -225,7 +236,8 @@ class AnalyticsReportingService:
                        WHERE r.visa_expiry IS NOT NULL AND r.visa_expiry BETWEEN %s AND %s
                        ORDER BY r.visa_expiry ASC""",
                     (now_iso, cutoff),
-                ).fetchall()
+                )
+                rows = db.fetchall()
                 forecasts["visa"] = [{"candidate_id": r["candidate_id"], "name": f'{r["first_name"]} {r["last_name"]}', "expiry": r["visa_expiry"]} for r in rows]
             except Exception:
                 pass
@@ -239,7 +251,8 @@ class AnalyticsReportingService:
                        WHERE d.next_renewal IS NOT NULL AND d.next_renewal BETWEEN %s AND %s
                        ORDER BY d.next_renewal ASC""",
                     (now_iso, cutoff),
-                ).fetchall()
+                )
+                rows = db.fetchall()
                 forecasts["dbs"] = [{"candidate_id": r["candidate_id"], "name": f'{r["first_name"]} {r["last_name"]}', "expiry": r["next_renewal"]} for r in rows]
             except Exception:
                 pass
@@ -253,7 +266,8 @@ class AnalyticsReportingService:
                        WHERE r.next_check IS NOT NULL AND r.next_check BETWEEN %s AND %s AND r.is_active=1
                        ORDER BY r.next_check ASC""",
                     (now_iso, cutoff),
-                ).fetchall()
+                )
+                rows = db.fetchall()
                 forecasts["registration"] = [{"candidate_id": r["candidate_id"], "name": f'{r["first_name"]} {r["last_name"]}', "expiry": r["next_check"], "body": r["body"]} for r in rows]
             except Exception:
                 pass
@@ -267,7 +281,8 @@ class AnalyticsReportingService:
                        WHERE t.expiry_date IS NOT NULL AND t.expiry_date BETWEEN %s AND %s AND t.status='valid'
                        ORDER BY t.expiry_date ASC""",
                     (now_iso, cutoff),
-                ).fetchall()
+                )
+                rows = db.fetchall()
                 forecasts["training"] = [{"candidate_id": r["candidate_id"], "name": f'{r["first_name"]} {r["last_name"]}', "expiry": r["expiry_date"], "certificate": r["certificate_name"]} for r in rows]
             except Exception:
                 pass
@@ -300,7 +315,8 @@ class AnalyticsReportingService:
                        WHERE ac.agency_id=%s
                        ORDER BY c.last_name""",
                     (agency_id,),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             else:
                 rows = db.execute(
                     """SELECT c.id, c.first_name, c.last_name, c.email, c.profession,
@@ -308,7 +324,8 @@ class AnalyticsReportingService:
                        FROM candidates c
                        LEFT JOIN compliance_records cr ON c.id = cr.candidate_id
                        ORDER BY c.last_name""",
-                ).fetchall()
+                )
+                rows = db.fetchall()
 
             for row in rows:
                 r = dict(row)

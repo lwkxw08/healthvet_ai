@@ -35,7 +35,8 @@ def record_login_attempt(email: str, user_type: str, ip_address: str, success: b
         else:
             db.execute(f"UPDATE {table} SET failed_login_attempts = COALESCE(failed_login_attempts,0)+1 WHERE email=%s", (email,))
             # Check if we should lock the account
-            row = db.execute(f"SELECT failed_login_attempts FROM {table} WHERE email=%s", (email,)).fetchone()
+            db.execute(f"SELECT failed_login_attempts FROM {table} WHERE email=%s", (email,))
+            row = db.fetchone()
             if row and row["failed_login_attempts"] >= MAX_FAILED_ATTEMPTS:
                 lock_until = (datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_DURATION_MINUTES)).isoformat()
                 db.execute(f"UPDATE {table} SET locked_until=%s WHERE email=%s", (lock_until, email))
@@ -47,7 +48,8 @@ def is_account_locked(email: str, user_type: str) -> bool:
     if not table:
         return False
     with get_db() as db:
-        row = db.execute(f"SELECT locked_until FROM {table} WHERE email=%s", (email,)).fetchone()
+        db.execute(f"SELECT locked_until FROM {table} WHERE email=%s", (email,))
+        row = db.fetchone()
         if not row or not row["locked_until"]:
             return False
         locked_until = datetime.fromisoformat(row["locked_until"]).replace(tzinfo=timezone.utc)
@@ -87,7 +89,8 @@ def validate_password_reset_token(raw_token: str) -> dict | None:
         row = db.execute(
             "SELECT * FROM password_reset_tokens WHERE token_hash=%s AND used_at IS NULL AND expires_at>%s",
             (token_hash, now),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             return None
         return {"user_id": row["user_id"], "user_type": row["user_type"], "token_id": row["id"]}
@@ -114,7 +117,8 @@ def blacklist_token(token_jti: str, user_id: str, expires_at: str) -> None:
 def is_token_blacklisted(token_jti: str) -> bool:
     """Check if a token has been revoked."""
     with get_db() as db:
-        row = db.execute("SELECT 1 FROM token_blacklist WHERE token_jti=%s", (token_jti,)).fetchone()
+        db.execute("SELECT 1 FROM token_blacklist WHERE token_jti=%s", (token_jti,))
+        row = db.fetchone()
         return row is not None
 
 

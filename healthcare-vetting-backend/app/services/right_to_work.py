@@ -109,7 +109,8 @@ class RightToWorkService:
                 (generate_id(), check_id, json.dumps(result), now),
             )
 
-            row = db.execute("SELECT * FROM right_to_work_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM right_to_work_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -184,7 +185,8 @@ class RightToWorkService:
                 (generate_id(), check_id, json.dumps(result), now),
             )
 
-            row = db.execute("SELECT * FROM right_to_work_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM right_to_work_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -269,7 +271,8 @@ class RightToWorkService:
     @staticmethod
     def get_check(check_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM right_to_work_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM right_to_work_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -280,5 +283,6 @@ class RightToWorkService:
             rows = db.execute(
                 "SELECT * FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]

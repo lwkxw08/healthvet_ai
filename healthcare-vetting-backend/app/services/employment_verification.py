@@ -27,7 +27,8 @@ class EmploymentVerificationService:
             rows = db.execute(
                 "SELECT * FROM employment_history WHERE candidate_id=%s ORDER BY start_date DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -35,7 +36,8 @@ class EmploymentVerificationService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row) if row else None
 
     @staticmethod
@@ -55,7 +57,8 @@ class EmploymentVerificationService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return None
 
@@ -91,7 +94,8 @@ class EmploymentVerificationService:
 
             row = db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -129,7 +133,8 @@ class EmploymentVerificationService:
 
             row = db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -137,7 +142,8 @@ class EmploymentVerificationService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return False
             db.execute("DELETE FROM employment_history WHERE id=%s", (entry_id,))
@@ -168,7 +174,8 @@ class EmploymentVerificationService:
             # Get employment entry for context
             emp = db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (employment_id,)
-            ).fetchone()
+            )
+            emp = db.fetchone()
             employer_name = dict(emp)["employer_name"] if emp else None
 
             # Domain verification
@@ -224,7 +231,8 @@ class EmploymentVerificationService:
 
             row = db.execute(
                 "SELECT * FROM employment_verifications WHERE id=%s", (ver_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
 
         # Send the actual verification request email
         try:
@@ -324,7 +332,8 @@ class EmploymentVerificationService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM employment_verifications WHERE id=%s", (verification_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return None
 
@@ -396,23 +405,27 @@ class EmploymentVerificationService:
         with get_db() as db:
             cand = db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
-            ).fetchone()
+            )
+            cand = db.fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
             emp = db.execute(
                 "SELECT employer_name, job_title, start_date, end_date FROM employment_history WHERE id=%s",
                 (employment_id,)
-            ).fetchone()
+            )
+            emp = db.fetchone()
             emp_data = dict(emp) if emp else {}
 
             agency_link = db.execute(
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
-            ).fetchone()
+            )
+            agency_link = db.fetchone()
             agency_name = "HealthVet AI"
             if agency_link:
                 agency = db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
-                ).fetchone()
+                )
+                agency = db.fetchone()
                 if agency:
                     agency_name = dict(agency)["name"]
 
@@ -456,17 +469,20 @@ class EmploymentVerificationService:
         with get_db() as db:
             cand = db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
-            ).fetchone()
+            )
+            cand = db.fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
             agency_link = db.execute(
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
-            ).fetchone()
+            )
+            agency_link = db.fetchone()
             agency_name = "HealthVet AI"
             if agency_link:
                 agency = db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
-                ).fetchone()
+                )
+                agency = db.fetchone()
                 if agency:
                     agency_name = dict(agency)["name"]
 
@@ -499,7 +515,8 @@ class EmploymentVerificationService:
             rows = db.execute(
                 "SELECT * FROM employment_verifications WHERE candidate_id=%s ORDER BY sent_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -508,7 +525,8 @@ class EmploymentVerificationService:
             rows = db.execute(
                 "SELECT * FROM employment_verifications WHERE employment_id=%s ORDER BY sent_at DESC",
                 (employment_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod

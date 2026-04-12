@@ -279,7 +279,8 @@ def get_cv_analyses(candidate_id: str) -> list[dict]:
             rows = db.execute(
                 "SELECT * FROM ai_cv_gap_analyses WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             results = []
             for r in rows:
                 d = dict(r)

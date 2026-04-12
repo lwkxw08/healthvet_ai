@@ -73,7 +73,8 @@ async def bulk_import_candidates(data: BulkImportRequest, current_user: dict = D
                 continue
 
             # Check if candidate already exists
-            existing = db.execute("SELECT id FROM candidates WHERE email=%s", (email,)).fetchone()
+            db.execute("SELECT id FROM candidates WHERE email=%s", (email,))
+            existing = db.fetchone()
 
             if existing:
                 candidate_id = dict(existing)["id"]
@@ -82,7 +83,8 @@ async def bulk_import_candidates(data: BulkImportRequest, current_user: dict = D
                     linked = db.execute(
                         "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
                         (agency_id, candidate_id),
-                    ).fetchone()
+                    )
+                    linked = db.fetchone()
                     if not linked:
                         db.execute(
                             "INSERT INTO agency_candidates (agency_id, candidate_id, assigned_at) VALUES (%s, %s, %s)",

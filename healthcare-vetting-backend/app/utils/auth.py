@@ -95,7 +95,8 @@ def verify_agency_owns_candidate(current_user: dict, candidate_id: str) -> None:
             row = db.execute(
                 "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
                 (current_user["sub"], candidate_id),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 raise HTTPException(
                     status_code=403,

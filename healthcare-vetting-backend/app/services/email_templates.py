@@ -67,7 +67,8 @@ def get_trust_signal_variables() -> dict:
                 row = db.execute(
                     "SELECT setting_value FROM system_settings WHERE setting_key=%s",
                     (f"trust_{key}",),
-                ).fetchone()
+                )
+                row = db.fetchone()
                 if row and row["setting_value"]:
                     result[key] = row["setting_value"]
     except Exception:
@@ -84,7 +85,8 @@ def get_invoice_settings() -> dict:
                 row = db.execute(
                     "SELECT setting_value FROM system_settings WHERE setting_key=%s",
                     (f"invoice_{key}",),
-                ).fetchone()
+                )
+                row = db.fetchone()
                 if row and row["setting_value"]:
                     result[key] = row["setting_value"]
     except Exception:
@@ -858,7 +860,8 @@ class EmailTemplateService:
                 existing = db.execute(
                     "SELECT id, subject, body_html FROM email_templates WHERE template_key=%s",
                     (tpl["template_key"],),
-                ).fetchone()
+                )
+                existing = db.fetchone()
                 if not existing:
                     db.execute(
                         """INSERT INTO email_templates
@@ -903,7 +906,8 @@ class EmailTemplateService:
         with get_db() as db:
             rows = db.execute(
                 "SELECT * FROM email_templates ORDER BY category, name"
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -911,7 +915,8 @@ class EmailTemplateService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row) if row else None
 
     @staticmethod
@@ -919,7 +924,8 @@ class EmailTemplateService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM email_templates WHERE template_key=%s", (template_key,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row) if row else None
 
     @staticmethod
@@ -936,7 +942,8 @@ class EmailTemplateService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return None
             current = dict(row)
@@ -959,7 +966,8 @@ class EmailTemplateService:
             )
             row = db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -968,7 +976,8 @@ class EmailTemplateService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return None
             current = dict(row)
@@ -997,7 +1006,8 @@ class EmailTemplateService:
             )
             row = db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -1035,7 +1045,8 @@ class EmailTemplateService:
             )
             row = db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -1044,7 +1055,8 @@ class EmailTemplateService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return None  # not found
 
@@ -1305,7 +1317,8 @@ class EmailTemplateService:
                 params.append(template_key)
             query += " ORDER BY created_at DESC LIMIT %s"
             params.append(limit)
-            rows = db.execute(query, params).fetchall()
+            db.execute(query, params)
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -1313,10 +1326,14 @@ class EmailTemplateService:
         """Get email delivery statistics."""
         reload_email_config()  # ensure DB config is loaded
         with get_db() as db:
-            total = db.execute("SELECT COUNT(*) as cnt FROM email_send_log").fetchone()
-            sent = db.execute("SELECT COUNT(*) as cnt FROM email_send_log WHERE status='sent'").fetchone()
-            logged = db.execute("SELECT COUNT(*) as cnt FROM email_send_log WHERE status='logged'").fetchone()
-            failed = db.execute("SELECT COUNT(*) as cnt FROM email_send_log WHERE status='failed'").fetchone()
+            db.execute("SELECT COUNT(*) as cnt FROM email_send_log")
+            total = db.fetchone()
+            db.execute("SELECT COUNT(*) as cnt FROM email_send_log WHERE status='sent'")
+            sent = db.fetchone()
+            db.execute("SELECT COUNT(*) as cnt FROM email_send_log WHERE status='logged'")
+            logged = db.fetchone()
+            db.execute("SELECT COUNT(*) as cnt FROM email_send_log WHERE status='failed'")
+            failed = db.fetchone()
             provider = _detect_provider()
             configured = bool(provider)
             return {

@@ -44,7 +44,8 @@ class FraudDetectionService:
                    WHERE certificate_number IS NOT NULL
                    GROUP BY certificate_number
                    HAVING cnt > 1""",
-            ).fetchall()
+            )
+            dbs_dupes = db.fetchall()
 
             for dupe in dbs_dupes:
                 d = dict(dupe)
@@ -67,7 +68,8 @@ class FraudDetectionService:
                    WHERE registration_number IS NOT NULL
                    GROUP BY registration_number, body
                    HAVING cnt > 1""",
-            ).fetchall()
+            )
+            reg_dupes = db.fetchall()
 
             for dupe in reg_dupes:
                 d = dict(dupe)
@@ -91,7 +93,8 @@ class FraudDetectionService:
                    WHERE ni_number IS NOT NULL AND ni_number != ''
                    GROUP BY ni_number
                    HAVING cnt > 1""",
-            ).fetchall()
+            )
+            ni_dupes = db.fetchall()
 
             for dupe in ni_dupes:
                 d = dict(dupe)
@@ -120,7 +123,8 @@ class FraudDetectionService:
                 """SELECT r.candidate_id, r.referee_email, c.email as candidate_email
                    FROM references_ r
                    JOIN candidates c ON r.candidate_id = c.id""",
-            ).fetchall()
+            )
+            refs = db.fetchall()
 
             # Build a graph: candidate_email -> set of referee_emails
             candidate_to_referees = defaultdict(set)
@@ -158,7 +162,8 @@ class FraudDetectionService:
                 """SELECT ev.candidate_id, ev.verifier_email, c.email as candidate_email
                    FROM employment_verifications ev
                    JOIN candidates c ON ev.candidate_id = c.id""",
-            ).fetchall()
+            )
+            emp_vers = db.fetchall()
 
             emp_to_verifiers = defaultdict(set)
             for ev in emp_vers:
@@ -192,7 +197,8 @@ class FraudDetectionService:
 
         with get_db() as db:
             # Candidates with all checks completed within 5 minutes (too fast)
-            candidates = db.execute("SELECT * FROM candidates").fetchall()
+            db.execute("SELECT * FROM candidates")
+            candidates = db.fetchall()
 
             for cand in candidates:
                 c = dict(cand)
@@ -209,7 +215,8 @@ class FraudDetectionService:
                     row = db.execute(
                         f"SELECT {col} FROM {table} WHERE candidate_id=%s AND {col} IS NOT NULL ORDER BY {col} DESC LIMIT 1",
                         (cid,),
-                    ).fetchone()
+                    )
+                    row = db.fetchone()
                     if row:
                         try:
                             timestamps.append(datetime.fromisoformat(dict(row)[col]))
@@ -236,7 +243,8 @@ class FraudDetectionService:
                    FROM references_
                    GROUP BY referee_email
                    HAVING cnt >= 3""",
-            ).fetchall()
+            )
+            referee_counts = db.fetchall()
 
             for rc in referee_counts:
                 r = dict(rc)
@@ -265,7 +273,8 @@ class FraudDetectionService:
                 """SELECT r.*, c.first_name, c.last_name
                    FROM references_ r
                    JOIN candidates c ON r.candidate_id = c.id""",
-            ).fetchall()
+            )
+            free_refs = db.fetchall()
 
             candidates_with_free = defaultdict(int)
             candidates_total = defaultdict(int)
@@ -302,26 +311,31 @@ class FraudDetectionService:
                     """SELECT * FROM fraud_flags WHERE candidate_id=%s
                        ORDER BY created_at DESC""",
                     (candidate_id,),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             else:
                 rows = db.execute(
                     "SELECT * FROM fraud_flags ORDER BY created_at DESC LIMIT 100",
-                ).fetchall()
+                )
+                rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
     def get_scan_summary() -> dict:
         """Get summary of latest fraud scan results."""
         with get_db() as db:
-            total = db.execute("SELECT COUNT(*) as cnt FROM fraud_flags").fetchone()
+            db.execute("SELECT COUNT(*) as cnt FROM fraud_flags")
+            total = db.fetchone()
             by_type = db.execute(
                 """SELECT flag_type, severity, COUNT(*) as cnt
                    FROM fraud_flags GROUP BY flag_type, severity
                    ORDER BY cnt DESC""",
-            ).fetchall()
+            )
+            by_type = db.fetchall()
             unresolved = db.execute(
                 "SELECT COUNT(*) as cnt FROM fraud_flags WHERE is_resolved=0",
-            ).fetchone()
+            )
+            unresolved = db.fetchone()
             return {
                 "total_flags": dict(total)["cnt"] if total else 0,
                 "unresolved": dict(unresolved)["cnt"] if unresolved else 0,
@@ -341,7 +355,8 @@ def _create_fraud_alert(db, flag: dict, timestamp: str):
         """SELECT id FROM fraud_flags
            WHERE flag_type=%s AND candidate_id=%s AND is_resolved=0""",
         (flag["type"], candidate_id),
-    ).fetchone()
+    )
+    existing = db.fetchone()
 
     if not existing:
         db.execute(

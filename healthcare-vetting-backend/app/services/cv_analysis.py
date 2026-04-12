@@ -116,7 +116,8 @@ class CVAnalysisService:
                 (generate_id(), analysis_id, json.dumps({"fraud_score": fraud_score}), now),
             )
 
-            row = db.execute("SELECT * FROM cv_analyses WHERE id=%s", (analysis_id,)).fetchone()
+            db.execute("SELECT * FROM cv_analyses WHERE id=%s", (analysis_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -378,7 +379,8 @@ class CVAnalysisService:
     @staticmethod
     def get_analysis(analysis_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM cv_analyses WHERE id=%s", (analysis_id,)).fetchone()
+            db.execute("SELECT * FROM cv_analyses WHERE id=%s", (analysis_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -389,5 +391,6 @@ class CVAnalysisService:
             rows = db.execute(
                 "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]

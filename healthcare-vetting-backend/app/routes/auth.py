@@ -43,7 +43,8 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 async def register_candidate(request: Request, data: CandidateRegisterWithInvite):
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        existing = db.execute("SELECT id FROM candidates WHERE email=%s", (data.email,)).fetchone()
+        db.execute("SELECT id FROM candidates WHERE email=%s", (data.email,))
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -53,7 +54,8 @@ async def register_candidate(request: Request, data: CandidateRegisterWithInvite
             invite_row = db.execute(
                 "SELECT * FROM agency_invites WHERE invite_code=%s AND status='pending'",
                 (data.invite_code,),
-            ).fetchone()
+            )
+            invite_row = db.fetchone()
             if not invite_row:
                 raise HTTPException(status_code=400, detail="Invalid or expired invite code")
             invite = dict(invite_row)
@@ -104,7 +106,8 @@ async def login_candidate(request: Request, data: CandidateLogin):
         raise HTTPException(status_code=423, detail="Account temporarily locked due to too many failed attempts. Try again in 15 minutes.")
 
     with get_db() as db:
-        user = db.execute("SELECT * FROM candidates WHERE email=%s", (data.email,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE email=%s", (data.email,))
+        user = db.fetchone()
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -122,7 +125,8 @@ async def login_candidate(request: Request, data: CandidateLogin):
 @limiter.limit("5/minute")
 async def register_agency(request: Request, data: AgencyCreate):
     with get_db() as db:
-        existing = db.execute("SELECT id FROM agencies WHERE email=%s", (data.email,)).fetchone()
+        db.execute("SELECT id FROM agencies WHERE email=%s", (data.email,))
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -149,7 +153,8 @@ async def login_agency(request: Request, data: AgencyLogin):
         raise HTTPException(status_code=423, detail="Account temporarily locked due to too many failed attempts. Try again in 15 minutes.")
 
     with get_db() as db:
-        user = db.execute("SELECT * FROM agencies WHERE email=%s", (data.email,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE email=%s", (data.email,))
+        user = db.fetchone()
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -172,7 +177,8 @@ async def login_admin(request: Request, data: CandidateLogin):
         raise HTTPException(status_code=423, detail="Account temporarily locked. Try again in 15 minutes.")
 
     with get_db() as db:
-        admin = db.execute("SELECT * FROM admin_users WHERE email=%s AND is_active=1", (data.email,)).fetchone()
+        db.execute("SELECT * FROM admin_users WHERE email=%s AND is_active=1", (data.email,))
+        admin = db.fetchone()
         if not admin:
             raise HTTPException(status_code=401, detail="Invalid admin credentials")
         admin_dict = dict(admin)
@@ -225,7 +231,8 @@ async def request_password_reset(request: Request, data: PasswordResetRequest):
         raise HTTPException(status_code=400, detail="Invalid user type")
 
     with get_db() as db:
-        user = db.execute(f"SELECT id, email FROM {table} WHERE email=%s", (data.email,)).fetchone()
+        db.execute(f"SELECT id, email FROM {table} WHERE email=%s", (data.email,))
+        user = db.fetchone()
         if not user:
             # Don't reveal whether email exists — return success either way
             return {"message": "If the email is registered, a reset link has been sent."}

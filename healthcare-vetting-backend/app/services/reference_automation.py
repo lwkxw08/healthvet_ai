@@ -72,7 +72,8 @@ class ReferenceAutomationService:
                 (generate_id(), ref_id, json.dumps({"referee_email": referee_email}), now),
             )
 
-            row = db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,)).fetchone()
+            db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,))
+            row = db.fetchone()
 
         # Send the actual reference request email
         try:
@@ -93,7 +94,8 @@ class ReferenceAutomationService:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            ref = db.execute("SELECT * FROM references_ WHERE token=%s", (token,)).fetchone()
+            db.execute("SELECT * FROM references_ WHERE token=%s", (token,))
+            ref = db.fetchone()
             if not ref:
                 return None
 
@@ -147,14 +149,16 @@ class ReferenceAutomationService:
                 (generate_id(), ref_dict["id"], json.dumps({"sentiment": sentiment, "fraud_flags": len(fraud_flags)}), now),
             )
 
-            row = db.execute("SELECT * FROM references_ WHERE token=%s", (token,)).fetchone()
+            db.execute("SELECT * FROM references_ WHERE token=%s", (token,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
     def send_reminder(ref_id: str) -> dict:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            ref = db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,)).fetchone()
+            db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,))
+            ref = db.fetchone()
             if not ref:
                 return None
 
@@ -296,17 +300,20 @@ class ReferenceAutomationService:
         with get_db() as db:
             cand = db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
-            ).fetchone()
+            )
+            cand = db.fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
             agency_link = db.execute(
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
-            ).fetchone()
+            )
+            agency_link = db.fetchone()
             agency_name = "HealthVet AI"
             if agency_link:
                 agency = db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
-                ).fetchone()
+                )
+                agency = db.fetchone()
                 if agency:
                     agency_name = dict(agency)["name"]
 
@@ -346,17 +353,20 @@ class ReferenceAutomationService:
         with get_db() as db:
             cand = db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
-            ).fetchone()
+            )
+            cand = db.fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
             agency_link = db.execute(
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
-            ).fetchone()
+            )
+            agency_link = db.fetchone()
             agency_name = "HealthVet AI"
             if agency_link:
                 agency = db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
-                ).fetchone()
+                )
+                agency = db.fetchone()
                 if agency:
                     agency_name = dict(agency)["name"]
 
@@ -386,7 +396,8 @@ class ReferenceAutomationService:
     @staticmethod
     def get_reference(ref_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,)).fetchone()
+            db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -397,5 +408,6 @@ class ReferenceAutomationService:
             rows = db.execute(
                 "SELECT * FROM references_ WHERE candidate_id=%s ORDER BY sent_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]

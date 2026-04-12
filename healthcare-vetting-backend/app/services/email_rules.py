@@ -165,7 +165,8 @@ class EmailRulesService:
     def seed_defaults():
         """Seed default email rules if table is empty."""
         with get_db() as db:
-            count = db.execute("SELECT COUNT(*) as cnt FROM email_rules").fetchone()
+            db.execute("SELECT COUNT(*) as cnt FROM email_rules")
+            count = db.fetchone()
             if dict(count)["cnt"] > 0:
                 return  # Already seeded
 
@@ -197,7 +198,8 @@ class EmailRulesService:
         with get_db() as db:
             rows = db.execute(
                 "SELECT * FROM email_rules ORDER BY action_trigger, priority"
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -205,7 +207,8 @@ class EmailRulesService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row) if row else None
 
     @staticmethod
@@ -219,7 +222,8 @@ class EmailRulesService:
                    WHERE r.action_trigger=%s AND r.is_active=1
                    ORDER BY r.priority ASC""",
                 (action_trigger,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -249,7 +253,8 @@ class EmailRulesService:
             )
             row = db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -267,7 +272,8 @@ class EmailRulesService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return None
             current = dict(row)
@@ -291,7 +297,8 @@ class EmailRulesService:
             )
             row = db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -299,7 +306,8 @@ class EmailRulesService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return None
             db.execute("DELETE FROM email_rules WHERE id=%s", (rule_id,))

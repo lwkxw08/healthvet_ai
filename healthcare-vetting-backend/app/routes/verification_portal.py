@@ -64,7 +64,8 @@ def _lookup_by_code(code: str) -> tuple:
         row = db.execute(
             "SELECT * FROM employment_verifications WHERE verification_code=%s",
             (normalized,),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if row:
             return dict(row), "employment"
 
@@ -72,7 +73,8 @@ def _lookup_by_code(code: str) -> tuple:
         row = db.execute(
             "SELECT * FROM references_ WHERE verification_code=%s",
             (normalized,),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if row:
             return dict(row), "reference"
 
@@ -391,7 +393,8 @@ def _get_candidate_name(candidate_id: str) -> str:
             row = db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s",
                 (candidate_id,),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if row:
                 return f"{row['first_name']} {row['last_name']}"
     except Exception:
@@ -407,7 +410,8 @@ def _get_employment_job_title(employment_id: str) -> str:
             row = db.execute(
                 "SELECT job_title FROM employment_history WHERE id=%s",
                 (employment_id,),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if row:
                 return row["job_title"]
     except Exception:
@@ -423,7 +427,8 @@ def _get_employment_dates(employment_id: str, field: str) -> str:
             row = db.execute(
                 f"SELECT {field} FROM employment_history WHERE id=%s",
                 (employment_id,),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if row:
                 return row[field] or ""
     except Exception:

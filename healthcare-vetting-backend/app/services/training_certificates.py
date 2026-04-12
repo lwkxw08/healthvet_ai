@@ -39,7 +39,8 @@ class TrainingCertificateService:
             rows = db.execute(
                 "SELECT * FROM training_certificates WHERE candidate_id=%s ORDER BY certificate_name",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -72,7 +73,8 @@ class TrainingCertificateService:
                  data.get("certificate_ref", ""), data.get("file_name", ""),
                  status, now),
             )
-            row = db.execute("SELECT * FROM training_certificates WHERE id=%s", (cert_id,)).fetchone()
+            db.execute("SELECT * FROM training_certificates WHERE id=%s", (cert_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -96,7 +98,8 @@ class TrainingCertificateService:
                     f"UPDATE training_certificates SET {', '.join(sets)} WHERE id=%s",
                     params,
                 )
-            row = db.execute("SELECT * FROM training_certificates WHERE id=%s", (cert_id,)).fetchone()
+            db.execute("SELECT * FROM training_certificates WHERE id=%s", (cert_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)

@@ -54,7 +54,8 @@ def recover_stale_scrape_jobs():
         with get_db() as db:
             stale = db.execute(
                 "SELECT id, status FROM scrape_jobs WHERE status IN ('pending', 'running')"
-            ).fetchall()
+            )
+            stale = db.fetchall()
             for row in stale:
                 db.execute(
                     "UPDATE scrape_jobs SET status='failed', error_message=%s, completed_at=%s WHERE id=%s",
@@ -93,7 +94,8 @@ def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: 
                 existing = db.execute(
                     "SELECT id FROM leads WHERE agency_name=%s AND source=%s",
                     (lead["name"], source),
-                ).fetchone()
+                )
+                existing = db.fetchone()
                 if existing:
                     continue
 
@@ -192,7 +194,8 @@ async def retry_scrape_job(job_id: str, current_user: dict = Depends(get_current
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        job = db.execute("SELECT * FROM scrape_jobs WHERE id=%s", (job_id,)).fetchone()
+        db.execute("SELECT * FROM scrape_jobs WHERE id=%s", (job_id,))
+        job = db.fetchone()
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         job_dict = dict(job)
@@ -239,7 +242,8 @@ async def list_scrape_jobs(
     params.append(limit)
 
     with get_db() as db:
-        rows = db.execute(query, params).fetchall()
+        db.execute(query, params)
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -250,7 +254,8 @@ async def get_scrape_job(job_id: str, current_user: dict = Depends(get_current_u
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        row = db.execute("SELECT * FROM scrape_jobs WHERE id=%s", (job_id,)).fetchone()
+        db.execute("SELECT * FROM scrape_jobs WHERE id=%s", (job_id,))
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Scrape job not found")
         return dict(row)
@@ -310,8 +315,10 @@ async def list_leads(
     params.extend([limit, offset])
 
     with get_db() as db:
-        total = db.execute(count_query, count_params).fetchone()["cnt"]
-        rows = db.execute(query, params).fetchall()
+        db.execute(count_query, count_params)
+        total = db.fetchone()
+        db.execute(query, params)
+        rows = db.fetchall()
         return {
             "total": total,
             "leads": [dict(r) for r in rows],
@@ -327,9 +334,12 @@ async def get_lead_stats(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        total = db.execute("SELECT COUNT(*) AS cnt FROM leads").fetchone()["cnt"]
-        with_email = db.execute("SELECT COUNT(*) AS cnt FROM leads WHERE email IS NOT NULL AND email != ''").fetchone()["cnt"]
-        with_phone = db.execute("SELECT COUNT(*) AS cnt FROM leads WHERE phone IS NOT NULL AND phone != ''").fetchone()["cnt"]
+        db.execute("SELECT COUNT(*) AS cnt FROM leads")
+        total = db.fetchone()
+        db.execute("SELECT COUNT(*) AS cnt FROM leads WHERE email IS NOT NULL AND email != ''")
+        with_email = db.fetchone()
+        db.execute("SELECT COUNT(*) AS cnt FROM leads WHERE phone IS NOT NULL AND phone != ''")
+        with_phone = db.fetchone()
 
         by_source = {}
         for row in db.execute("SELECT source, COUNT(*) as cnt FROM leads GROUP BY source").fetchall():
@@ -360,7 +370,8 @@ async def update_lead(lead_id: str, data: LeadUpdateRequest, current_user: dict 
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM leads WHERE id=%s", (lead_id,)).fetchone()
+        db.execute("SELECT * FROM leads WHERE id=%s", (lead_id,))
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -377,7 +388,8 @@ async def update_lead(lead_id: str, data: LeadUpdateRequest, current_user: dict 
             params.append(lead_id)
             db.execute(f"UPDATE leads SET {', '.join(updates)} WHERE id=%s", params)
 
-        row = db.execute("SELECT * FROM leads WHERE id=%s", (lead_id,)).fetchone()
+        db.execute("SELECT * FROM leads WHERE id=%s", (lead_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -388,7 +400,8 @@ async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=403, detail="Admin only")
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM leads WHERE id=%s", (lead_id,)).fetchone()
+        db.execute("SELECT * FROM leads WHERE id=%s", (lead_id,))
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Lead not found")
         db.execute("DELETE FROM leads WHERE id=%s", (lead_id,))
@@ -438,7 +451,8 @@ async def export_leads(
     query += " ORDER BY created_at DESC"
 
     with get_db() as db:
-        rows = db.execute(query, params).fetchall()
+        db.execute(query, params)
+        rows = db.fetchall()
         leads = [dict(r) for r in rows]
 
     # Build Excel workbook
@@ -566,7 +580,8 @@ async def scrape_professional_registration(data: RegistrationScrapeRequest, curr
             check = db.execute(
                 "SELECT id FROM registration_checks WHERE candidate_id=%s AND body=%s ORDER BY last_checked DESC LIMIT 1",
                 (data.candidate_id, data.body),
-            ).fetchone()
+            )
+            check = db.fetchone()
             if check:
                 db.execute(
                     "UPDATE registration_scrape_results SET registration_check_id=%s WHERE id=%s",
@@ -594,7 +609,8 @@ async def get_registration_scrapes(candidate_id: str, current_user: dict = Depen
         rows = db.execute(
             "SELECT * FROM registration_scrape_results WHERE candidate_id=%s ORDER BY scraped_at DESC",
             (candidate_id,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 

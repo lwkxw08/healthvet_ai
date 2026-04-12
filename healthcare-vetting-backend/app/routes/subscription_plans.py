@@ -48,17 +48,20 @@ def _sync_industry_pricing(db, industry_template_id: str):
     template_checks = db.execute(
         "SELECT check_key, check_label FROM industry_template_checks WHERE template_id=%s AND is_enabled=1 ORDER BY sort_order",
         (industry_template_id,)
-    ).fetchall()
+    )
+    template_checks = db.fetchall()
     if not template_checks:
         return
 
-    existing_types = {row["check_type"] for row in db.execute(
+    db.execute(
         "SELECT check_type FROM industry_check_pricing WHERE industry_template_id=%s",
         (industry_template_id,)
-    ).fetchall()}
+    )
+    existing_types = {row["check_type"] for row in db.fetchall()}
 
     # Load default pricing for lookup
-    pricing_defaults = {dict(r)["check_type"]: dict(r) for r in db.execute("SELECT * FROM pricing_settings").fetchall()}
+    db.execute("SELECT * FROM pricing_settings")
+    pricing_defaults = {dict(r)["check_type"]: dict(r) for r in db.fetchall()}
 
     now = datetime.now(timezone.utc).isoformat()
     for tc in template_checks:
@@ -151,11 +154,13 @@ async def create_industry_plan_link(data: IndustryPlanLinkCreate, current_user: 
     link_id = generate_id()
     with get_db() as db:
         # Verify tier and template exist
-        tier = db.execute("SELECT * FROM subscription_tier_config WHERE tier_key=%s", (data.tier_key,)).fetchone()
+        db.execute("SELECT * FROM subscription_tier_config WHERE tier_key=%s", (data.tier_key,))
+        tier = db.fetchone()
         if not tier:
             raise HTTPException(status_code=404, detail=f"Tier '{data.tier_key}' not found")
 
-        template = db.execute("SELECT * FROM industry_templates WHERE id=%s", (data.industry_template_id,)).fetchone()
+        db.execute("SELECT * FROM industry_templates WHERE id=%s", (data.industry_template_id,))
+        template = db.fetchone()
         if not template:
             raise HTTPException(status_code=404, detail="Industry template not found")
 
@@ -163,7 +168,8 @@ async def create_industry_plan_link(data: IndustryPlanLinkCreate, current_user: 
         existing = db.execute(
             "SELECT id FROM industry_plan_links WHERE tier_key=%s AND industry_template_id=%s",
             (data.tier_key, data.industry_template_id),
-        ).fetchone()
+        )
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="This tier-industry link already exists")
 
@@ -176,7 +182,8 @@ async def create_industry_plan_link(data: IndustryPlanLinkCreate, current_user: 
              data.custom_monthly_price, data.custom_per_worker_price, data.custom_monthly_checks),
         )
 
-        row = db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,)).fetchone()
+        db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -186,7 +193,8 @@ async def update_industry_plan_link(link_id: str, data: IndustryPlanLinkUpdate, 
     require_admin(current_user)
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,)).fetchone()
+        db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,))
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Industry-plan link not found")
 
@@ -209,7 +217,8 @@ async def update_industry_plan_link(link_id: str, data: IndustryPlanLinkUpdate, 
             params.append(link_id)
             db.execute(f"UPDATE industry_plan_links SET {', '.join(updates)} WHERE id=%s", params)
 
-        row = db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,)).fetchone()
+        db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -219,7 +228,8 @@ async def delete_industry_plan_link(link_id: str, current_user: dict = Depends(g
     require_admin(current_user)
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,)).fetchone()
+        db.execute("SELECT * FROM industry_plan_links WHERE id=%s", (link_id,))
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Industry-plan link not found")
         db.execute("DELETE FROM industry_plan_links WHERE id=%s", (link_id,))
@@ -268,14 +278,16 @@ async def create_industry_check_pricing(data: IndustryCheckPricingCreate, curren
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        template = db.execute("SELECT * FROM industry_templates WHERE id=%s", (data.industry_template_id,)).fetchone()
+        db.execute("SELECT * FROM industry_templates WHERE id=%s", (data.industry_template_id,))
+        template = db.fetchone()
         if not template:
             raise HTTPException(status_code=404, detail="Industry template not found")
 
         existing = db.execute(
             "SELECT id FROM industry_check_pricing WHERE industry_template_id=%s AND check_type=%s",
             (data.industry_template_id, data.check_type),
-        ).fetchone()
+        )
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="Pricing for this check type already exists for this industry")
 
@@ -289,7 +301,8 @@ async def create_industry_check_pricing(data: IndustryCheckPricingCreate, curren
              data.credit_value, data.third_party_cost, data.sell_price, now),
         )
 
-        row = db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,)).fetchone()
+        db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -300,7 +313,8 @@ async def update_industry_check_pricing(pricing_id: str, data: IndustryCheckPric
 
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        existing = db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,)).fetchone()
+        db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,))
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Pricing not found")
 
@@ -325,7 +339,8 @@ async def update_industry_check_pricing(pricing_id: str, data: IndustryCheckPric
         params.append(pricing_id)
         db.execute(f"UPDATE industry_check_pricing SET {', '.join(updates)} WHERE id=%s", params)
 
-        row = db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,)).fetchone()
+        db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -335,7 +350,8 @@ async def delete_industry_check_pricing(pricing_id: str, current_user: dict = De
     require_admin(current_user)
 
     with get_db() as db:
-        existing = db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,)).fetchone()
+        db.execute("SELECT * FROM industry_check_pricing WHERE id=%s", (pricing_id,))
+        existing = db.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Pricing not found")
         db.execute("DELETE FROM industry_check_pricing WHERE id=%s", (pricing_id,))
@@ -351,7 +367,8 @@ async def bulk_set_industry_pricing(data: BulkIndustryPricingRequest, current_us
     results = []
 
     with get_db() as db:
-        template = db.execute("SELECT * FROM industry_templates WHERE id=%s", (data.industry_template_id,)).fetchone()
+        db.execute("SELECT * FROM industry_templates WHERE id=%s", (data.industry_template_id,))
+        template = db.fetchone()
         if not template:
             raise HTTPException(status_code=404, detail="Industry template not found")
 
@@ -363,7 +380,8 @@ async def bulk_set_industry_pricing(data: BulkIndustryPricingRequest, current_us
             existing = db.execute(
                 "SELECT id FROM industry_check_pricing WHERE industry_template_id=%s AND check_type=%s",
                 (data.industry_template_id, check_type),
-            ).fetchone()
+            )
+            existing = db.fetchone()
 
             if existing:
                 # Update
@@ -406,8 +424,10 @@ async def get_plans_by_industry(current_user: dict = Depends(get_current_user)):
     require_admin(current_user)
 
     with get_db() as db:
-        templates = db.execute("SELECT * FROM industry_templates WHERE is_active=1 ORDER BY name").fetchall()
-        tiers = db.execute("SELECT * FROM subscription_tier_config WHERE is_active=1 ORDER BY monthly_price").fetchall()
+        db.execute("SELECT * FROM industry_templates WHERE is_active=1 ORDER BY name")
+        templates = db.fetchall()
+        db.execute("SELECT * FROM subscription_tier_config WHERE is_active=1 ORDER BY monthly_price")
+        tiers = db.fetchall()
 
         result = []
         for tmpl in templates:
@@ -422,19 +442,22 @@ async def get_plans_by_industry(current_user: dict = Depends(get_current_user)):
                    LEFT JOIN subscription_tier_config stc ON ipl.tier_key = stc.tier_key
                    WHERE ipl.industry_template_id=%s AND ipl.is_active=1""",
                 (industry_id,),
-            ).fetchall()
+            )
+            plan_links = db.fetchall()
 
             # Get per-element pricing for this industry
             check_pricing = db.execute(
                 "SELECT * FROM industry_check_pricing WHERE industry_template_id=%s AND is_active=1 ORDER BY check_type",
                 (industry_id,),
-            ).fetchall()
+            )
+            check_pricing = db.fetchall()
 
             # Get template checks
             template_checks = db.execute(
                 "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order",
                 (industry_id,),
-            ).fetchall()
+            )
+            template_checks = db.fetchall()
 
             result.append({
                 "industry": {
@@ -459,7 +482,8 @@ async def get_pricing_matrix(current_user: dict = Depends(get_current_user)):
     require_admin(current_user)
 
     with get_db() as db:
-        templates = db.execute("SELECT * FROM industry_templates WHERE is_active=1 ORDER BY name").fetchall()
+        db.execute("SELECT * FROM industry_templates WHERE is_active=1 ORDER BY name")
+        templates = db.fetchall()
         all_pricing = db.execute("""
             SELECT icp.*, it.name as industry_name
             FROM industry_check_pricing icp
@@ -469,7 +493,8 @@ async def get_pricing_matrix(current_user: dict = Depends(get_current_user)):
         """).fetchall()
 
         # Get default rates
-        default_rates = db.execute("SELECT * FROM partial_credit_rates").fetchall()
+        db.execute("SELECT * FROM partial_credit_rates")
+        default_rates = db.fetchall()
 
         # Build matrix
         check_types = set()

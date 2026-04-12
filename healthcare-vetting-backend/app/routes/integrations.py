@@ -89,7 +89,8 @@ def get_api_key_user(request: Request) -> dict:
         rows = db.execute(
             "SELECT * FROM api_keys WHERE key_prefix=%s AND is_active=1",
             (prefix,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
 
         for row in rows:
             key_record = dict(row)
@@ -195,12 +196,14 @@ async def list_api_keys(current_user: dict = Depends(get_current_user)):
         if user_type == "admin":
             rows = db.execute(
                 "SELECT id, agency_id, key_prefix, name, scopes, is_active, last_used_at, created_at FROM api_keys ORDER BY created_at DESC",
-            ).fetchall()
+            )
+            rows = db.fetchall()
         else:
             rows = db.execute(
                 "SELECT id, agency_id, key_prefix, name, scopes, is_active, last_used_at, created_at FROM api_keys WHERE agency_id=%s ORDER BY created_at DESC",
                 (agency_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
 
         return [dict(r) for r in rows]
 
@@ -216,12 +219,14 @@ async def revoke_api_key(
 
     with get_db() as db:
         if user_type == "admin":
-            existing = db.execute("SELECT id FROM api_keys WHERE id=%s", (key_id,)).fetchone()
+            db.execute("SELECT id FROM api_keys WHERE id=%s", (key_id,))
+            existing = db.fetchone()
         else:
             existing = db.execute(
                 "SELECT id FROM api_keys WHERE id=%s AND agency_id=%s",
                 (key_id, agency_id),
-            ).fetchone()
+            )
+            existing = db.fetchone()
 
         if not existing:
             raise HTTPException(status_code=404, detail="API key not found")
@@ -291,12 +296,14 @@ async def list_webhook_subscriptions(current_user: dict = Depends(get_current_us
         if user_type == "admin":
             rows = db.execute(
                 "SELECT id, agency_id, url, events, is_active, failure_count, last_triggered_at, created_at FROM webhook_subscriptions ORDER BY created_at DESC",
-            ).fetchall()
+            )
+            rows = db.fetchall()
         else:
             rows = db.execute(
                 "SELECT id, agency_id, url, events, is_active, failure_count, last_triggered_at, created_at FROM webhook_subscriptions WHERE agency_id=%s ORDER BY created_at DESC",
                 (agency_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
 
         return [dict(r) for r in rows]
 
@@ -312,12 +319,14 @@ async def delete_webhook_subscription(
 
     with get_db() as db:
         if user_type == "admin":
-            existing = db.execute("SELECT id FROM webhook_subscriptions WHERE id=%s", (subscription_id,)).fetchone()
+            db.execute("SELECT id FROM webhook_subscriptions WHERE id=%s", (subscription_id,))
+            existing = db.fetchone()
         else:
             existing = db.execute(
                 "SELECT id FROM webhook_subscriptions WHERE id=%s AND agency_id=%s",
                 (subscription_id, agency_id),
-            ).fetchone()
+            )
+            existing = db.fetchone()
 
         if not existing:
             raise HTTPException(status_code=404, detail="Webhook subscription not found")
@@ -358,7 +367,8 @@ async def list_webhook_deliveries(
                FROM webhook_deliveries WHERE subscription_id=%s
                ORDER BY created_at DESC LIMIT %s""",
             (subscription_id, limit),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -381,7 +391,8 @@ async def api_list_candidates(
                WHERE ac.agency_id=%s
                ORDER BY c.created_at DESC""",
             (agency_id,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return {"candidates": [dict(r) for r in rows], "total": len(rows)}
 
 
@@ -398,7 +409,8 @@ async def api_get_candidate(
         link = db.execute(
             "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
-        ).fetchone()
+        )
+        link = db.fetchone()
         if not link:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -408,7 +420,8 @@ async def api_get_candidate(
                       compliance_score, compliance_status, created_at
                FROM candidates WHERE id=%s""",
             (candidate_id,),
-        ).fetchone()
+        )
+        candidate = db.fetchone()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -427,14 +440,16 @@ async def api_get_compliance(
         link = db.execute(
             "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
-        ).fetchone()
+        )
+        link = db.fetchone()
         if not link:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         compliance = db.execute(
             "SELECT * FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
             (candidate_id,),
-        ).fetchone()
+        )
+        compliance = db.fetchone()
         if not compliance:
             return {"candidate_id": candidate_id, "status": "not_evaluated"}
 
@@ -453,26 +468,31 @@ async def api_get_checks(
         link = db.execute(
             "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
-        ).fetchone()
+        )
+        link = db.fetchone()
         if not link:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         identity = db.execute(
             "SELECT id, status, result, started_at, completed_at FROM identity_checks WHERE candidate_id=%s",
             (candidate_id,),
-        ).fetchall()
+        )
+        identity = db.fetchall()
         rtw = db.execute(
             "SELECT id, status, verified, verification_method, checked_at FROM right_to_work_checks WHERE candidate_id=%s",
             (candidate_id,),
-        ).fetchall()
+        )
+        rtw = db.fetchall()
         dbs = db.execute(
             "SELECT id, status, check_type, certificate_number, result, submitted_at, completed_at FROM dbs_checks WHERE candidate_id=%s",
             (candidate_id,),
-        ).fetchall()
+        )
+        dbs = db.fetchall()
         reg = db.execute(
             "SELECT id, body, status, is_active, last_checked FROM registration_checks WHERE candidate_id=%s",
             (candidate_id,),
-        ).fetchall()
+        )
+        reg = db.fetchall()
 
         return {
             "candidate_id": candidate_id,
@@ -497,7 +517,8 @@ async def api_list_invoices(
                FROM invoices WHERE agency_id=%s
                ORDER BY created_at DESC""",
             (agency_id,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return {"invoices": [dict(r) for r in rows], "total": len(rows)}
 
 
@@ -522,7 +543,8 @@ def dispatch_webhook_event(agency_id: str, event_type: str, data: dict):
         subs = db.execute(
             "SELECT id, events FROM webhook_subscriptions WHERE agency_id=%s AND is_active=1",
             (agency_id,),
-        ).fetchall()
+        )
+        subs = db.fetchall()
 
         dispatched = 0
         for sub in subs:

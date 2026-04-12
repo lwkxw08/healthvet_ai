@@ -39,10 +39,12 @@ class ReportService:
                 query += " AND created_at <= %s"
                 params.append(date_to)
             query += " ORDER BY created_at DESC"
-            invoices = db.execute(query, params).fetchall()
+            db.execute(query, params)
+            invoices = db.fetchall()
 
             # Get agencies
-            agencies = db.execute("SELECT * FROM agencies").fetchall()
+            db.execute("SELECT * FROM agencies")
+            agencies = db.fetchall()
             agency_map = {dict(a)["id"]: dict(a) for a in agencies}
 
         total_revenue = sum(dict(i).get("sell_amount", 0) for i in invoices)
@@ -278,7 +280,8 @@ class ReportService:
                 query += " AND i.created_at <= %s"
                 params.append(date_to)
             query += " ORDER BY i.created_at DESC"
-            rows = db.execute(query, params).fetchall()
+            db.execute(query, params)
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -290,9 +293,11 @@ class ReportService:
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
                        WHERE ac.agency_id=%s""",
                     (agency_id,),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             else:
-                rows = db.execute("SELECT * FROM candidates").fetchall()
+                db.execute("SELECT * FROM candidates")
+                rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -305,9 +310,11 @@ class ReportService:
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
                        WHERE ac.agency_id=%s""",
                     (agency_id,),
-                ).fetchall()
+                )
+                candidates = db.fetchall()
             else:
-                candidates = db.execute("SELECT * FROM candidates").fetchall()
+                db.execute("SELECT * FROM candidates")
+                candidates = db.fetchall()
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4,

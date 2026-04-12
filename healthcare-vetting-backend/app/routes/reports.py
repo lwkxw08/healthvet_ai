@@ -246,7 +246,8 @@ async def resolve_fraud_flag(flag_id: str, user=Depends(get_current_admin)):
             "UPDATE fraud_flags SET is_resolved=1, resolved_at=%s, resolved_by=%s WHERE id=%s",
             (now, "admin", flag_id),
         )
-        row = db.execute("SELECT * FROM fraud_flags WHERE id=%s", (flag_id,)).fetchone()
+        db.execute("SELECT * FROM fraud_flags WHERE id=%s", (flag_id,))
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Flag not found")
         return dict(row)
@@ -439,7 +440,8 @@ async def download_invoice_pdf(invoice_id: str, user=Depends(get_current_user)):
     )
 
     with get_db() as db:
-        inv = db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
+        db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+        inv = db.fetchone()
         if not inv:
             raise HTTPException(status_code=404, detail="Invoice not found")
         invoice = dict(inv)
@@ -452,14 +454,16 @@ async def download_invoice_pdf(invoice_id: str, user=Depends(get_current_user)):
         # Get agency details
         agency = None
         if invoice.get("agency_id"):
-            agency_row = db.execute("SELECT * FROM agencies WHERE id=%s", (invoice["agency_id"],)).fetchone()
+            db.execute("SELECT * FROM agencies WHERE id=%s", (invoice["agency_id"],))
+            agency_row = db.fetchone()
             if agency_row:
                 agency = dict(agency_row)
 
         # Get candidate details if applicable
         candidate = None
         if invoice.get("candidate_id"):
-            cand_row = db.execute("SELECT * FROM candidates WHERE id=%s", (invoice["candidate_id"],)).fetchone()
+            db.execute("SELECT * FROM candidates WHERE id=%s", (invoice["candidate_id"],))
+            cand_row = db.fetchone()
             if cand_row:
                 candidate = dict(cand_row)
 

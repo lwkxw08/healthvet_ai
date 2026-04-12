@@ -53,7 +53,8 @@ async def get_alerts(candidate_id: str = None, current_user: dict = Depends(get_
             rows = db.execute(
                 "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s",
                 (current_user["sub"],),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             candidate_ids = [dict(r)["candidate_id"] for r in rows]
             if not candidate_ids:
                 return []

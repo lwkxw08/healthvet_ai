@@ -29,7 +29,8 @@ class PricingUpdate(BaseModel):
 async def get_pricing(current_user: dict = Depends(get_current_user)):
     require_admin(current_user)
     with get_db() as db:
-        rows = db.execute("SELECT * FROM pricing_settings ORDER BY check_type").fetchall()
+        db.execute("SELECT * FROM pricing_settings ORDER BY check_type")
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -38,7 +39,8 @@ async def update_pricing(check_type: str, data: PricingUpdate, current_user: dic
     require_admin(current_user)
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        row = db.execute("SELECT * FROM pricing_settings WHERE check_type=%s", (check_type,)).fetchone()
+        db.execute("SELECT * FROM pricing_settings WHERE check_type=%s", (check_type,))
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Pricing setting not found")
         updates = {}
@@ -53,7 +55,8 @@ async def update_pricing(check_type: str, data: PricingUpdate, current_user: dic
             set_clause = ", ".join(f"{k}=%s" for k in updates.keys())
             values = list(updates.values()) + [check_type]
             db.execute(f"UPDATE pricing_settings SET {set_clause} WHERE check_type=%s", values)
-        row = db.execute("SELECT * FROM pricing_settings WHERE check_type=%s", (check_type,)).fetchone()
+        db.execute("SELECT * FROM pricing_settings WHERE check_type=%s", (check_type,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -67,7 +70,8 @@ async def push_pricing_to_industries(check_type: str, current_user: dict = Depen
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
         # Get the new default pricing
-        default_row = db.execute("SELECT * FROM pricing_settings WHERE check_type=%s", (check_type,)).fetchone()
+        db.execute("SELECT * FROM pricing_settings WHERE check_type=%s", (check_type,))
+        default_row = db.fetchone()
         if not default_row:
             raise HTTPException(status_code=404, detail="Pricing setting not found")
         default = dict(default_row)
@@ -134,7 +138,8 @@ async def get_revenue_analytics(
 
     with get_db() as db:
         # Get pricing for calculations
-        pricing_rows = db.execute("SELECT * FROM pricing_settings").fetchall()
+        db.execute("SELECT * FROM pricing_settings")
+        pricing_rows = db.fetchall()
         pricing = {dict(r)["check_type"]: dict(r) for r in pricing_rows}
 
         # Get invoices in range
@@ -143,7 +148,8 @@ async def get_revenue_analytics(
         if agency_id:
             query += " AND agency_id = %s"
             params.append(agency_id)
-        invoice_rows = db.execute(query, params).fetchall()
+        db.execute(query, params)
+        invoice_rows = db.fetchall()
         invoices = [dict(r) for r in invoice_rows]
 
         # Use adjusted_amount if admin has adjusted, otherwise use sell_amount
@@ -171,7 +177,8 @@ async def get_revenue_analytics(
         for inv in invoices:
             aid = inv["agency_id"]
             if aid not in by_agency:
-                agency_row = db.execute("SELECT name FROM agencies WHERE id=%s", (aid,)).fetchone()
+                db.execute("SELECT name FROM agencies WHERE id=%s", (aid,))
+                agency_row = db.fetchone()
                 by_agency[aid] = {
                     "agency_name": dict(agency_row)["name"] if agency_row else "Unknown",
                     "revenue": 0.0, "cost": 0.0, "count": 0,
@@ -220,12 +227,14 @@ async def get_operations_analytics(
         # Total candidates in period
         cand_query = "SELECT * FROM candidates WHERE created_at >= %s AND created_at <= %s"
         cand_params = [start, end]
-        candidates = [dict(r) for r in db.execute(cand_query, cand_params).fetchall()]
+        db.execute(cand_query, cand_params)
+        candidates = [dict(r) for r in db.fetchall()]
 
         if agency_id:
             linked = db.execute(
                 "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s", (agency_id,)
-            ).fetchall()
+            )
+            linked = db.fetchall()
             linked_ids = {dict(r)["candidate_id"] for r in linked}
             candidates = [c for c in candidates if c["id"] in linked_ids]
 
@@ -238,23 +247,28 @@ async def get_operations_analytics(
         id_checks = db.execute(
             "SELECT COUNT(*) as cnt FROM identity_checks WHERE completed_at >= %s AND completed_at <= %s",
             (start, end),
-        ).fetchone()
+        )
+        id_checks = db.fetchone()
         dbs_checks = db.execute(
             "SELECT COUNT(*) as cnt FROM dbs_checks WHERE completed_at >= %s AND completed_at <= %s",
             (start, end),
-        ).fetchone()
+        )
+        dbs_checks = db.fetchone()
         rtw_checks = db.execute(
             "SELECT COUNT(*) as cnt FROM right_to_work_checks WHERE checked_at >= %s AND checked_at <= %s",
             (start, end),
-        ).fetchone()
+        )
+        rtw_checks = db.fetchone()
         ref_checks = db.execute(
             "SELECT COUNT(*) as cnt FROM references_ WHERE completed_at >= %s AND completed_at <= %s",
             (start, end),
-        ).fetchone()
+        )
+        ref_checks = db.fetchone()
         emp_checks = db.execute(
             "SELECT COUNT(*) as cnt FROM employment_verifications WHERE completed_at >= %s AND completed_at <= %s",
             (start, end),
-        ).fetchone()
+        )
+        emp_checks = db.fetchone()
 
         # Average time to complete (simulated from candidate creation to compliance)
         comp_records = db.execute(
@@ -264,7 +278,8 @@ async def get_operations_analytics(
                WHERE cr.overall_status = 'compliant'
                AND cr.last_evaluated >= %s AND cr.last_evaluated <= %s""",
             (start, end),
-        ).fetchall()
+        )
+        comp_records = db.fetchall()
         avg_hours = 0.0
         if comp_records:
             total_hours = 0.0
@@ -315,14 +330,16 @@ async def get_agency_analytics(
     start, end = _parse_date_range(period, date_from, date_to)
 
     with get_db() as db:
-        agencies = [dict(r) for r in db.execute("SELECT * FROM agencies").fetchall()]
+        db.execute("SELECT * FROM agencies")
+        agencies = [dict(r) for r in db.fetchall()]
         result = []
         for agency in agencies:
             # Get candidates for this agency
             linked = db.execute(
                 "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s",
                 (agency["id"],),
-            ).fetchall()
+            )
+            linked = db.fetchall()
             candidate_ids = [dict(r)["candidate_id"] for r in linked]
 
             total_candidates = len(candidate_ids)
@@ -332,14 +349,16 @@ async def get_agency_analytics(
                 compliant_row = db.execute(
                     f"SELECT COUNT(*) as cnt FROM candidates WHERE id IN ({placeholders}) AND compliance_status='compliant'",
                     candidate_ids,
-                ).fetchone()
+                )
+                compliant_row = db.fetchone()
                 compliant = dict(compliant_row)["cnt"] if compliant_row else 0
 
             # Revenue from invoices
             inv_row = db.execute(
                 "SELECT COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)),0) as rev, COALESCE(SUM(cost_amount),0) as cost, COUNT(*) as cnt FROM invoices WHERE agency_id=%s AND created_at >= %s AND created_at <= %s",
                 (agency["id"], start, end),
-            ).fetchone()
+            )
+            inv_row = db.fetchone()
             inv = dict(inv_row) if inv_row else {"rev": 0, "cost": 0, "cnt": 0}
 
             result.append({
@@ -391,7 +410,8 @@ async def list_invoices(
             query += " AND i.status = %s"
             params.append(status)
         query += " ORDER BY i.created_at DESC"
-        rows = db.execute(query, params).fetchall()
+        db.execute(query, params)
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -406,7 +426,8 @@ async def create_invoice(data: InvoiceCreate, current_user: dict = Depends(get_c
                VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s)""",
             (invoice_id, data.agency_id, data.candidate_id, data.check_type, data.description, data.cost_amount, data.sell_amount, now),
         )
-        row = db.execute("SELECT i.*, a.name as agency_name, a.email as agency_email FROM invoices i LEFT JOIN agencies a ON i.agency_id = a.id WHERE i.id=%s", (invoice_id,)).fetchone()
+        db.execute("SELECT i.*, a.name as agency_name, a.email as agency_email FROM invoices i LEFT JOIN agencies a ON i.agency_id = a.id WHERE i.id=%s", (invoice_id,))
+        row = db.fetchone()
         invoice = dict(row)
 
         # Send invoice notification email to agency
@@ -446,7 +467,8 @@ async def mark_invoice_paid(invoice_id: str, current_user: dict = Depends(get_cu
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
         db.execute("UPDATE invoices SET status='paid', paid_at=%s WHERE id=%s", (now, invoice_id))
-        row = db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
+        db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Invoice not found")
         return dict(row)
@@ -463,7 +485,8 @@ async def generate_invoices_for_agency(
 
     with get_db() as db:
         # Get pricing
-        pricing_rows = db.execute("SELECT * FROM pricing_settings").fetchall()
+        db.execute("SELECT * FROM pricing_settings")
+        pricing_rows = db.fetchall()
         pricing = {dict(r)["check_type"]: dict(r) for r in pricing_rows}
 
         # Get agency candidates
@@ -472,9 +495,11 @@ async def generate_invoices_for_agency(
                JOIN agency_candidates ac ON c.id = ac.candidate_id
                WHERE ac.agency_id=%s""",
             (agency_id,),
-        ).fetchall()
+        )
+        candidates = db.fetchall()
 
-        agency_row = db.execute("SELECT name FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT name FROM agencies WHERE id=%s", (agency_id,))
+        agency_row = db.fetchone()
         agency_name = dict(agency_row)["name"] if agency_row else "Unknown"
 
         generated = []
@@ -487,7 +512,8 @@ async def generate_invoices_for_agency(
             has_full_vetting = db.execute(
                 "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type='full_vetting'",
                 (agency_id, c["id"]),
-            ).fetchone()
+            )
+            has_full_vetting = db.fetchone()
 
             # Per-check line items — only for candidates without a full_vetting charge
             if not has_full_vetting:
@@ -503,13 +529,15 @@ async def generate_invoices_for_agency(
                 completed = db.execute(
                     f"SELECT COUNT(*) as cnt FROM {table} WHERE candidate_id=%s AND status IN ('complete','completed','verified','clear')",
                     (c["id"],),
-                ).fetchone()
+                )
+                completed = db.fetchone()
                 if completed and dict(completed)["cnt"] > 0:
                     # Check if invoice already exists
                     existing = db.execute(
                         "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type=%s",
                         (agency_id, c["id"], check_type),
-                    ).fetchone()
+                    )
+                    existing = db.fetchone()
                     if not existing and check_type in pricing:
                         p = pricing[check_type]
                         inv_id = generate_id()
@@ -525,13 +553,15 @@ async def generate_invoices_for_agency(
               refs = db.execute(
                 "SELECT COUNT(*) as cnt FROM references_ WHERE candidate_id=%s AND status='completed'",
                 (c["id"],),
-              ).fetchone()
+              )
+              refs = db.fetchone()
               ref_count = dict(refs)["cnt"] if refs else 0
               if ref_count > 0 and "references" in pricing:
                 existing = db.execute(
                     "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type='references'",
                     (agency_id, c["id"]),
-                ).fetchone()
+                )
+                existing = db.fetchone()
                 if not existing:
                     p = pricing["references"]
                     inv_id = generate_id()
@@ -547,7 +577,8 @@ async def generate_invoices_for_agency(
             revet_rows = db.execute(
                 "SELECT rr.* FROM revet_requests rr WHERE rr.agency_id=%s AND rr.candidate_id=%s AND rr.status IN ('completed', 'pending')",
                 (agency_id, c["id"]),
-            ).fetchall()
+            )
+            revet_rows = db.fetchall()
             for rr in revet_rows:
                 rr_data = dict(rr)
                 import json as _json
@@ -556,7 +587,8 @@ async def generate_invoices_for_agency(
                     existing_revet = db.execute(
                         "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type=%s AND description LIKE '%Re-vet%'",
                         (agency_id, c["id"], f"revet_{sec}"),
-                    ).fetchone()
+                    )
+                    existing_revet = db.fetchone()
                     if not existing_revet and sec in pricing:
                         p = pricing[sec]
                         inv_id = generate_id()
@@ -589,10 +621,12 @@ async def generate_grouped_invoice(
 
     with get_db() as db:
         # Get pricing
-        pricing_rows = db.execute("SELECT * FROM pricing_settings").fetchall()
+        db.execute("SELECT * FROM pricing_settings")
+        pricing_rows = db.fetchall()
         pricing = {dict(r)["check_type"]: dict(r) for r in pricing_rows}
 
-        agency_row = db.execute("SELECT * FROM agencies WHERE id=%s", (data.agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (data.agency_id,))
+        agency_row = db.fetchone()
         if not agency_row:
             raise HTTPException(status_code=404, detail="Agency not found")
         agency = dict(agency_row)
@@ -605,7 +639,8 @@ async def generate_grouped_invoice(
                JOIN agency_candidates ac ON c.id = ac.candidate_id
                WHERE ac.agency_id=%s""",
             (data.agency_id,),
-        ).fetchall()
+        )
+        candidates = db.fetchall()
 
         generated = []
         line_items = []
@@ -620,7 +655,8 @@ async def generate_grouped_invoice(
             has_full_vetting = db.execute(
                 "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type='full_vetting'",
                 (data.agency_id, c["id"]),
-            ).fetchone()
+            )
+            has_full_vetting = db.fetchone()
 
             # Per-check line items — only for candidates without a full_vetting charge
             if not has_full_vetting:
@@ -636,12 +672,14 @@ async def generate_grouped_invoice(
                 completed = db.execute(
                     f"SELECT COUNT(*) as cnt FROM {table} WHERE candidate_id=%s AND status IN ('complete','completed','verified','clear') AND {date_col} >= %s AND {date_col} <= %s",
                     (c["id"], data.date_from, data.date_to),
-                ).fetchone()
+                )
+                completed = db.fetchone()
                 if completed and dict(completed)["cnt"] > 0:
                     existing = db.execute(
                         "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type=%s",
                         (data.agency_id, c["id"], check_type),
-                    ).fetchone()
+                    )
+                    existing = db.fetchone()
                     if not existing and check_type in pricing:
                         p = pricing[check_type]
                         sell = p["sell_price"]
@@ -665,13 +703,15 @@ async def generate_grouped_invoice(
               refs = db.execute(
                 "SELECT COUNT(*) as cnt FROM references_ WHERE candidate_id=%s AND status='completed' AND completed_at >= %s AND completed_at <= %s",
                 (c["id"], data.date_from, data.date_to),
-              ).fetchone()
+              )
+              refs = db.fetchone()
               ref_count = dict(refs)["cnt"] if refs else 0
               if ref_count > 0 and "references" in pricing:
                 existing = db.execute(
                     "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type='references'",
                     (data.agency_id, c["id"]),
-                ).fetchone()
+                )
+                existing = db.fetchone()
                 if not existing:
                     p = pricing["references"]
                     sell = p["sell_price"] * ref_count
@@ -696,7 +736,8 @@ async def generate_grouped_invoice(
             revet_rows = db.execute(
                 "SELECT rr.* FROM revet_requests rr WHERE rr.agency_id=%s AND rr.candidate_id=%s AND rr.status IN ('completed', 'pending') AND rr.created_at >= %s AND rr.created_at <= %s",
                 (data.agency_id, c["id"], data.date_from, data.date_to),
-            ).fetchall()
+            )
+            revet_rows = db.fetchall()
             for rr in revet_rows:
                 rr_data = dict(rr)
                 import json as _json
@@ -705,7 +746,8 @@ async def generate_grouped_invoice(
                     existing_revet = db.execute(
                         "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type=%s AND description LIKE '%Re-vet%'",
                         (data.agency_id, c["id"], f"revet_{sec}"),
-                    ).fetchone()
+                    )
+                    existing_revet = db.fetchone()
                     if not existing_revet and sec in pricing:
                         p = pricing[sec]
                         sell = p["sell_price"]
@@ -761,7 +803,8 @@ async def migrate_trustid_to_legacy(current_user: dict = Depends(get_current_use
     with get_db() as db:
         completed = db.execute(
             "SELECT * FROM trustid_checks WHERE status='completed' AND result='pass'"
-        ).fetchall()
+        )
+        completed = db.fetchall()
 
         for row in completed:
             check = dict(row)
@@ -776,19 +819,22 @@ async def migrate_trustid_to_legacy(current_user: dict = Depends(get_current_use
                 existing = db.execute(
                     "SELECT id FROM identity_checks WHERE candidate_id=%s AND provider='trustid'",
                     (candidate_id,),
-                ).fetchone()
+                )
+                existing = db.fetchone()
                 already_exists = existing is not None
             elif check_type == "right_to_work":
                 existing = db.execute(
                     "SELECT id FROM right_to_work_checks WHERE candidate_id=%s AND verification_method='trustid'",
                     (candidate_id,),
-                ).fetchone()
+                )
+                existing = db.fetchone()
                 already_exists = existing is not None
             elif check_type == "dbs_check":
                 existing = db.execute(
                     "SELECT id FROM dbs_checks WHERE candidate_id=%s AND provider='trustid'",
                     (candidate_id,),
-                ).fetchone()
+                )
+                existing = db.fetchone()
                 already_exists = existing is not None
 
             if already_exists:
@@ -884,7 +930,8 @@ async def send_invoice_email(
         invoices = db.execute(
             f"SELECT * FROM invoices WHERE id IN ({placeholders})",
             data.invoice_ids,
-        ).fetchall()
+        )
+        invoices = db.fetchall()
         invoices = [dict(r) for r in invoices]
 
         if not invoices:
@@ -896,7 +943,8 @@ async def send_invoice_email(
             raise HTTPException(status_code=400, detail="All invoices must belong to the same agency")
 
         agency_id = agency_ids.pop()
-        agency = db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+        agency = db.fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
         agency = dict(agency)
@@ -914,7 +962,8 @@ async def send_invoice_email(
             if inv.get("candidate_id"):
                 cand = db.execute(
                     "SELECT full_name FROM candidates WHERE id=%s", (inv["candidate_id"],)
-                ).fetchone()
+                )
+                cand = db.fetchone()
                 if cand:
                     candidate_name = cand["full_name"] or ""
 

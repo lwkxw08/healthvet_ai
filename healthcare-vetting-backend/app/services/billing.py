@@ -20,7 +20,8 @@ class BillingService:
         with get_db() as db:
             rows = db.execute(
                 "SELECT * FROM subscription_tier_config WHERE is_active=1 ORDER BY monthly_price ASC"
-            ).fetchall()
+            )
+            rows = db.fetchall()
             tiers = {}
             for row in rows:
                 r = dict(row)
@@ -57,7 +58,8 @@ class BillingService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 raise ValueError(f"Tier '{tier_key}' not found")
 
@@ -88,7 +90,8 @@ class BillingService:
 
             row = db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             r = dict(row)
             r["features"] = json.loads(r["features"]) if isinstance(r["features"], str) else r["features"]
             r["allow_rollover"] = bool(r.get("allow_rollover", 0))
@@ -108,7 +111,8 @@ class BillingService:
         with get_db() as db:
             existing = db.execute(
                 "SELECT id FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
-            ).fetchone()
+            )
+            existing = db.fetchone()
             if existing:
                 raise ValueError(f"Tier '{tier_key}' already exists")
 
@@ -128,7 +132,8 @@ class BillingService:
                  data.get("monitoring_cap", 0), data.get("monitoring_addon_rate", 0),
                  features, now),
             )
-            row = db.execute("SELECT * FROM subscription_tier_config WHERE id=%s", (tier_id,)).fetchone()
+            db.execute("SELECT * FROM subscription_tier_config WHERE id=%s", (tier_id,))
+            row = db.fetchone()
             r = dict(row)
             r["features"] = json.loads(r["features"]) if isinstance(r["features"], str) else r["features"]
             return r
@@ -140,7 +145,8 @@ class BillingService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 raise ValueError(f"Tier '{tier_key}' not found")
             active_count = db.execute(
@@ -161,7 +167,8 @@ class BillingService:
     def get_partial_credit_rates() -> list:
         """Get all partial credit rate configurations."""
         with get_db() as db:
-            rows = db.execute("SELECT * FROM partial_credit_rates ORDER BY credit_value DESC").fetchall()
+            db.execute("SELECT * FROM partial_credit_rates ORDER BY credit_value DESC")
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -171,7 +178,8 @@ class BillingService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 raise ValueError(f"Partial credit rate '{check_type}' not found")
 
@@ -189,7 +197,8 @@ class BillingService:
                 values = list(updates.values()) + [check_type]
                 db.execute(f"UPDATE partial_credit_rates SET {set_clause} WHERE check_type=%s", values)
 
-            row = db.execute("SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)).fetchone()
+            db.execute("SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -200,7 +209,8 @@ class BillingService:
         with get_db() as db:
             existing = db.execute(
                 "SELECT id FROM partial_credit_rates WHERE check_type=%s", (data["check_type"],)
-            ).fetchone()
+            )
+            existing = db.fetchone()
             if existing:
                 raise ValueError(f"Partial credit rate '{data['check_type']}' already exists")
 
@@ -209,7 +219,8 @@ class BillingService:
                 (rate_id, data["check_type"], data.get("label", data["check_type"]),
                  float(data.get("credit_value", 1.0)), float(data.get("third_party_cost", 0)), now),
             )
-            row = db.execute("SELECT * FROM partial_credit_rates WHERE id=%s", (rate_id,)).fetchone()
+            db.execute("SELECT * FROM partial_credit_rates WHERE id=%s", (rate_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -218,7 +229,8 @@ class BillingService:
         with get_db() as db:
             row = db.execute(
                 "SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 raise ValueError(f"Partial credit rate '{check_type}' not found")
             db.execute("DELETE FROM partial_credit_rates WHERE check_type=%s", (check_type,))
@@ -231,7 +243,8 @@ class BillingService:
             row = db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if row:
                 return dict(row)
             return None
@@ -249,7 +262,8 @@ class BillingService:
             # Get tier config from DB
             tier_row = db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s AND is_active=1", (tier,)
-            ).fetchone()
+            )
+            tier_row = db.fetchone()
             if not tier_row:
                 raise ValueError(f"Invalid or inactive credit pack: {tier}")
             tier_info = dict(tier_row)
@@ -262,7 +276,8 @@ class BillingService:
             existing = db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
-            ).fetchone()
+            )
+            existing = db.fetchone()
 
             if existing:
                 ex = dict(existing)
@@ -305,14 +320,16 @@ class BillingService:
             )
 
             from app.services.email_service import EmailService
-            agency = db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+            db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+            agency = db.fetchone()
             if agency:
                 a = dict(agency)
                 EmailService.send_subscription_confirmation(
                     a["email"], a["name"], pack_name, pack_price,
                 )
 
-            row = db.execute("SELECT * FROM agency_subscriptions WHERE id=%s", (sub_id,)).fetchone()
+            db.execute("SELECT * FROM agency_subscriptions WHERE id=%s", (sub_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -341,7 +358,8 @@ class BillingService:
                    JOIN agencies a ON s.agency_id = a.id
                    WHERE s.status='active' AND s.expires_at IS NOT NULL AND s.expires_at <= %s""",
                 (now_str,),
-            ).fetchall()
+            )
+            expired_subs = db.fetchall()
 
             generated = []
             for sub in expired_subs:
@@ -409,7 +427,8 @@ class BillingService:
                 """SELECT * FROM invoices WHERE agency_id=%s
                    ORDER BY created_at DESC""",
                 (agency_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -421,7 +440,8 @@ class BillingService:
                 "UPDATE invoices SET status='paid', paid_at=%s WHERE id=%s",
                 (now, invoice_id),
             )
-            row = db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
+            db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+            row = db.fetchone()
             return dict(row) if row else None
 
     @staticmethod
@@ -431,7 +451,8 @@ class BillingService:
             sub = db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
-            ).fetchone()
+            )
+            sub = db.fetchone()
             if not sub:
                 return {
                     "has_subscription": False,
@@ -451,7 +472,8 @@ class BillingService:
 
             tier_row = db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (s["tier"],)
-            ).fetchone()
+            )
+            tier_row = db.fetchone()
             tier_name = dict(tier_row)["name"] if tier_row else s.get("pack_name") or s["tier"]
 
             # Calculate days remaining
@@ -503,12 +525,14 @@ class BillingService:
             sub = db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
-            ).fetchone()
+            )
+            sub = db.fetchone()
 
             # Look up credit value for this check type
             pcr = db.execute(
                 "SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)
-            ).fetchone()
+            )
+            pcr = db.fetchone()
             credit_value = float(dict(pcr)["credit_value"]) if pcr else 1.0
 
             if not sub:
@@ -610,7 +634,8 @@ class BillingService:
                    WHERE ct.agency_id=%s
                    ORDER BY ct.created_at DESC LIMIT %s""",
                 (agency_id, limit),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     # -- Credit Pack Top-Up & Auto Top-Up --
@@ -628,7 +653,8 @@ class BillingService:
             sub = db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
-            ).fetchone()
+            )
+            sub = db.fetchone()
             if not sub:
                 raise ValueError("No active credit pack found. Purchase a credit pack first.")
 
@@ -640,7 +666,8 @@ class BillingService:
                 tier_row = db.execute(
                     "SELECT * FROM subscription_tier_config WHERE tier_key=%s AND is_active=1",
                     (auto_topup_tier,),
-                ).fetchone()
+                )
+                tier_row = db.fetchone()
                 if not tier_row:
                     raise ValueError(f"Invalid credit pack tier: {auto_topup_tier}")
 
@@ -665,7 +692,8 @@ class BillingService:
             row = db.execute(
                 "SELECT id, name, billing_mode, stripe_customer_id FROM agencies WHERE id=%s",
                 (agency_id,),
-            ).fetchone()
+            )
+            row = db.fetchone()
             if not row:
                 return {"billing_mode": "manual_invoicing", "stripe_customer_id": None}
             r = dict(row)
@@ -684,7 +712,8 @@ class BillingService:
             raise ValueError(f"Invalid billing_mode. Valid: {', '.join(valid_modes)}")
 
         with get_db() as db:
-            row = db.execute("SELECT id, name FROM agencies WHERE id=%s", (agency_id,)).fetchone()
+            db.execute("SELECT id, name FROM agencies WHERE id=%s", (agency_id,))
+            row = db.fetchone()
             if not row:
                 raise ValueError("Agency not found")
 
@@ -708,7 +737,8 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            inv = db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
+            db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+            inv = db.fetchone()
             if not inv:
                 raise ValueError("Invoice not found")
             invoice = dict(inv)
@@ -773,7 +803,8 @@ class BillingService:
         with get_db() as db:
             inv = db.execute(
                 "SELECT * FROM invoices WHERE stripe_session_id=%s", (session_id,)
-            ).fetchone()
+            )
+            inv = db.fetchone()
             if not inv:
                 raise ValueError("No invoice found for this session")
             invoice = dict(inv)
@@ -800,7 +831,8 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            inv = db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,)).fetchone()
+            db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+            inv = db.fetchone()
             if not inv:
                 raise ValueError("Invoice not found")
             invoice = dict(inv)
@@ -875,7 +907,8 @@ class BillingService:
                    WHERE i.status = 'pending' AND i.created_at <= %s
                    ORDER BY i.created_at ASC""",
                 (reminder_threshold,),
-            ).fetchall()
+            )
+            unpaid = db.fetchall()
 
             for row in unpaid:
                 inv = dict(row)

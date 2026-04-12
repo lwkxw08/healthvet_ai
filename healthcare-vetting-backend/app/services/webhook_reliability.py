@@ -39,7 +39,8 @@ class WebhookReliabilityService:
             sub = db.execute(
                 "SELECT * FROM webhook_subscriptions WHERE id=%s AND is_active=1",
                 (subscription_id,),
-            ).fetchone()
+            )
+            sub = db.fetchone()
             if not sub:
                 return {"delivery_id": delivery_id, "status": "subscription_inactive"}
 
@@ -124,7 +125,8 @@ class WebhookReliabilityService:
         with get_db() as db:
             delivery = db.execute(
                 "SELECT * FROM webhook_deliveries WHERE id=%s", (delivery_id,)
-            ).fetchone()
+            )
+            delivery = db.fetchone()
             if not delivery:
                 return {"status": "not_found"}
 
@@ -135,7 +137,8 @@ class WebhookReliabilityService:
             sub = db.execute(
                 "SELECT * FROM webhook_subscriptions WHERE id=%s",
                 (d["subscription_id"],),
-            ).fetchone()
+            )
+            sub = db.fetchone()
             if not sub:
                 db.execute(
                     "UPDATE webhook_deliveries SET status='abandoned', next_retry_at=NULL WHERE id=%s",
@@ -207,7 +210,8 @@ class WebhookReliabilityService:
                     fc = db.execute(
                         "SELECT failure_count FROM webhook_subscriptions WHERE id=%s",
                         (d["subscription_id"],),
-                    ).fetchone()
+                    )
+                    fc = db.fetchone()
                     if fc and dict(fc)["failure_count"] >= 10:
                         db.execute(
                             "UPDATE webhook_subscriptions SET is_active=0 WHERE id=%s",
@@ -235,7 +239,8 @@ class WebhookReliabilityService:
         with get_db() as db:
             delivery = db.execute(
                 "SELECT * FROM webhook_deliveries WHERE id=%s", (delivery_id,)
-            ).fetchone()
+            )
+            delivery = db.fetchone()
             if not delivery:
                 return {"status": "not_found"}
 
@@ -259,7 +264,8 @@ class WebhookReliabilityService:
                        WHERE ws.agency_id=%s
                        ORDER BY wd.created_at DESC LIMIT %s""",
                     (agency_id, limit),
-                ).fetchall()
+                )
+                deliveries = db.fetchall()
             else:
                 deliveries = db.execute(
                     """SELECT wd.*, ws.url, ws.agency_id
@@ -267,7 +273,8 @@ class WebhookReliabilityService:
                        JOIN webhook_subscriptions ws ON wd.subscription_id = ws.id
                        ORDER BY wd.created_at DESC LIMIT %s""",
                     (limit,),
-                ).fetchall()
+                )
+                deliveries = db.fetchall()
 
             items = [dict(r) for r in deliveries]
 
@@ -299,7 +306,8 @@ class WebhookReliabilityService:
                    WHERE wd.status='failed'
                    ORDER BY wd.created_at DESC LIMIT %s""",
                 (limit,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -323,7 +331,8 @@ class WebhookReliabilityService:
             due = db.execute(
                 "SELECT id, attempt FROM webhook_deliveries WHERE status='pending_retry' AND next_retry_at <= %s",
                 (now,),
-            ).fetchall()
+            )
+            due = db.fetchall()
 
             results = []
             for row in due:

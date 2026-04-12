@@ -123,7 +123,8 @@ def run_expiry_warnings():
                    LEFT JOIN agencies a ON ac.agency_id = a.id
                    WHERE r.visa_expiry IS NOT NULL AND r.verified = 1
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
-            ).fetchall()
+            )
+            visa_expiring = db.fetchall()
 
             expiry_notifications = []
             for row in visa_expiring:
@@ -154,7 +155,8 @@ def run_expiry_warnings():
                    LEFT JOIN agencies a ON ac.agency_id = a.id
                    WHERE d.next_renewal IS NOT NULL
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
-            ).fetchall()
+            )
+            dbs_expiring = db.fetchall()
 
             for row in dbs_expiring:
                 r = dict(row)
@@ -184,7 +186,8 @@ def run_expiry_warnings():
                    LEFT JOIN agencies a ON ac.agency_id = a.id
                    WHERE r.next_check IS NOT NULL AND r.is_active = 1
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
-            ).fetchall()
+            )
+            reg_expiring = db.fetchall()
 
             for row in reg_expiring:
                 r = dict(row)
@@ -216,7 +219,8 @@ def run_expiry_warnings():
                        LEFT JOIN agencies a ON ac.agency_id = a.id
                        WHERE t.expiry_date IS NOT NULL AND t.status = 'valid'
                        AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
-                ).fetchall()
+                )
+                training_expiring = db.fetchall()
 
                 for row in training_expiring:
                     r = dict(row)
@@ -286,37 +290,44 @@ def run_weekly_admin_report():
     try:
         with get_db() as db:
             # Gather key metrics
-            total_candidates = db.execute("SELECT COUNT(*) as cnt FROM candidates").fetchone()
+            db.execute("SELECT COUNT(*) as cnt FROM candidates")
+            total_candidates = db.fetchone()
             total_candidates = dict(total_candidates)["cnt"] if total_candidates else 0
 
             compliant = db.execute(
                 "SELECT COUNT(*) as cnt FROM candidates WHERE compliance_status='compliant'"
-            ).fetchone()
+            )
+            compliant = db.fetchone()
             compliant = dict(compliant)["cnt"] if compliant else 0
 
             flagged = db.execute(
                 "SELECT COUNT(*) as cnt FROM candidates WHERE compliance_status IN ('flagged','incomplete')"
-            ).fetchone()
+            )
+            flagged = db.fetchone()
             flagged = dict(flagged)["cnt"] if flagged else 0
 
-            total_agencies = db.execute("SELECT COUNT(*) as cnt FROM agencies").fetchone()
+            db.execute("SELECT COUNT(*) as cnt FROM agencies")
+            total_agencies = db.fetchone()
             total_agencies = dict(total_agencies)["cnt"] if total_agencies else 0
 
             # Revenue this week
             week_revenue = db.execute(
                 "SELECT COALESCE(SUM(sell_amount),0) as total FROM invoices WHERE status='paid' AND created_at >= date('now','-7 days')"
-            ).fetchone()
+            )
+            week_revenue = db.fetchone()
             week_revenue = dict(week_revenue)["total"] if week_revenue else 0
 
             pending_invoices = db.execute(
                 "SELECT COUNT(*) as cnt, COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)),0) as total FROM invoices WHERE status='pending'"
-            ).fetchone()
+            )
+            pending_invoices = db.fetchone()
             pi = dict(pending_invoices) if pending_invoices else {"cnt": 0, "total": 0}
 
             # New candidates this week
             new_candidates = db.execute(
                 "SELECT COUNT(*) as cnt FROM candidates WHERE created_at >= date('now','-7 days')"
-            ).fetchone()
+            )
+            new_candidates = db.fetchone()
             new_candidates = dict(new_candidates)["cnt"] if new_candidates else 0
 
             # Build email content
@@ -343,7 +354,8 @@ def run_weekly_admin_report():
             )
 
             # Send to all admin users
-            admins = db.execute("SELECT email FROM admins").fetchall()
+            db.execute("SELECT email FROM admins")
+            admins = db.fetchall()
             for admin_row in admins:
                 admin_email = dict(admin_row)["email"]
                 EmailService._store_notification(

@@ -72,7 +72,8 @@ class DBSCheckService:
                 (generate_id(), check_id, json.dumps({"provider": provider, "type": check_type}), now),
             )
 
-            row = db.execute("SELECT * FROM dbs_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM dbs_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -127,7 +128,8 @@ class DBSCheckService:
     @staticmethod
     def get_check(check_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM dbs_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM dbs_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -138,5 +140,6 @@ class DBSCheckService:
             rows = db.execute(
                 "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]

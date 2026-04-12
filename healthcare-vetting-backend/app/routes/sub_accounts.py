@@ -87,7 +87,8 @@ async def list_sub_accounts(current_user: dict = Depends(get_current_user)):
                       last_login_at, created_at
                FROM agency_sub_accounts WHERE agency_id=%s ORDER BY created_at""",
             (agency_id,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
 
         results = []
         for row in rows:
@@ -97,7 +98,8 @@ async def list_sub_accounts(current_user: dict = Depends(get_current_user)):
             d["permissions"] = role_info.get("permissions", [])
             # Resolve template name if assigned
             if d.get("industry_template_id"):
-                tmpl = db.execute("SELECT name FROM industry_templates WHERE id=%s", (d["industry_template_id"],)).fetchone()
+                db.execute("SELECT name FROM industry_templates WHERE id=%s", (d["industry_template_id"],))
+                tmpl = db.fetchone()
                 d["industry_template_name"] = dict(tmpl)["name"] if tmpl else None
             else:
                 d["industry_template_name"] = None
@@ -124,7 +126,8 @@ async def create_sub_account(data: SubAccountCreate, current_user: dict = Depend
         existing = db.execute(
             "SELECT id FROM agency_sub_accounts WHERE agency_id=%s AND email=%s",
             (agency_id, data.email.lower()),
-        ).fetchone()
+        )
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="A sub-account with this email already exists")
 
@@ -146,7 +149,8 @@ async def create_sub_account(data: SubAccountCreate, current_user: dict = Depend
         # Resolve template name
         template_name = None
         if data.industry_template_id:
-            tmpl = db.execute("SELECT name FROM industry_templates WHERE id=%s", (data.industry_template_id,)).fetchone()
+            db.execute("SELECT name FROM industry_templates WHERE id=%s", (data.industry_template_id,))
+            tmpl = db.fetchone()
             template_name = dict(tmpl)["name"] if tmpl else None
 
         return {
@@ -177,7 +181,8 @@ async def update_sub_account(account_id: str, data: SubAccountUpdate, current_us
         row = db.execute(
             "SELECT * FROM agency_sub_accounts WHERE id=%s AND agency_id=%s",
             (account_id, agency_id),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Sub-account not found")
 
@@ -203,13 +208,15 @@ async def update_sub_account(account_id: str, data: SubAccountUpdate, current_us
         row = db.execute(
             "SELECT id, agency_id, email, first_name, last_name, role, industry_template_id, is_active, last_login_at, created_at FROM agency_sub_accounts WHERE id=%s",
             (account_id,),
-        ).fetchone()
+        )
+        row = db.fetchone()
         d = dict(row)
         role_info = ROLE_PERMISSIONS.get(d["role"], {})
         d["role_label"] = role_info.get("label", d["role"])
         d["permissions"] = role_info.get("permissions", [])
         if d.get("industry_template_id"):
-            tmpl = db.execute("SELECT name FROM industry_templates WHERE id=%s", (d["industry_template_id"],)).fetchone()
+            db.execute("SELECT name FROM industry_templates WHERE id=%s", (d["industry_template_id"],))
+            tmpl = db.fetchone()
             d["industry_template_name"] = dict(tmpl)["name"] if tmpl else None
         else:
             d["industry_template_name"] = None
@@ -229,7 +236,8 @@ async def delete_sub_account(account_id: str, current_user: dict = Depends(get_c
         row = db.execute(
             "SELECT * FROM agency_sub_accounts WHERE id=%s AND agency_id=%s",
             (account_id, agency_id),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Sub-account not found")
 
@@ -252,7 +260,8 @@ async def sub_account_login(data: SubAccountLogin):
         row = db.execute(
             "SELECT * FROM agency_sub_accounts WHERE email=%s AND is_active=1",
             (data.email.lower(),),
-        ).fetchone()
+        )
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 

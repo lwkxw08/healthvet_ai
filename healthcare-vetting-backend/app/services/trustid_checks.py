@@ -33,7 +33,8 @@ class TrustIDService:
     def get_config() -> dict:
         """Return the current TrustID configuration for all check types."""
         with get_db() as db:
-            rows = db.execute("SELECT * FROM trustid_config ORDER BY check_type").fetchall()
+            db.execute("SELECT * FROM trustid_config ORDER BY check_type")
+            rows = db.fetchall()
             if not rows:
                 return DEFAULT_CONFIG
             config = {}
@@ -55,7 +56,8 @@ class TrustIDService:
         with get_db() as db:
             existing = db.execute(
                 "SELECT * FROM trustid_config WHERE check_type=%s", (check_type,)
-            ).fetchone()
+            )
+            existing = db.fetchone()
 
             if existing:
                 updates = []
@@ -90,7 +92,8 @@ class TrustIDService:
                      environment or "production", now),
                 )
 
-            row = db.execute("SELECT * FROM trustid_config WHERE check_type=%s", (check_type,)).fetchone()
+            db.execute("SELECT * FROM trustid_config WHERE check_type=%s", (check_type,))
+            row = db.fetchone()
             return dict(row) if row else {}
 
     @staticmethod
@@ -99,7 +102,8 @@ class TrustIDService:
         with get_db() as db:
             row = db.execute(
                 "SELECT submission_mode FROM trustid_config WHERE check_type=%s", (check_type,)
-            ).fetchone()
+            )
+            row = db.fetchone()
             if row:
                 return dict(row)["submission_mode"]
             return DEFAULT_CONFIG.get(check_type, {}).get("submission_mode", "manual")
@@ -149,7 +153,8 @@ class TrustIDService:
                 pretty_type = check_type.replace("_", " ").title()
                 display_name = candidate_name or "Unknown"
                 # Notify all active admin users
-                admin_rows = db.execute("SELECT id FROM admin_users WHERE is_active=1").fetchall()
+                db.execute("SELECT id FROM admin_users WHERE is_active=1")
+                admin_rows = db.fetchall()
                 for admin_row in admin_rows:
                     db.execute(
                         """INSERT INTO in_app_notifications
@@ -161,7 +166,8 @@ class TrustIDService:
                          now),
                     )
 
-            row = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -201,7 +207,8 @@ class TrustIDService:
                        WHERE tc.status = %s
                        ORDER BY tc.created_at ASC""",
                     (status,),
-                ).fetchall()
+                )
+                rows = db.fetchall()
             else:
                 rows = db.execute(
                     """SELECT tc.*, c.first_name, c.last_name, c.email as candidate_email_lookup
@@ -209,7 +216,8 @@ class TrustIDService:
                        LEFT JOIN candidates c ON tc.candidate_id = c.id
                        WHERE tc.status IN ('pending_admin', 'submitted_to_trustid', 'awaiting_candidate')
                        ORDER BY tc.created_at ASC""",
-                ).fetchall()
+                )
+                rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -219,7 +227,8 @@ class TrustIDService:
             rows = db.execute(
                 "SELECT * FROM trustid_checks WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -230,7 +239,8 @@ class TrustIDService:
         Status transitions: pending_admin → submitted_to_trustid → awaiting_candidate."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             if not row:
                 return {}
             check = dict(row)
@@ -252,7 +262,8 @@ class TrustIDService:
                  now),
             )
 
-            updated = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,))
+            updated = db.fetchone()
             return dict(updated)
 
     @staticmethod
@@ -265,7 +276,8 @@ class TrustIDService:
         result: 'pass', 'fail', 'inconclusive', 'intervention_required'"""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             if not row:
                 return {}
             check = dict(row)
@@ -302,7 +314,8 @@ class TrustIDService:
                     db, candidate_id, check_type, now, trustid_reference, notes,
                 )
 
-            updated = db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,)).fetchone()
+            db.execute("SELECT * FROM trustid_checks WHERE id=%s", (check_id,))
+            updated = db.fetchone()
             result_dict = dict(updated)
 
         # Re-evaluate compliance outside the DB context to avoid locking
@@ -358,13 +371,15 @@ class TrustIDService:
             for status in ["pending_admin", "awaiting_candidate", "submitted_to_trustid", "completed"]:
                 row = db.execute(
                     "SELECT COUNT(*) as cnt FROM trustid_checks WHERE status=%s", (status,)
-                ).fetchone()
+                )
+                row = db.fetchone()
                 counts[status] = dict(row)["cnt"]
             # Overdue = pending_admin for more than 24 hours
             row = db.execute(
                 """SELECT COUNT(*) as cnt FROM trustid_checks
                    WHERE status='pending_admin'
                    AND created_at::timestamp < NOW() - INTERVAL '24 hours'"""
-            ).fetchone()
+            )
+            row = db.fetchone()
             counts["overdue"] = dict(row)["cnt"]
             return counts

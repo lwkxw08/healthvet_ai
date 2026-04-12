@@ -87,13 +87,15 @@ class EmailService:
     def send_monitoring_summary(results: dict):
         """Send monitoring summary to all agencies with affected candidates."""
         with get_db() as db:
-            agencies = db.execute("SELECT * FROM agencies").fetchall()
+            db.execute("SELECT * FROM agencies")
+            agencies = db.fetchall()
             for agency in agencies:
                 a = dict(agency)
                 candidates = db.execute(
                     "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s",
                     (a["id"],),
-                ).fetchall()
+                )
+                candidates = db.fetchall()
                 candidate_ids = {dict(c)["candidate_id"] for c in candidates}
 
                 affected = []
@@ -365,5 +367,6 @@ class EmailService:
                 query += " WHERE " + " AND ".join(conditions)
             query += " ORDER BY created_at DESC LIMIT %s"
             params.append(limit)
-            rows = db.execute(query, params).fetchall()
+            db.execute(query, params)
+            rows = db.fetchall()
             return [dict(r) for r in rows]

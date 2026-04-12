@@ -22,7 +22,8 @@ def create_pre_notification(
 
     with get_db() as db:
         # Look up candidate email
-        candidate = db.execute("SELECT email, first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)).fetchone()
+        db.execute("SELECT email, first_name, last_name FROM candidates WHERE id=%s", (candidate_id,))
+        candidate = db.fetchone()
         if not candidate:
             return {"error": "Candidate not found"}
         candidate = dict(candidate)
@@ -54,7 +55,8 @@ def get_pending_notifications(candidate_id: str) -> list[dict]:
         rows = db.execute(
             "SELECT * FROM candidate_pre_notifications WHERE candidate_id=%s AND status='pending' ORDER BY created_at DESC",
             (candidate_id,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -65,7 +67,8 @@ def confirm_notification(notification_id: str, candidate_id: str) -> dict | None
         notif = db.execute(
             "SELECT * FROM candidate_pre_notifications WHERE id=%s AND candidate_id=%s",
             (notification_id, candidate_id),
-        ).fetchone()
+        )
+        notif = db.fetchone()
         if not notif:
             return None
         db.execute(
@@ -86,7 +89,8 @@ def update_verifier_details(
         notif = db.execute(
             "SELECT * FROM candidate_pre_notifications WHERE id=%s AND candidate_id=%s AND status='pending'",
             (notification_id, candidate_id),
-        ).fetchone()
+        )
+        notif = db.fetchone()
         if not notif:
             return None
         updates = []
@@ -117,7 +121,8 @@ def get_ready_notifications(delay_hours: int = DEFAULT_DELAY_HOURS) -> list[dict
                   OR (status='pending' AND sent_at < %s)
                ORDER BY created_at ASC""",
             (cutoff,),
-        ).fetchall()
+        )
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
