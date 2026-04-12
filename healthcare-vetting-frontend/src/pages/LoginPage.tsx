@@ -147,10 +147,9 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-3">
-            <Shield className="text-blue-400" size={40} />
-            <h1 className="text-3xl font-bold text-white">HealthVet AI</h1>
+            <img src="/viper-logo.png" alt="Viper AI" className="h-12" />
           </div>
-          <p className="text-blue-300 text-sm">AI-Powered Compliance Intelligence for Healthcare Staffing</p>
+          <p className="text-blue-300 text-sm">Vetting Intelligence Platform for Enterprise Risk</p>
         </div>
 
         {inviteInfo && (
@@ -329,7 +328,7 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
             <div>
               <label className="block text-blue-200 text-xs mb-1">Email</label>
               <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder={tab === "admin" ? "admin@healthvet.ai" : "you@example.com"}
+                placeholder={tab === "admin" ? "admin@viperai.io" : "you@example.com"}
                 className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2.5 text-white placeholder-blue-300/50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
             </div>
 
@@ -367,7 +366,7 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
 
           {tab === "admin" && (mode === "login" || mode === "register") && (
             <p className="mt-4 text-center text-blue-400/60 text-xs">
-              Demo: admin@healthvet.ai / admin123
+              Demo: admin@viperai.io / admin123
             </p>
           )}
         </div>

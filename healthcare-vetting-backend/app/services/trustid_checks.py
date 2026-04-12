@@ -1,7 +1,7 @@
 """
 TrustID Check Service — Dual-Mode (Manual + API) for Identity, DBS, and Right to Work checks.
 
-Manual mode: Admin submits checks via TrustID portal, records results in HealthVet.
+Manual mode: Admin submits checks via TrustID portal, records results in Viper AI.
 API mode: (Future) Automated submission via TrustID REST API with webhook callbacks.
 
 The submission_mode per check type is stored in the trustid_config table and can be

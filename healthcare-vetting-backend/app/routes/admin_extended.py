@@ -583,7 +583,7 @@ async def retrigger_reference_verification(
             "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
             (candidate_id,))
         agency_link = db.fetchone()
-        agency_name = "HealthVet AI"
+        agency_name = "Viper AI"
         if agency_link:
             db.execute("SELECT name FROM agencies WHERE id=%s",
                                 (dict(agency_link)["agency_id"],))
@@ -669,7 +669,7 @@ async def retrigger_employment_verification(
             "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
             (candidate_id,))
         agency_link = db.fetchone()
-        agency_name = "HealthVet AI"
+        agency_name = "Viper AI"
         if agency_link:
             db.execute("SELECT name FROM agencies WHERE id=%s",
                                 (dict(agency_link)["agency_id"],))

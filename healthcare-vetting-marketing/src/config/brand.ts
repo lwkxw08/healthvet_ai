@@ -7,14 +7,14 @@
 
 export const brand = {
   // ── Core Identity ──────────────────────────────────────────────
-  name: "HealthVet AI",
-  tagline: "Automated Compliance Vetting for Regulated Industries",
+  name: "Viper AI",
+  tagline: "Vetting Intelligence Platform for Enterprise Risk",
   description:
-    "Streamline background checks, identity verification, right-to-work validation, and professional registration — all from one intelligent platform built for any regulated industry.",
+    "VIPER — Vetting Intelligence Platform for Enterprise Risk. Streamline background checks, identity verification, right-to-work validation, and professional registration — all from one intelligent platform built for any regulated industry.",
 
   // ── Logo ───────────────────────────────────────────────────────
-  logoUrl: "",
-  logoAlt: "HealthVet AI logo",
+  logoUrl: "/viper-logo.png",
+  logoAlt: "Viper AI logo",
 
   // ── Colours (Tailwind classes) ─────────────────────────────────
   colors: {
@@ -333,14 +333,14 @@ export const brand = {
     headline: "Ready to Streamline Your Compliance?",
     subheadline:
       "Book a 15-minute demo and see how we can cut your vetting time by 80%.",
-    email: "hello@healthvet.ai",
+    email: "hello@viperai.io",
     phone: "+44 (0) 20 1234 5678",
     formFields: ["name", "email", "company", "industry", "message"],
   },
 
   // ── Footer ─────────────────────────────────────────────────────
   footer: {
-    copyright: `${new Date().getFullYear()} HealthVet AI. All rights reserved.`,
+    copyright: `${new Date().getFullYear()} Viper AI. All rights reserved.`,
     companyReg: "Company Reg: 12345678",
     icoRef: "ICO Registration: ZA123456",
     columns: [
@@ -384,4 +384,4 @@ export const brand = {
 } as const;
 
 // Helper: get the app URL for "Log In" / "Sign Up" buttons
-export const APP_URL = import.meta.env.VITE_APP_URL || "https://app-wwjesgoe.fly.dev";
+export const APP_URL = import.meta.env.VITE_APP_URL || "https://app.viperai.io";

@@ -502,7 +502,7 @@ def scrape_cqc_api(search_type="care_homes", location="", max_results=100):
             params["serviceType"] = "Homecare agencies"
         url = f"{base_url}/providers"
         logger.info(f"Querying CQC API: {url} with params {params}")
-        cqc_ua = "HealthVetAI/1.0 (compliance platform)"
+        cqc_ua = "ViperAI/1.0 (compliance platform)"
         resp = http_requests.get(
             url, params=params, timeout=30,
             headers={"User-Agent": cqc_ua},

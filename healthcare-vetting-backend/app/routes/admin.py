@@ -1024,7 +1024,7 @@ async def send_invoice_email(
     }
 
     fallback_subject = f"Invoice #{invoice_ref} - \u00a3{total_due:.2f}"
-    fallback_body = f"Dear {variables['agency_name']},\n\nPlease find attached invoice #{invoice_ref} for \u00a3{total_due:.2f}.\n\nBest regards,\n{settings.get('company_name', 'HealthVet AI')}"
+    fallback_body = f"Dear {variables['agency_name']},\n\nPlease find attached invoice #{invoice_ref} for \u00a3{total_due:.2f}.\n\nBest regards,\n{settings.get('company_name', 'Viper AI')}"
 
     try:
         EmailTemplateService.send_email(

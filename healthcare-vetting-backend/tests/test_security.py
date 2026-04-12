@@ -51,5 +51,5 @@ def test_api_info_endpoint(client):
     resp = client.get("/api/info")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["name"] == "HealthVet AI"
+    assert data["name"] == "Viper AI"
     assert "features" in data

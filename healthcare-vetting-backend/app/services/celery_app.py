@@ -28,7 +28,7 @@ def get_celery_app():
         from celery import Celery
 
         _celery_app = Celery(
-            "healthvet",
+            "viperai",
             broker=BROKER_URL,
             backend=RESULT_BACKEND,
         )

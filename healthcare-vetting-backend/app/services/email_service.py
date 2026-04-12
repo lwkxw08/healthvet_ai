@@ -122,12 +122,12 @@ class EmailService:
                         "dashboard_link": f"{DASHBOARD_URL}/agency/dashboard",
                     }
 
-                    fallback_subject = f"HealthVet AI - {len(affected)} New Monitoring Alert(s)"
+                    fallback_subject = f"Viper AI - {len(affected)} New Monitoring Alert(s)"
                     fallback_body = f"Dear {a.get('contact_name', a['name'])},\n\n"
                     fallback_body += f"Our automated monitoring has detected {len(affected)} new alert(s) for your candidates:\n\n"
                     fallback_body += alert_items_text
                     fallback_body += "\nPlease log in to your dashboard to review these alerts.\n"
-                    fallback_body += "\nBest regards,\nHealthVet AI Compliance Team"
+                    fallback_body += "\nBest regards,\nViper AI Compliance Team"
 
                     resolved_key = EmailService._resolve_template_key(
                         "monitoring_alerts_detected", "monitoring_alert_summary",
@@ -169,8 +169,8 @@ class EmailService:
                 "dashboard_link": f"{DASHBOARD_URL}/agency/dashboard",
             }
 
-            fallback_subject = f"HealthVet AI - {len(data['items'])} Credential(s) Expiring Soon"
-            fallback_body = f"Dear {data['name']},\n\nThe following credentials are expiring soon:\n\n{items_text}\nPlease take action.\n\nBest regards,\nHealthVet AI"
+            fallback_subject = f"Viper AI - {len(data['items'])} Credential(s) Expiring Soon"
+            fallback_body = f"Dear {data['name']},\n\nThe following credentials are expiring soon:\n\n{items_text}\nPlease take action.\n\nBest regards,\nViper AI"
 
             resolved_key = EmailService._resolve_template_key(
                 "credential_expiring", "expiry_warning_agency",
@@ -195,8 +195,8 @@ class EmailService:
                     "portal_link": f"{DASHBOARD_URL}/candidate/portal",
                 }
 
-                fallback_subject = f"HealthVet AI - Your {type_label} Expires in {n['days_left']} Days"
-                fallback_body = f"Dear {n['candidate_name']},\n\nYour {type_label} expires on {n['expiry_date']} ({n['days_left']} days).\n\nBest regards,\nHealthVet AI"
+                fallback_subject = f"Viper AI - Your {type_label} Expires in {n['days_left']} Days"
+                fallback_body = f"Dear {n['candidate_name']},\n\nYour {type_label} expires on {n['expiry_date']} ({n['days_left']} days).\n\nBest regards,\nViper AI"
 
                 resolved_key = EmailService._resolve_template_key(
                     "credential_expiring", "expiry_warning_candidate",
@@ -222,8 +222,8 @@ class EmailService:
             "payment_link": f"{DASHBOARD_URL}/agency/billing",
         }
 
-        fallback_subject = f"HealthVet AI - New Invoice #{invoice_id[:8]}"
-        fallback_body = f"Dear {agency_name},\n\nInvoice #{invoice_id[:8]}: \u00a3{amount:.2f}\nDescription: {description}\n\nBest regards,\nHealthVet AI"
+        fallback_subject = f"Viper AI - New Invoice #{invoice_id[:8]}"
+        fallback_body = f"Dear {agency_name},\n\nInvoice #{invoice_id[:8]}: \u00a3{amount:.2f}\nDescription: {description}\n\nBest regards,\nViper AI"
 
         resolved_key = EmailService._resolve_template_key(
             "invoice_created", "invoice_notification",
@@ -248,8 +248,8 @@ class EmailService:
             "dashboard_link": f"{DASHBOARD_URL}/agency/dashboard",
         }
 
-        fallback_subject = f"HealthVet AI - Subscription Confirmed: {plan_name}"
-        fallback_body = f"Dear {agency_name},\n\nPlan: {plan_name}\nAmount: \u00a3{amount:.2f}\n\nBest regards,\nHealthVet AI"
+        fallback_subject = f"Viper AI - Subscription Confirmed: {plan_name}"
+        fallback_body = f"Dear {agency_name},\n\nPlan: {plan_name}\nAmount: \u00a3{amount:.2f}\n\nBest regards,\nViper AI"
 
         resolved_key = EmailService._resolve_template_key(
             "subscription_purchased", "subscription_confirmation",
@@ -280,8 +280,8 @@ class EmailService:
             "payment_link": f"{DASHBOARD_URL}/agency/billing",
         }
 
-        fallback_subject = f"HealthVet AI - {urgency}: Invoice #{invoice_id[:8]} Payment Due"
-        fallback_body = f"Dear {agency_name},\n\nInvoice #{invoice_id[:8]}: \u00a3{amount:.2f}\n{description}\n\nBest regards,\nHealthVet AI"
+        fallback_subject = f"Viper AI - {urgency}: Invoice #{invoice_id[:8]} Payment Due"
+        fallback_body = f"Dear {agency_name},\n\nInvoice #{invoice_id[:8]}: \u00a3{amount:.2f}\n{description}\n\nBest regards,\nViper AI"
 
         resolved_key = EmailService._resolve_template_key(
             "payment_overdue", "payment_reminder",
@@ -321,10 +321,10 @@ class EmailService:
             "contact_window": "24 hours",
         }
 
-        fallback_subject = "HealthVet AI - Your Verification Checks Have Been Submitted"
+        fallback_subject = "Viper AI - Your Verification Checks Have Been Submitted"
         fallback_body = (
             f"Dear {candidate_name or 'Candidate'},\n\n"
-            "Thank you for completing your submission on HealthVet AI.\n\n"
+            "Thank you for completing your submission on Viper AI.\n\n"
             "The following checks will now be carried out by our trusted partner, TrustID:\n\n"
             f"{checks_text}\n\n"
             "WHAT HAPPENS NEXT:\n"
@@ -334,9 +334,9 @@ class EmailService:
             "Please keep an eye on your email (including spam/junk folders) for correspondence "
             "from TrustID.\n\n"
             "If you have not been contacted within 24 hours, please reach out to your agency "
-            "or contact us at support@healthvet.ai.\n\n"
+            "or contact us at support@viperai.io.\n\n"
             "Best regards,\n"
-            "HealthVet AI Compliance Team"
+            "Viper AI Compliance Team"
         )
 
         resolved_key = EmailService._resolve_template_key(

@@ -61,7 +61,7 @@ from app.middleware.agency_scope import AgencyScopeMiddleware
 from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
 
 app = FastAPI(
-    title="HealthVet AI - Healthcare Vetting Engine",
+    title="Viper AI - Vetting Intelligence Platform for Enterprise Risk",
     description="AI-powered compliance intelligence for healthcare staffing",
     version="1.0.0",
 )
@@ -80,7 +80,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # ── CORS — environment-configurable, locked down for production ──────────────
-# In production set ALLOWED_ORIGINS to your domain(s), e.g. "https://app.healthvet.ai"
+# In production set ALLOWED_ORIGINS to your domain(s), e.g. "https://app.viperai.io"
 _default_origins = "http://localhost:5173,http://localhost:3000"
 _env_origins = os.environ.get("ALLOWED_ORIGINS", "")
 ALLOWED_ORIGINS = [o.strip() for o in _env_origins.split(",") if o.strip()] if _env_origins else _default_origins.split(",")
@@ -179,7 +179,7 @@ async def healthz():
 @app.get("/api/info")
 async def api_info():
     return {
-        "name": "HealthVet AI",
+        "name": "Viper AI",
         "version": "1.0.0",
         "description": "AI-powered compliance intelligence for healthcare staffing",
         "features": [

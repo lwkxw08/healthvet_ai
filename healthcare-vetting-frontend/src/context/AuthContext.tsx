@@ -16,7 +16,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => {
-    const stored = localStorage.getItem("healthvet_auth");
+    const stored = localStorage.getItem("viperai_auth");
     if (stored) {
       try {
         return JSON.parse(stored);
@@ -29,9 +29,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (auth.token) {
-      localStorage.setItem("healthvet_auth", JSON.stringify(auth));
+      localStorage.setItem("viperai_auth", JSON.stringify(auth));
     } else {
-      localStorage.removeItem("healthvet_auth");
+      localStorage.removeItem("viperai_auth");
     }
   }, [auth]);
 

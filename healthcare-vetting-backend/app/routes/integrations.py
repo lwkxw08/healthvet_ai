@@ -349,7 +349,7 @@ async def test_webhook(
     test_payload = {
         "event": "test.ping",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "data": {"message": "This is a test webhook from HealthVet AI"},
+        "data": {"message": "This is a test webhook from Viper AI"},
     }
 
     result = deliver_webhook(data.subscription_id, "test.ping", test_payload)

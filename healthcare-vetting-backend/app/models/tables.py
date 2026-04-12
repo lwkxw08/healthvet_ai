@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for all HealthVet AI database tables.
+"""SQLAlchemy ORM models for all Viper AI database tables.
 
 Each model mirrors the existing SQLite schema exactly so that the ORM layer
 can be adopted incrementally without breaking existing raw-SQL code paths.

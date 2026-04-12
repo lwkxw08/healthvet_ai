@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for HealthVet AI."""
+"""SQLAlchemy ORM models for Viper AI."""
 
 from app.models.base import Base
 from app.models.tables import (

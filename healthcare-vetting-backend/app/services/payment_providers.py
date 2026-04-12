@@ -557,8 +557,8 @@ class PaymentProviderService:
             # Create a billing request flow (hosted page)
             flow = client.billing_request_flows.create(
                 params={
-                    "redirect_uri": metadata.get("success_url", "https://healthvet.ai/payment/success") if metadata else "https://healthvet.ai/payment/success",
-                    "exit_uri": metadata.get("cancel_url", "https://healthvet.ai/payment/cancel") if metadata else "https://healthvet.ai/payment/cancel",
+                    "redirect_uri": metadata.get("success_url", "https://viperai.io/payment/success") if metadata else "https://viperai.io/payment/success",
+                    "exit_uri": metadata.get("cancel_url", "https://viperai.io/payment/cancel") if metadata else "https://viperai.io/payment/cancel",
                     "links": {
                         "billing_request": billing_request.id,
                     },

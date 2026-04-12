@@ -3,7 +3,7 @@
 
 def test_admin_login_success(client):
     resp = client.post("/api/auth/admin/login", json={
-        "email": "admin@healthvet.ai",
+        "email": "admin@viperai.io",
         "password": "admin123",
     })
     assert resp.status_code == 200
@@ -14,7 +14,7 @@ def test_admin_login_success(client):
 
 def test_admin_login_wrong_password(client):
     resp = client.post("/api/auth/admin/login", json={
-        "email": "admin@healthvet.ai",
+        "email": "admin@viperai.io",
         "password": "wrongpassword",
     })
     assert resp.status_code == 401
@@ -22,7 +22,7 @@ def test_admin_login_wrong_password(client):
 
 def test_candidate_register_and_login(client):
     import uuid
-    email = f"auth-test-{uuid.uuid4().hex[:8]}@test.healthvet"
+    email = f"auth-test-{uuid.uuid4().hex[:8]}@test.viperai"
     # Register
     resp = client.post("/api/auth/candidates/register", json={
         "email": email,
@@ -46,7 +46,7 @@ def test_candidate_register_and_login(client):
 
 def test_candidate_register_duplicate_email(client):
     import uuid
-    email = f"dup-{uuid.uuid4().hex[:8]}@test.healthvet"
+    email = f"dup-{uuid.uuid4().hex[:8]}@test.viperai"
     client.post("/api/auth/candidates/register", json={
         "email": email,
         "password": "SecurePass123!",
@@ -66,7 +66,7 @@ def test_candidate_register_duplicate_email(client):
 
 def test_candidate_login_wrong_password(client):
     import uuid
-    email = f"wrongpw-{uuid.uuid4().hex[:8]}@test.healthvet"
+    email = f"wrongpw-{uuid.uuid4().hex[:8]}@test.viperai"
     client.post("/api/auth/candidates/register", json={
         "email": email,
         "password": "SecurePass123!",
@@ -82,7 +82,7 @@ def test_candidate_login_wrong_password(client):
 
 def test_agency_register_and_login(client):
     import uuid
-    email = f"agency-auth-{uuid.uuid4().hex[:8]}@test.healthvet"
+    email = f"agency-auth-{uuid.uuid4().hex[:8]}@test.viperai"
     resp = client.post("/api/auth/agencies/register", json={
         "name": "Auth Test Agency",
         "email": email,

@@ -96,9 +96,9 @@ def deliver_webhook(subscription_id: str, event_type: str, payload: dict) -> dic
 
         headers = {
             "Content-Type": "application/json",
-            "X-HealthVet-Signature": f"sha256={signature}",
-            "X-HealthVet-Event": event_type,
-            "X-HealthVet-Delivery": delivery_id,
+            "X-ViperAI-Signature": f"sha256={signature}",
+            "X-ViperAI-Event": event_type,
+            "X-ViperAI-Delivery": delivery_id,
         }
 
         try:

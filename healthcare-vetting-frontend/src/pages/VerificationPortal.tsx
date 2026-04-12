@@ -176,7 +176,7 @@ export default function VerificationPortal() {
       {/* Header */}
       <header className="bg-slate-900 text-white py-6">
         <div className="max-w-2xl mx-auto px-4 text-center">
-          <h1 className="text-2xl font-bold text-blue-400">HealthVet AI</h1>
+          <img src="/viper-logo.png" alt="Viper AI" className="h-10 mx-auto" />
           <p className="text-slate-400 text-sm mt-1">Secure Verification Portal</p>
         </div>
       </header>
@@ -237,7 +237,7 @@ export default function VerificationPortal() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
                 <p>
-                  This is a secure portal operated by HealthVet AI Ltd. Your responses are encrypted
+                  This is a secure portal operated by Viper AI Ltd. Your responses are encrypted
                   and processed in accordance with UK GDPR. Data is retained for 6 years per regulatory requirements.
                 </p>
               </div>
@@ -325,11 +325,11 @@ export default function VerificationPortal() {
 
       {/* Footer */}
       <footer className="py-6 text-center text-xs text-slate-400">
-        <p>HealthVet AI Ltd | Registered in England & Wales</p>
+        <p>Viper AI Ltd | Registered in England & Wales</p>
         <p className="mt-1">
           Questions? Contact{" "}
-          <a href="mailto:verify@healthvet.ai" className="text-blue-500 hover:underline">
-            verify@healthvet.ai
+          <a href="mailto:verify@viperai.io" className="text-blue-500 hover:underline">
+            verify@viperai.io
           </a>
         </p>
       </footer>

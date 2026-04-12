@@ -169,7 +169,7 @@ def test_privacy_notice_content_structure(client):
     resp = client.get("/api/gdpr/privacy-notice")
     data = resp.json()
     # Must include data controller info
-    assert "HealthVet" in data.get("controller", {}).get("name", "")
+    assert "Viper AI" in data.get("controller", {}).get("name", "")
     # Must include rights
     rights = data.get("rights", [])
     assert len(rights) > 0

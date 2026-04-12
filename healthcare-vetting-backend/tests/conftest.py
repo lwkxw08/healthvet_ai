@@ -1,4 +1,4 @@
-"""Shared test fixtures for the HealthVet AI test suite."""
+"""Shared test fixtures for the Viper AI test suite."""
 import os
 import sys
 import tempfile
@@ -37,7 +37,7 @@ def client(app):
 def admin_token(client):
     """Get a valid admin JWT token."""
     resp = client.post("/api/auth/admin/login", json={
-        "email": "admin@healthvet.ai",
+        "email": "admin@viperai.io",
         "password": "admin123",
     })
     assert resp.status_code == 200
@@ -48,7 +48,7 @@ def admin_token(client):
 def agency_token(client):
     """Register a test agency and return its JWT token."""
     import uuid
-    email = f"agency-{uuid.uuid4().hex[:8]}@test.healthvet"
+    email = f"agency-{uuid.uuid4().hex[:8]}@test.viperai"
     resp = client.post("/api/auth/agencies/register", json={
         "name": "Test Agency",
         "email": email,
@@ -65,7 +65,7 @@ def agency_token(client):
 def candidate_token(client):
     """Register a test candidate and return its JWT + user_id."""
     import uuid
-    email = f"cand-{uuid.uuid4().hex[:8]}@test.healthvet"
+    email = f"cand-{uuid.uuid4().hex[:8]}@test.viperai"
     resp = client.post("/api/auth/candidates/register", json={
         "email": email,
         "password": "TestPassword123!",

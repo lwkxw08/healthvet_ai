@@ -335,7 +335,7 @@ def run_weekly_admin_report():
             week_start = (now - timedelta(days=7)).strftime("%d %b %Y")
             week_end = now.strftime("%d %b %Y")
 
-            subject = f"HealthVet AI — Weekly Report ({week_start} - {week_end})"
+            subject = f"Viper AI — Weekly Report ({week_start} - {week_end})"
             body = (
                 f"Weekly Analytics Summary\n"
                 f"Period: {week_start} — {week_end}\n\n"
@@ -350,7 +350,7 @@ def run_weekly_admin_report():
                 f"  Revenue this week: \u00a3{week_revenue:,.2f}\n"
                 f"  Pending invoices: {pi['cnt']} (\u00a3{pi['total']:,.2f})\n\n"
                 f"View full dashboard: {DASHBOARD_URL}/admin\n\n"
-                f"— HealthVet AI Compliance Team"
+                f"— Viper AI Compliance Team"
             )
 
             # Send to all admin users

@@ -70,7 +70,7 @@ async def update_trustid_config(data: TrustIDConfigUpdate, current_user: dict = 
 @router.post("/submit-checks")
 async def submit_trustid_checks(data: TrustIDSubmitChecks, current_user: dict = Depends(get_current_user)):
     """Submit all three TrustID checks (ID, DBS, RTW) for a candidate.
-    Called when candidate completes their HealthVet submission.
+    Called when candidate completes their Viper AI submission.
     Creates check records in pending_admin status for manual mode."""
     submitted_by = current_user.get("sub", "system")
     results = TrustIDService.submit_all_checks(

@@ -308,7 +308,7 @@ class ReferenceAutomationService:
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             )
             agency_link = db.fetchone()
-            agency_name = "HealthVet AI"
+            agency_name = "Viper AI"
             if agency_link:
                 agency = db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
@@ -361,7 +361,7 @@ class ReferenceAutomationService:
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             )
             agency_link = db.fetchone()
-            agency_name = "HealthVet AI"
+            agency_name = "Viper AI"
             if agency_link:
                 agency = db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)

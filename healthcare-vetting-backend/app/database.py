@@ -947,7 +947,7 @@ def migrate_db():
     if admin_count == 0:
         import os
         from app.utils.auth import generate_id, hash_password
-        admin_email = os.environ.get("ADMIN_EMAIL", "admin@healthvet.ai")
+        admin_email = os.environ.get("ADMIN_EMAIL", "admin@viperai.io")
         admin_pw = os.environ.get("ADMIN_PASSWORD", "Password123!")
         cursor.execute(
             """INSERT INTO admin_users (id, email, password_hash, display_name, role)

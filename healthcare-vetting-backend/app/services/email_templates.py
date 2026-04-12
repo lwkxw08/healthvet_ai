@@ -37,15 +37,15 @@ TRUST_SIGNAL_DEFAULTS = {
     "company_reg_info": "Registered in England & Wales",
     "ico_registration": "Pending",
     "verification_phone": "+44 (0) XXX XXX XXXX",
-    "verification_email": "verify@healthvet.ai",
-    "privacy_url": "https://healthvet.ai/privacy",
-    "verification_url": "verify.healthvet.ai",
+    "verification_email": "verify@viperai.io",
+    "privacy_url": "https://viperai.io/privacy",
+    "verification_url": "verify.viperai.io",
 }
 
 INVOICE_SETTINGS_DEFAULTS = {
-    "company_name": "HealthVet AI Ltd",
+    "company_name": "Viper AI Ltd",
     "company_address": "",
-    "company_email": "billing@healthvet.ai",
+    "company_email": "billing@viperai.io",
     "company_phone": "+44 (0) XXX XXX XXXX",
     "company_reg_info": "Registered in England & Wales",
     "vat_number": "",
@@ -105,11 +105,11 @@ _config = {
     "resend_api_key": os.environ.get("RESEND_API_KEY", ""),
     "email_from_address": os.environ.get(
         "EMAIL_FROM_ADDRESS",
-        os.environ.get("SENDGRID_FROM_EMAIL", "noreply@healthvet.ai"),
+        os.environ.get("SENDGRID_FROM_EMAIL", "noreply@viperai.io"),
     ),
     "email_from_name": os.environ.get(
         "EMAIL_FROM_NAME",
-        os.environ.get("SENDGRID_FROM_NAME", "HealthVet AI"),
+        os.environ.get("SENDGRID_FROM_NAME", "Viper AI"),
     ),
 }
 
@@ -169,7 +169,7 @@ DEFAULT_TEMPLATES = [
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
     <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">{{agency_name}}</h1>
-    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Employment Verification Request via HealthVet AI</p>
+    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Employment Verification Request via Viper AI</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
     <p>Dear {{verifier_name}},</p>
@@ -196,7 +196,7 @@ DEFAULT_TEMPLATES = [
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
     <div style="color: #64748b; font-size: 11px; line-height: 1.5;">
         <p style="margin: 0 0 8px;"><strong>Why am I receiving this%s</strong> {{agency_name}} is conducting pre-employment checks as required under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.</p>
-        <p style="margin: 0 0 8px;">HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
+        <p style="margin: 0 0 8px;">Viper AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
         <p style="margin: 0;">We process personal data in accordance with UK GDPR. Your response will be retained for 6 years in line with regulatory requirements. See our privacy policy at {{privacy_url}}.</p>
     </div>
 </div>
@@ -225,12 +225,12 @@ This should take approximately 2 minutes. The code will expire in 14 days.
 
 ---
 This request is made under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.
-HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}}
+Viper AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}}
 To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}
 Privacy policy: {{privacy_url}}
 
 Best regards,
-{{agency_name}} via HealthVet AI Compliance""",
+{{agency_name}} via Viper AI Compliance""",
         "variables": json.dumps([
             {"key": "candidate_name", "description": "Full name of the candidate"},
             {"key": "verifier_name", "description": "Name of the employer/verifier"},
@@ -240,7 +240,7 @@ Best regards,
             {"key": "start_date", "description": "Employment start date"},
             {"key": "end_date", "description": "Employment end date"},
             {"key": "verification_code", "description": "Short verification code (e.g. HV-7X9K-2M4P)"},
-            {"key": "verification_url", "description": "Domain for manual code entry (e.g. verify.healthvet.ai)"},
+            {"key": "verification_url", "description": "Domain for manual code entry (e.g. verify.viperai.io)"},
             {"key": "verification_link", "description": "Direct link for the verifier to submit their response"},
             {"key": "company_reg_info", "description": "Company registration details"},
             {"key": "ico_registration", "description": "ICO registration number"},
@@ -258,7 +258,7 @@ Best regards,
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
     <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">{{agency_name}}</h1>
-    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Professional Reference Request via HealthVet AI</p>
+    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Professional Reference Request via Viper AI</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
     <p>Dear {{referee_name}},</p>
@@ -277,7 +277,7 @@ Best regards,
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
     <div style="color: #64748b; font-size: 11px; line-height: 1.5;">
         <p style="margin: 0 0 8px;"><strong>Why am I receiving this?</strong> {{agency_name}} is conducting pre-employment checks as required under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.</p>
-        <p style="margin: 0 0 8px;">HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
+        <p style="margin: 0 0 8px;">Viper AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
         <p style="margin: 0;">We process personal data in accordance with UK GDPR. Your response will be treated in confidence and retained for 6 years in line with regulatory requirements. See our privacy policy at {{privacy_url}}.</p>
     </div>
 </div>
@@ -301,18 +301,18 @@ Your response will be treated in confidence. The code will expire in 14 days.
 
 ---
 This request is made under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.
-HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}}
+Viper AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}}
 To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}
 Privacy policy: {{privacy_url}}
 
 Best regards,
-{{agency_name}} via HealthVet AI Compliance""",
+{{agency_name}} via Viper AI Compliance""",
         "variables": json.dumps([
             {"key": "candidate_name", "description": "Full name of the candidate"},
             {"key": "referee_name", "description": "Name of the referee"},
             {"key": "agency_name", "description": "Name of the hiring agency"},
             {"key": "verification_code", "description": "Short verification code (e.g. HV-7X9K-2M4P)"},
-            {"key": "verification_url", "description": "Domain for manual code entry (e.g. verify.healthvet.ai)"},
+            {"key": "verification_url", "description": "Domain for manual code entry (e.g. verify.viperai.io)"},
             {"key": "reference_link", "description": "Direct link for the referee to submit their reference"},
             {"key": "company_reg_info", "description": "Company registration details"},
             {"key": "ico_registration", "description": "ICO registration number"},
@@ -330,7 +330,7 @@ Best regards,
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
     <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">{{agency_name}}</h1>
-    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Friendly Reminder via HealthVet AI</p>
+    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Friendly Reminder via Viper AI</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
     <p>Dear {{recipient_name}},</p>
@@ -349,7 +349,7 @@ Best regards,
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
     <div style="color: #64748b; font-size: 11px; line-height: 1.5;">
         <p style="margin: 0 0 8px;">This request is made under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.</p>
-        <p style="margin: 0 0 8px;">HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
+        <p style="margin: 0 0 8px;">Viper AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}} | To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}</p>
         <p style="margin: 0;">Privacy policy: {{privacy_url}} | If you have already responded, please disregard this reminder.</p>
     </div>
 </div>
@@ -372,12 +372,12 @@ If you have already responded, please disregard this reminder.
 
 ---
 This request is made under the Conduct of Employment Agencies and Employment Businesses Regulations 2003.
-HealthVet AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}}
+Viper AI Ltd | {{company_reg_info}} | ICO Registration: {{ico_registration}}
 To verify this request is genuine, call {{verification_phone}} or email {{verification_email}}
 Privacy policy: {{privacy_url}}
 
 Best regards,
-{{agency_name}} via HealthVet AI Compliance""",
+{{agency_name}} via Viper AI Compliance""",
         "variables": json.dumps([
             {"key": "recipient_name", "description": "Name of the verifier or referee"},
             {"key": "request_type", "description": "Type of request (e.g., Employment Verification, Reference)"},
@@ -403,7 +403,7 @@ Best regards,
         "subject": "Credential Expiry Alert — {{expiry_count}} item(s) expiring soon",
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">Viper AI</h1>
     <p style="color: #f59e0b; margin: 5px 0 0; font-size: 14px;">Credential Expiry Warning</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
@@ -417,7 +417,7 @@ Best regards,
         <a href="{{dashboard_link}}" style="background: #3b82f6; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">View Dashboard</a>
     </div>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">This is an automated compliance alert from HealthVet AI.</p>
+    <p style="color: #64748b; font-size: 12px;">This is an automated compliance alert from Viper AI.</p>
 </div>
 </div>""",
         "body_text": """Credential Expiry Alert
@@ -433,7 +433,7 @@ Please log in to your dashboard to take appropriate action.
 Dashboard: {{dashboard_link}}
 
 Best regards,
-HealthVet AI Compliance Team""",
+Viper AI Compliance Team""",
         "variables": json.dumps([
             {"key": "agency_name", "description": "Name of the agency"},
             {"key": "expiry_count", "description": "Number of expiring items"},
@@ -450,7 +450,7 @@ HealthVet AI Compliance Team""",
         "subject": "Your {{credential_type}} expires in {{days_left}} days",
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">Viper AI</h1>
     <p style="color: #f59e0b; margin: 5px 0 0; font-size: 14px;">Credential Expiry Warning</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
@@ -464,7 +464,7 @@ HealthVet AI Compliance Team""",
         <a href="{{portal_link}}" style="background: #3b82f6; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">View My Portal</a>
     </div>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">This is an automated compliance alert from HealthVet AI.</p>
+    <p style="color: #64748b; font-size: 12px;">This is an automated compliance alert from Viper AI.</p>
 </div>
 </div>""",
         "body_text": """Credential Expiry Warning
@@ -478,7 +478,7 @@ Action Required: Please renew this credential to maintain your compliance status
 Log in to your portal: {{portal_link}}
 
 Best regards,
-HealthVet AI Compliance Team""",
+Viper AI Compliance Team""",
         "variables": json.dumps([
             {"key": "candidate_name", "description": "Full name of the candidate"},
             {"key": "credential_type", "description": "Type of credential expiring"},
@@ -495,7 +495,7 @@ HealthVet AI Compliance Team""",
         "subject": "Monitoring Alert — {{alert_count}} new issue(s) detected",
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">Viper AI</h1>
     <p style="color: #ef4444; margin: 5px 0 0; font-size: 14px;">Compliance Monitoring Alert</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
@@ -509,7 +509,7 @@ HealthVet AI Compliance Team""",
         <a href="{{dashboard_link}}" style="background: #ef4444; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">Review Alerts</a>
     </div>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">This is an automated monitoring alert from HealthVet AI.</p>
+    <p style="color: #64748b; font-size: 12px;">This is an automated monitoring alert from Viper AI.</p>
 </div>
 </div>""",
         "body_text": """Compliance Monitoring Alert
@@ -524,7 +524,7 @@ Please log in to your dashboard to review these alerts.
 Dashboard: {{dashboard_link}}
 
 Best regards,
-HealthVet AI Compliance Team""",
+Viper AI Compliance Team""",
         "variables": json.dumps([
             {"key": "agency_name", "description": "Name of the agency"},
             {"key": "alert_count", "description": "Number of new alerts"},
@@ -684,7 +684,7 @@ Questions%s Contact {{company_email}} or call {{company_phone}}""",
         "subject": "{{urgency}}: Invoice #{{invoice_ref}} — Payment Due",
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">Viper AI</h1>
     <p style="color: #f59e0b; margin: 5px 0 0; font-size: 14px;">Payment {{urgency}}</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
@@ -702,7 +702,7 @@ Questions%s Contact {{company_email}} or call {{company_phone}}""",
         <a href="{{payment_link}}" style="background: #f59e0b; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">Pay Now</a>
     </div>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">This is an automated payment reminder from HealthVet AI.</p>
+    <p style="color: #64748b; font-size: 12px;">This is an automated payment reminder from Viper AI.</p>
 </div>
 </div>""",
         "body_text": """Payment {{urgency}}: Invoice #{{invoice_ref}}
@@ -719,7 +719,7 @@ Please log in to your dashboard to make payment:
 {{payment_link}}
 
 Best regards,
-HealthVet AI Billing Team""",
+Viper AI Billing Team""",
         "variables": json.dumps([
             {"key": "agency_name", "description": "Name of the agency"},
             {"key": "invoice_ref", "description": "Invoice reference number"},
@@ -738,12 +738,12 @@ HealthVet AI Billing Team""",
         "subject": "You've been invited to complete your compliance vetting",
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">Viper AI</h1>
     <p style="color: #22c55e; margin: 5px 0 0; font-size: 14px;">Compliance Vetting Invitation</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
     <p>Dear {{candidate_name}},</p>
-    <p><strong>{{agency_name}}</strong> has invited you to complete your pre-employment compliance vetting through HealthVet AI.</p>
+    <p><strong>{{agency_name}}</strong> has invited you to complete your pre-employment compliance vetting through Viper AI.</p>
     <p>This process includes identity verification, right to work checks, DBS screening, reference collection, and professional registration verification — all handled digitally for your convenience.</p>
     <div style="text-align: center; margin: 25px 0;">
         <a href="{{invite_link}}" style="background: #22c55e; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">Start Your Vetting</a>
@@ -760,14 +760,14 @@ HealthVet AI Billing Team""",
     </div>
     <p style="color: #64748b; font-size: 13px;">If the button doesn't work, copy and paste this link:<br>{{invite_link}}</p>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">This invitation was sent by {{agency_name}} via HealthVet AI. If you were not expecting this, please disregard.</p>
+    <p style="color: #64748b; font-size: 12px;">This invitation was sent by {{agency_name}} via Viper AI. If you were not expecting this, please disregard.</p>
 </div>
 </div>""",
         "body_text": """Compliance Vetting Invitation
 
 Dear {{candidate_name}},
 
-{{agency_name}} has invited you to complete your pre-employment compliance vetting through HealthVet AI.
+{{agency_name}} has invited you to complete your pre-employment compliance vetting through Viper AI.
 
 Please visit the following link to start your vetting:
 {{invite_link}}
@@ -780,7 +780,7 @@ What you'll need:
 - Your CV or work history
 
 Best regards,
-HealthVet AI""",
+Viper AI""",
         "variables": json.dumps([
             {"key": "candidate_name", "description": "Full name of the candidate"},
             {"key": "agency_name", "description": "Name of the inviting agency"},
@@ -795,7 +795,7 @@ HealthVet AI""",
         "subject": "Credit Pack Confirmed — {{plan_name}}",
         "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
 <div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">HealthVet AI</h1>
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">Viper AI</h1>
     <p style="color: #22c55e; margin: 5px 0 0; font-size: 14px;">Purchase Confirmed</p>
 </div>
 <div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
@@ -814,7 +814,7 @@ HealthVet AI""",
         <a href="{{dashboard_link}}" style="background: #3b82f6; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">Go to Dashboard</a>
     </div>
     <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-    <p style="color: #64748b; font-size: 12px;">Thank you for choosing HealthVet AI.</p>
+    <p style="color: #64748b; font-size: 12px;">Thank you for choosing Viper AI.</p>
 </div>
 </div>""",
         "body_text": """Credit Pack Confirmed — {{plan_name}}
@@ -833,7 +833,7 @@ Your credits are now available in your dashboard.
 Dashboard: {{dashboard_link}}
 
 Best regards,
-HealthVet AI Team""",
+Viper AI Team""",
         "variables": json.dumps([
             {"key": "agency_name", "description": "Name of the agency"},
             {"key": "plan_name", "description": "Credit pack/plan name"},

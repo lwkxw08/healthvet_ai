@@ -204,9 +204,9 @@ export default function EmailTemplatesPanel() {
   <h2 style="color:#1e40af;">{{heading}}</h2>
   <p>Dear {{recipient_name}},</p>
   <p>{{body_content}}</p>
-  <p>Best regards,<br/>HealthVet AI Team</p>
+  <p>Best regards,<br/>Viper AI Team</p>
 </div>`,
-        body_text: "Dear {{recipient_name}},\n\n{{body_content}}\n\nBest regards,\nHealthVet AI Team",
+        body_text: "Dear {{recipient_name}},\n\n{{body_content}}\n\nBest regards,\nViper AI Team",
         category: newTemplateCategory,
         variables: [
           { key: "recipient_name", description: "Recipient's name" },

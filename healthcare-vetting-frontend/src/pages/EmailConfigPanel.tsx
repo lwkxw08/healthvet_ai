@@ -264,7 +264,7 @@ export default function EmailConfigPanel() {
               type="text"
               value={fromName}
               onChange={(e) => setFromName(e.target.value)}
-              placeholder="HealthVet AI"
+              placeholder="Viper AI"
               className={inputCls}
             />
             <p className="text-[10px] text-slate-600 mt-1">Display name shown to email recipients</p>
@@ -456,7 +456,7 @@ export default function EmailConfigPanel() {
               type="email"
               value={trustEmail}
               onChange={(e) => setTrustEmail(e.target.value)}
-              placeholder="verify@healthvet.ai"
+              placeholder="verify@viperai.io"
               className={inputCls}
             />
             <p className="text-[10px] text-slate-600 mt-1">Recipients can email this to verify the request</p>
@@ -470,7 +470,7 @@ export default function EmailConfigPanel() {
               type="url"
               value={trustPrivacyUrl}
               onChange={(e) => setTrustPrivacyUrl(e.target.value)}
-              placeholder="https://healthvet.ai/privacy"
+              placeholder="https://viperai.io/privacy"
               className={inputCls}
             />
           </div>
@@ -480,7 +480,7 @@ export default function EmailConfigPanel() {
               type="text"
               value={trustVerifyUrl}
               onChange={(e) => setTrustVerifyUrl(e.target.value)}
-              placeholder="verify.healthvet.ai"
+              placeholder="verify.viperai.io"
               className={inputCls}
             />
             <p className="text-[10px] text-slate-600 mt-1">Where verifiers go to enter their code</p>

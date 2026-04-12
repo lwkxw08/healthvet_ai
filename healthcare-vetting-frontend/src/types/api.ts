@@ -1,4 +1,4 @@
-/** Shared TypeScript interfaces for HealthVet AI API responses. */
+/** Shared TypeScript interfaces for Viper AI API responses. */
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export interface AuthResponse {

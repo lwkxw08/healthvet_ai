@@ -56,11 +56,11 @@ class WebhookReliabilityService:
 
             headers = {
                 "Content-Type": "application/json",
-                "X-HealthVet-Signature": f"sha256={signature}",
-                "X-HealthVet-Event": event_type,
-                "X-HealthVet-Delivery": delivery_id,
-                "X-HealthVet-Timestamp": now,
-                "User-Agent": "HealthVet-Webhooks/1.0",
+                "X-ViperAI-Signature": f"sha256={signature}",
+                "X-ViperAI-Event": event_type,
+                "X-ViperAI-Delivery": delivery_id,
+                "X-ViperAI-Timestamp": now,
+                "User-Agent": "ViperAI-Webhooks/1.0",
             }
 
             # Attempt delivery
@@ -158,12 +158,12 @@ class WebhookReliabilityService:
 
             headers = {
                 "Content-Type": "application/json",
-                "X-HealthVet-Signature": f"sha256={signature}",
-                "X-HealthVet-Event": d["event_type"],
-                "X-HealthVet-Delivery": delivery_id,
-                "X-HealthVet-Timestamp": now,
-                "X-HealthVet-Retry": str(attempt + 1),
-                "User-Agent": "HealthVet-Webhooks/1.0",
+                "X-ViperAI-Signature": f"sha256={signature}",
+                "X-ViperAI-Event": d["event_type"],
+                "X-ViperAI-Delivery": delivery_id,
+                "X-ViperAI-Timestamp": now,
+                "X-ViperAI-Retry": str(attempt + 1),
+                "User-Agent": "ViperAI-Webhooks/1.0",
             }
 
             try:

@@ -290,9 +290,9 @@ export default function CandidateOnboarding() {
     <div className="min-h-screen bg-slate-900">
       <header className="bg-slate-800/80 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Shield className="text-blue-400" size={28} />
+          <img src="/viper-logo.png" alt="Viper AI" className="h-8" />
           <div>
-            <h1 className="text-xl font-bold text-white">HealthVet AI</h1>
+            <h1 className="text-xl font-bold text-white">Viper AI</h1>
             <p className="text-xs text-slate-400">Candidate Vetting Application</p>
           </div>
         </div>
@@ -487,9 +487,9 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
     <div className="min-h-screen bg-slate-900">
       <header className="bg-slate-800/80 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Shield className="text-blue-400" size={28} />
+          <img src="/viper-logo.png" alt="Viper AI" className="h-8" />
           <div>
-            <h1 className="text-xl font-bold text-white">HealthVet AI</h1>
+            <h1 className="text-xl font-bold text-white">Viper AI</h1>
             <p className="text-xs text-slate-400">Application Status</p>
           </div>
         </div>
@@ -989,8 +989,8 @@ function ConsentStep({ sectionCompleted, consentChecked, onConsentChange, valida
       <div className="mb-5 p-4 bg-slate-700/50 rounded-lg border border-slate-600 max-h-48 overflow-y-auto">
         <h4 className="text-sm font-semibold text-white mb-2">Privacy Policy & Terms of Service (v1.0)</h4>
         <div className="text-xs text-slate-400 leading-relaxed space-y-2">
-          <p><strong className="text-slate-300">Data Processing:</strong> By submitting this application, you consent to HealthVet AI processing your personal data for the purpose of employment vetting and compliance checks. This includes identity verification, DBS checks, right to work verification, reference collection, and professional registration verification.</p>
-          <p><strong className="text-slate-300">Data Controller:</strong> The agency that invited you to complete this vetting process acts as the data controller. HealthVet AI acts as the data processor on behalf of the agency.</p>
+          <p><strong className="text-slate-300">Data Processing:</strong> By submitting this application, you consent to Viper AI processing your personal data for the purpose of employment vetting and compliance checks. This includes identity verification, DBS checks, right to work verification, reference collection, and professional registration verification.</p>
+          <p><strong className="text-slate-300">Data Controller:</strong> The agency that invited you to complete this vetting process acts as the data controller. Viper AI acts as the data processor on behalf of the agency.</p>
           <p><strong className="text-slate-300">Data Retention:</strong> Your data will be retained for the duration required by CQC regulations and applicable employment law. You may request deletion of your data at any time, subject to legal retention requirements.</p>
           <p><strong className="text-slate-300">Your Rights:</strong> Under GDPR, you have the right to: access your data, request correction of inaccurate data, request deletion (right to be forgotten), data portability, and to lodge a complaint with the ICO.</p>
           <p><strong className="text-slate-300">Third Parties:</strong> Your data may be shared with: Onfido (identity verification), DBS providers (criminal record checks), the Home Office (right to work), professional registration bodies (NMC, GMC, HCPC), and your referees/former employers.</p>

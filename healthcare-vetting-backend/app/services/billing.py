@@ -852,8 +852,8 @@ class BillingService:
                     amount=float(amount),
                     payment_type="payg_invoice",
                     description=invoice.get("description") or "Invoice Payment",
-                    success_url="https://healthvet.ai/payment/success",
-                    cancel_url="https://healthvet.ai/payment/cancel",
+                    success_url="https://viperai.io/payment/success",
+                    cancel_url="https://viperai.io/payment/cancel",
                 )
                 return {
                     "invoice_id": invoice_id,

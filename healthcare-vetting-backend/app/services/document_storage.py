@@ -57,7 +57,7 @@ class StorageBackend(ABC):
 # ---------------------------------------------------------------------------
 
 _LOCAL_ROOT = Path(os.environ.get("DOCUMENT_STORAGE_PATH", "/data/documents"))
-_SIGNED_URL_SECRET = os.environ.get("SIGNED_URL_SECRET", "healthvet-local-dev-secret-change-in-prod")
+_SIGNED_URL_SECRET = os.environ.get("SIGNED_URL_SECRET", "viperai-local-dev-secret-change-in-prod")
 
 
 class LocalStorage(StorageBackend):
@@ -204,7 +204,7 @@ def get_storage_backend() -> StorageBackend:
     """Return the configured storage backend."""
     backend = os.environ.get("DOCUMENT_STORAGE_BACKEND", "local")
     if backend == "s3":
-        bucket = os.environ.get("S3_BUCKET", "healthvet-documents")
+        bucket = os.environ.get("S3_BUCKET", "viperai-documents")
         region = os.environ.get("S3_REGION", "eu-west-2")
         endpoint = os.environ.get("S3_ENDPOINT_URL")  # For Cloudflare R2
         return S3Storage(bucket=bucket, region=region, endpoint_url=endpoint)

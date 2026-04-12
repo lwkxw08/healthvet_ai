@@ -245,7 +245,7 @@ async def request_erasure(
         )
 
         # Anonymise personal data (keep structure for audit/compliance but remove PII)
-        anon_email = f"erased-{candidate_id[:8]}@anonymised.healthvet"
+        anon_email = f"erased-{candidate_id[:8]}@anonymised.viperai"
         db.execute(
             """UPDATE candidates SET
                email=%s, first_name='[ERASED]', last_name='[ERASED]',
@@ -679,8 +679,8 @@ async def get_privacy_notice():
         "version": "1.0",
         "last_updated": "2026-03-01",
         "controller": {
-            "name": "HealthVet AI Ltd",
-            "contact_email": "dpo@healthvet.ai",
+            "name": "Viper AI Ltd",
+            "contact_email": "dpo@viperai.io",
             "ico_registration": "Pending",
         },
         "data_collected": [
@@ -860,7 +860,7 @@ async def data_portability_package(
                 "export_type": "GDPR Article 20 Data Portability Package",
                 "candidate_id": candidate_id,
                 "generated_at": now,
-                "generated_by": "HealthVet AI",
+                "generated_by": "Viper AI",
                 "sections": list(sections.keys()),
                 "total_documents": len(doc_rows),
             }

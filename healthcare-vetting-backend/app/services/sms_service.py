@@ -159,7 +159,7 @@ class SMSService:
         """Send a reminder SMS to a candidate about a pending verification."""
         message = (
             f"Hi {candidate_name}, your {check_type.replace('_', ' ')} verification is pending. "
-            f"Please log in to complete it. — HealthVet AI"
+            f"Please log in to complete it. — Viper AI"
         )
         return SMSService.send_sms(
             to_number=candidate_phone,
@@ -172,7 +172,7 @@ class SMSService:
         """Send an SMS warning about an upcoming expiry."""
         message = (
             f"Hi {candidate_name}, your {check_type.replace('_', ' ')} expires in {days_until} days. "
-            f"Please renew before it lapses. — HealthVet AI"
+            f"Please renew before it lapses. — Viper AI"
         )
         return SMSService.send_sms(
             to_number=candidate_phone,
@@ -183,7 +183,7 @@ class SMSService:
     @staticmethod
     def send_status_update(candidate_phone: str, candidate_name: str, status_message: str) -> dict:
         """Send a general status update SMS."""
-        message = f"Hi {candidate_name}, {status_message} — HealthVet AI"
+        message = f"Hi {candidate_name}, {status_message} — Viper AI"
         return SMSService.send_sms(
             to_number=candidate_phone,
             message=message,
