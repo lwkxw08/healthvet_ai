@@ -265,13 +265,10 @@ def migrate_db():
         ("sanctions_check", "Sanctions & Barred List Check", 5.0, 20.0),
     ]
     for check_type, label, cost, sell in expanded_checks:
-        cursor.execute("SELECT id FROM pricing_settings WHERE check_type=%s", (check_type,))
-        existing = cursor.fetchone()
-        if not existing:
-            cursor.execute(
-                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s)",
-                (_gid_expand(), check_type, label, cost, sell),
-            )
+        cursor.execute(
+            "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (check_type) DO NOTHING",
+            (_gid_expand(), check_type, label, cost, sell),
+        )
 
     # Seed default partial credit rates if table is empty
     try:
@@ -462,12 +459,11 @@ def migrate_db():
         ("imposter_check", "Imposter Check (in-person/video)", 0.0, 5.0),
     ]
     for ct, lbl, cost, sell in expanded_pricing:
-        if ct not in existing_pricing_types:
-            from app.utils.auth import generate_id as _pid
-            cursor.execute(
-                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s)",
-                (_pid(), ct, lbl, cost, sell),
-            )
+        from app.utils.auth import generate_id as _pid
+        cursor.execute(
+            "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (check_type) DO NOTHING",
+            (_pid(), ct, lbl, cost, sell),
+        )
 
     # Create imposter_declarations table if it doesn't exist (migration for existing DBs)
     if not _table_exists(cursor, "imposter_declarations"):
