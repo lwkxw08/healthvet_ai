@@ -1106,7 +1106,7 @@ export default function AdminPanel() {
     <div className="min-h-screen bg-slate-900">
       <header className="bg-slate-800/80 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <img src="/viper-logo.png" alt="Viper AI" className="h-10" />
+          <img src="/viper-logo.png" alt="Viper AI" className="h-12" />
           <h1 className="text-xl font-bold text-white">Viper AI</h1>
           <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded-full">Admin Panel</span>
         </div>
