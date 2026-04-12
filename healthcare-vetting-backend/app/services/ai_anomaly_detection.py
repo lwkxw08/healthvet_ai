@@ -20,42 +20,46 @@ def detect_anomalies(agency_id: Optional[str] = None) -> dict:
     with get_db() as db:
         # ---- Employment verifications ----
         if agency_id:
-            emp_rows = db.execute("""
+            db.execute("""
                 SELECT ev.*, c.email as candidate_email, c.first_name, c.last_name
                 FROM employment_verifications ev
                 LEFT JOIN candidates c ON c.id = ev.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = ev.candidate_id
                 WHERE ac.agency_id = %s
                 ORDER BY ev.sent_at DESC
-            """, (agency_id,)).fetchall()
+            """, (agency_id,))
+            emp_rows = db.fetchall()
         else:
-            emp_rows = db.execute("""
+            db.execute("""
                 SELECT ev.*, c.email as candidate_email, c.first_name, c.last_name
                 FROM employment_verifications ev
                 LEFT JOIN candidates c ON c.id = ev.candidate_id
                 ORDER BY ev.sent_at DESC
-            """).fetchall()
+            """)
+            emp_rows = db.fetchall()
 
         emp_list = [dict(r) for r in emp_rows] if emp_rows else []
         stats["total_verifications_scanned"] = len(emp_list)
 
         # ---- References ----
         if agency_id:
-            ref_rows = db.execute("""
+            db.execute("""
                 SELECT r.*, c.email as candidate_email, c.first_name, c.last_name
                 FROM references_ r
                 LEFT JOIN candidates c ON c.id = r.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = r.candidate_id
                 WHERE ac.agency_id = %s
                 ORDER BY r.created_at DESC
-            """, (agency_id,)).fetchall()
+            """, (agency_id,))
+            ref_rows = db.fetchall()
         else:
-            ref_rows = db.execute("""
+            db.execute("""
                 SELECT r.*, c.email as candidate_email, c.first_name, c.last_name
                 FROM references_ r
                 LEFT JOIN candidates c ON c.id = r.candidate_id
                 ORDER BY r.created_at DESC
-            """).fetchall()
+            """)
+            ref_rows = db.fetchall()
 
         ref_list = [dict(r) for r in ref_rows] if ref_rows else []
         stats["total_references_scanned"] = len(ref_list)

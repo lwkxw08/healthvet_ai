@@ -107,7 +107,8 @@ def update_verifier_details(
         if updates:
             params.append(notification_id)
             db.execute(f"UPDATE candidate_pre_notifications SET {', '.join(updates)} WHERE id=%s", params)
-        return dict(db.execute("SELECT * FROM candidate_pre_notifications WHERE id=%s", (notification_id,)).fetchone())
+        db.execute("SELECT * FROM candidate_pre_notifications WHERE id=%s", (notification_id,))
+        return dict(db.fetchone())
 
 
 def get_ready_notifications(delay_hours: int = DEFAULT_DELAY_HOURS) -> list[dict]:

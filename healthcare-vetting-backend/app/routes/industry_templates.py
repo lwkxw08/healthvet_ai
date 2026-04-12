@@ -224,7 +224,8 @@ async def clone_template(template_id: str, admin=Depends(get_current_admin)):
         new_name = f"{td['name']} (Copy)"
         # Ensure unique name
         counter = 1
-        while db.execute("SELECT id FROM industry_templates WHERE name=%s", (new_name,)).fetchone():
+        db.execute("SELECT id FROM industry_templates WHERE name=%s", (new_name,))
+        while db.fetchone():
             counter += 1
             new_name = f"{td['name']} (Copy {counter})"
 

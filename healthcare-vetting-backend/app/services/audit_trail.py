@@ -145,9 +145,10 @@ class AuditTrailService:
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         with get_db() as db:
-            total = db.execute(
+            db.execute(
                 f"SELECT COUNT(*) AS cnt FROM audit_trail {where}", tuple(params)
-            ).fetchone()["cnt"]
+            )["cnt"]
+            total = db.fetchone()
 
             rows = db.execute(
                 f"SELECT * FROM audit_trail {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
@@ -331,9 +332,10 @@ class AuditTrailService:
                     if category in category_map:
                         table, date_col = category_map[category]
                         try:
-                            affected = db.execute(
+                            db.execute(
                                 f"SELECT COUNT(*) AS cnt FROM {table} WHERE {date_col}::timestamp < NOW() - INTERVAL '{days} days'",
-                            ).fetchone()["cnt"]
+                            )["cnt"]
+                            affected = db.fetchone()
                         except Exception:
                             pass
 

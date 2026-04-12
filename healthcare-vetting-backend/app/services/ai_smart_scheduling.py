@@ -23,79 +23,87 @@ def analyse_response_patterns(agency_id: Optional[str] = None) -> dict:
     with get_db() as db:
         # ---- Employment verifications ----
         if agency_id:
-            emp_rows = db.execute("""
+            db.execute("""
                 SELECT ev.*, c.email as candidate_email
                 FROM employment_verifications ev
                 LEFT JOIN candidates c ON c.id = ev.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = ev.candidate_id
                 WHERE ac.agency_id = %s AND ev.completed_at IS NOT NULL
                 ORDER BY ev.sent_at DESC
-            """, (agency_id,)).fetchall()
+            """, (agency_id,))
+            emp_rows = db.fetchall()
         else:
-            emp_rows = db.execute("""
+            db.execute("""
                 SELECT ev.*, c.email as candidate_email
                 FROM employment_verifications ev
                 LEFT JOIN candidates c ON c.id = ev.candidate_id
                 WHERE ev.completed_at IS NOT NULL
                 ORDER BY ev.sent_at DESC
-            """).fetchall()
+            """)
+            emp_rows = db.fetchall()
 
         emp_list = [dict(r) for r in emp_rows] if emp_rows else []
 
         # ---- References ----
         if agency_id:
-            ref_rows = db.execute("""
+            db.execute("""
                 SELECT r.*, c.email as candidate_email
                 FROM references_ r
                 LEFT JOIN candidates c ON c.id = r.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = r.candidate_id
                 WHERE ac.agency_id = %s AND r.status IN ('completed', 'verified')
                 ORDER BY r.created_at DESC
-            """, (agency_id,)).fetchall()
+            """, (agency_id,))
+            ref_rows = db.fetchall()
         else:
-            ref_rows = db.execute("""
+            db.execute("""
                 SELECT r.*, c.email as candidate_email
                 FROM references_ r
                 LEFT JOIN candidates c ON c.id = r.candidate_id
                 WHERE r.status IN ('completed', 'verified')
                 ORDER BY r.created_at DESC
-            """).fetchall()
+            """)
+            ref_rows = db.fetchall()
 
         ref_list = [dict(r) for r in ref_rows] if ref_rows else []
 
         # ---- Pending verifications (need follow-up) ----
         if agency_id:
-            pending_emp = db.execute("""
+            db.execute("""
                 SELECT ev.*, c.email as candidate_email, c.first_name, c.last_name
                 FROM employment_verifications ev
                 LEFT JOIN candidates c ON c.id = ev.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = ev.candidate_id
                 WHERE ac.agency_id = %s AND ev.status IN ('pending', 'sent')
                 ORDER BY ev.sent_at ASC
-            """, (agency_id,)).fetchall()
-            pending_ref = db.execute("""
+            """, (agency_id,))
+            pending_emp = db.fetchall()
+            db.execute("""
                 SELECT r.*, c.email as candidate_email, c.first_name, c.last_name
                 FROM references_ r
                 LEFT JOIN candidates c ON c.id = r.candidate_id
                 LEFT JOIN agency_candidates ac ON ac.candidate_id = r.candidate_id
                 WHERE ac.agency_id = %s AND r.status IN ('pending', 'sent')
                 ORDER BY r.created_at ASC
-            """, (agency_id,)).fetchall()
+            """, (agency_id,))
+            pending_ref = db.fetchall()
         else:
-            pending_emp = db.execute("""
+            db.execute("""
                 SELECT ev.*, c.email as candidate_email, c.first_name, c.last_name
                 FROM employment_verifications ev
                 LEFT JOIN candidates c ON c.id = ev.candidate_id
                 WHERE ev.status IN ('pending', 'sent')
                 ORDER BY ev.sent_at ASC
-            """).fetchall()
-            pending_ref = db.execute("""
+            """)
+            pending_emp = db.fetchall()
+            db.execute("""
                 SELECT r.*, c.email as candidate_email, c.first_name, c.last_name
                 FROM references_ r
                 LEFT JOIN candidates c ON c.id = r.candidate_id
                 WHERE r.status IN ('pending', 'sent')
                 ORDER BY r.created_at ASC
-            """).fetchall()
+            """)
+            pending_ref = db.fetchall()
 
         pending_emp_list = [dict(r) for r in pending_emp] if pending_emp else []
         pending_ref_list = [dict(r) for r in pending_ref] if pending_ref else []

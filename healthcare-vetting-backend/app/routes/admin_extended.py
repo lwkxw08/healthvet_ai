@@ -165,11 +165,12 @@ async def list_agencies(current_user: dict = Depends(get_current_user)):
     """List all agencies with their status."""
     require_admin(current_user)
     with get_db() as db:
-        rows = db.execute("""
+        db.execute("""
             SELECT a.*,
                    (SELECT COUNT(*) AS cnt FROM agency_candidates ac WHERE ac.agency_id = a.id) as candidate_count
             FROM agencies a ORDER BY a.created_at DESC
-        """).fetchall()
+        """)
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -503,10 +504,11 @@ async def admin_edit_check_data(
 
     # Prevent SQL injection by validating field names against actual columns
     with get_db() as db:
-        columns = {row["column_name"] for row in db.execute(
+        db.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_name = %s AND table_schema = 'public'",
             (table,)
-        ).fetchall()}
+        )
+        columns = {row["column_name"] for row in db.fetchall()}
         invalid_fields = set(data.fields.keys()) - columns
         if invalid_fields:
             raise HTTPException(status_code=400, detail=f"Invalid fields: {invalid_fields}. Valid: {columns}")
@@ -556,8 +558,9 @@ async def retrigger_reference_verification(
 
     # Phase 1: DB reads and status update (close connection before email send)
     with get_db() as db:
-        ref = db.execute("SELECT * FROM references_ WHERE id=%s AND candidate_id=%s",
-                         (ref_id, candidate_id)).fetchone()
+        db.execute("SELECT * FROM references_ WHERE id=%s AND candidate_id=%s",
+                         (ref_id, candidate_id))
+        ref = db.fetchone()
         if not ref:
             raise HTTPException(status_code=404, detail="Reference not found")
 
@@ -570,18 +573,21 @@ async def retrigger_reference_verification(
             (reminder_count, now, ref_id))
 
         # Look up candidate name
-        cand = db.execute("SELECT first_name, last_name FROM candidates WHERE id=%s",
-                          (candidate_id,)).fetchone()
+        db.execute("SELECT first_name, last_name FROM candidates WHERE id=%s",
+                          (candidate_id,))
+        cand = db.fetchone()
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Unknown"
 
         # Look up agency name
-        agency_link = db.execute(
+        db.execute(
             "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
-            (candidate_id,)).fetchone()
+            (candidate_id,))
+        agency_link = db.fetchone()
         agency_name = "HealthVet AI"
         if agency_link:
-            agency = db.execute("SELECT name FROM agencies WHERE id=%s",
-                                (dict(agency_link)["agency_id"],)).fetchone()
+            db.execute("SELECT name FROM agencies WHERE id=%s",
+                                (dict(agency_link)["agency_id"],))
+            agency = db.fetchone()
             if agency:
                 agency_name = dict(agency)["name"]
 
@@ -638,8 +644,9 @@ async def retrigger_employment_verification(
 
     # Phase 1: DB reads and status update (close connection before email send)
     with get_db() as db:
-        ver = db.execute("SELECT * FROM employment_verifications WHERE id=%s AND candidate_id=%s",
-                         (ver_id, candidate_id)).fetchone()
+        db.execute("SELECT * FROM employment_verifications WHERE id=%s AND candidate_id=%s",
+                         (ver_id, candidate_id))
+        ver = db.fetchone()
         if not ver:
             raise HTTPException(status_code=404, detail="Employment verification not found")
 
@@ -652,18 +659,21 @@ async def retrigger_employment_verification(
             (reminder_count, now, ver_id))
 
         # Look up candidate name
-        cand = db.execute("SELECT first_name, last_name FROM candidates WHERE id=%s",
-                          (candidate_id,)).fetchone()
+        db.execute("SELECT first_name, last_name FROM candidates WHERE id=%s",
+                          (candidate_id,))
+        cand = db.fetchone()
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Unknown"
 
         # Look up agency name
-        agency_link = db.execute(
+        db.execute(
             "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
-            (candidate_id,)).fetchone()
+            (candidate_id,))
+        agency_link = db.fetchone()
         agency_name = "HealthVet AI"
         if agency_link:
-            agency = db.execute("SELECT name FROM agencies WHERE id=%s",
-                                (dict(agency_link)["agency_id"],)).fetchone()
+            db.execute("SELECT name FROM agencies WHERE id=%s",
+                                (dict(agency_link)["agency_id"],))
+            agency = db.fetchone()
             if agency:
                 agency_name = dict(agency)["name"]
 
@@ -671,9 +681,10 @@ async def retrigger_employment_verification(
         employment_id = ver_dict.get("employment_id", "")
         emp_data = {}
         if employment_id:
-            emp = db.execute(
+            db.execute(
                 "SELECT employer_name, job_title, start_date, end_date FROM employment_history WHERE id=%s",
-                (employment_id,)).fetchone()
+                (employment_id,))
+            emp = db.fetchone()
             if emp:
                 emp_data = dict(emp)
 
@@ -738,25 +749,37 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
         if not cand:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
-        identity = [dict(r) for r in db.execute("SELECT * FROM identity_checks WHERE candidate_id=%s", (candidate_id,)).fetchall()]
-        dbs = [dict(r) for r in db.execute("SELECT * FROM dbs_checks WHERE candidate_id=%s", (candidate_id,)).fetchall()]
-        rtw = [dict(r) for r in db.execute("SELECT * FROM right_to_work_checks WHERE candidate_id=%s", (candidate_id,)).fetchall()]
-        cv = [dict(r) for r in db.execute("SELECT * FROM cv_analyses WHERE candidate_id=%s", (candidate_id,)).fetchall()]
-        reg = [dict(r) for r in db.execute("SELECT * FROM registration_checks WHERE candidate_id=%s", (candidate_id,)).fetchall()]
-        refs = [dict(r) for r in db.execute("SELECT * FROM references_ WHERE candidate_id=%s", (candidate_id,)).fetchall()]
-        emp_history = [dict(r) for r in db.execute("SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,)).fetchall()]
-        emp_ver = [dict(r) for r in db.execute("SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,)).fetchall()]
-        training = [dict(r) for r in db.execute("SELECT * FROM training_certificates WHERE candidate_id=%s", (candidate_id,)).fetchall()]
+        db.execute("SELECT * FROM identity_checks WHERE candidate_id=%s", (candidate_id,))
+        identity = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM dbs_checks WHERE candidate_id=%s", (candidate_id,))
+        dbs = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM right_to_work_checks WHERE candidate_id=%s", (candidate_id,))
+        rtw = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM cv_analyses WHERE candidate_id=%s", (candidate_id,))
+        cv = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM registration_checks WHERE candidate_id=%s", (candidate_id,))
+        reg = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM references_ WHERE candidate_id=%s", (candidate_id,))
+        refs = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,))
+        emp_history = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,))
+        emp_ver = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM training_certificates WHERE candidate_id=%s", (candidate_id,))
+        training = [dict(r) for r in db.fetchall()]
         db.execute("SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,))
         compliance = db.fetchone()
-        alerts = [dict(r) for r in db.execute("SELECT * FROM monitoring_alerts WHERE candidate_id=%s AND is_resolved=0", (candidate_id,)).fetchall()]
-        fraud = [dict(r) for r in db.execute("SELECT * FROM fraud_flags WHERE candidate_id=%s AND is_resolved=0", (candidate_id,)).fetchall()]
+        db.execute("SELECT * FROM monitoring_alerts WHERE candidate_id=%s AND is_resolved=0", (candidate_id,))
+        alerts = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM fraud_flags WHERE candidate_id=%s AND is_resolved=0", (candidate_id,))
+        fraud = [dict(r) for r in db.fetchall()]
 
         # Agency associations
-        agencies_linked = db.execute(
+        db.execute(
             """SELECT a.id, a.name, a.email, ac.employment_status, ac.assigned_at
                FROM agencies a JOIN agency_candidates ac ON a.id = ac.agency_id
-               WHERE ac.candidate_id=%s""", (candidate_id,)).fetchall()
+               WHERE ac.candidate_id=%s""", (candidate_id,))
+        agencies_linked = db.fetchall()
 
         return {
             "candidate": dict(cand),

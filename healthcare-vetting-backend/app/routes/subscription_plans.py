@@ -134,7 +134,7 @@ async def list_industry_plan_links(current_user: dict = Depends(get_current_user
     require_admin(current_user)
 
     with get_db() as db:
-        rows = db.execute("""
+        db.execute("""
             SELECT ipl.*, it.name as industry_name, it.description as industry_description,
                    stc.name as tier_name, stc.monthly_price as base_monthly_price,
                    stc.per_worker_price as base_per_worker_price, stc.monthly_checks as base_monthly_checks
@@ -142,7 +142,8 @@ async def list_industry_plan_links(current_user: dict = Depends(get_current_user
             LEFT JOIN industry_templates it ON ipl.industry_template_id = it.id
             LEFT JOIN subscription_tier_config stc ON ipl.tier_key = stc.tier_key
             ORDER BY it.name, stc.monthly_price
-        """).fetchall()
+        """)
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -252,20 +253,22 @@ async def list_industry_check_pricing(
             # Auto-sync: ensure pricing rows exist for all enabled template checks
             _sync_industry_pricing(db, industry_template_id)
 
-            rows = db.execute("""
+            db.execute("""
                 SELECT icp.*, it.name as industry_name
                 FROM industry_check_pricing icp
                 LEFT JOIN industry_templates it ON icp.industry_template_id = it.id
                 WHERE icp.industry_template_id=%s
                 ORDER BY icp.check_type
-            """, (industry_template_id,)).fetchall()
+            """, (industry_template_id,))
+            rows = db.fetchall()
         else:
-            rows = db.execute("""
+            db.execute("""
                 SELECT icp.*, it.name as industry_name
                 FROM industry_check_pricing icp
                 LEFT JOIN industry_templates it ON icp.industry_template_id = it.id
                 ORDER BY it.name, icp.check_type
-            """).fetchall()
+            """)
+            rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -484,13 +487,14 @@ async def get_pricing_matrix(current_user: dict = Depends(get_current_user)):
     with get_db() as db:
         db.execute("SELECT * FROM industry_templates WHERE is_active=1 ORDER BY name")
         templates = db.fetchall()
-        all_pricing = db.execute("""
+        db.execute("""
             SELECT icp.*, it.name as industry_name
             FROM industry_check_pricing icp
             LEFT JOIN industry_templates it ON icp.industry_template_id = it.id
             WHERE icp.is_active=1
             ORDER BY it.name, icp.check_type
-        """).fetchall()
+        """)
+        all_pricing = db.fetchall()
 
         # Get default rates
         db.execute("SELECT * FROM partial_credit_rates")

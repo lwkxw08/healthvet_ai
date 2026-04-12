@@ -567,10 +567,11 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
 
     with get_db() as db:
         # Get invoices for this agency
-        invoices = [dict(r) for r in db.execute(
+        db.execute(
             "SELECT * FROM invoices WHERE agency_id=%s ORDER BY created_at DESC",
             (agency_id,),
-        ).fetchall()]
+        )
+        invoices = [dict(r) for r in db.fetchall()]
 
         # Use adjusted_amount if admin has adjusted, otherwise use sell_amount
         def effective_amount(inv):

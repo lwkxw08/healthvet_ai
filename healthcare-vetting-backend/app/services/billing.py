@@ -149,10 +149,11 @@ class BillingService:
             row = db.fetchone()
             if not row:
                 raise ValueError(f"Tier '{tier_key}' not found")
-            active_count = db.execute(
+            db.execute(
                 "SELECT COUNT(*) AS cnt FROM agency_subscriptions WHERE tier=%s AND status='active'",
                 (tier_key,),
-            ).fetchone()["cnt"]
+            )["cnt"]
+            active_count = db.fetchone()
             if active_count > 0:
                 raise ValueError(f"Cannot delete tier '{tier_key}' - {active_count} active subscription(s) use it.")
             db.execute(

@@ -342,15 +342,18 @@ async def get_lead_stats(current_user: dict = Depends(get_current_user)):
         with_phone = db.fetchone()
 
         by_source = {}
-        for row in db.execute("SELECT source, COUNT(*) as cnt FROM leads GROUP BY source").fetchall():
+        db.execute("SELECT source, COUNT(*) as cnt FROM leads GROUP BY source")
+        for row in db.fetchall():
             by_source[row["source"]] = row["cnt"]
 
         by_industry = {}
-        for row in db.execute("SELECT industry, COUNT(*) as cnt FROM leads GROUP BY industry").fetchall():
+        db.execute("SELECT industry, COUNT(*) as cnt FROM leads GROUP BY industry")
+        for row in db.fetchall():
             by_industry[row["industry"]] = row["cnt"]
 
         by_status = {}
-        for row in db.execute("SELECT status, COUNT(*) as cnt FROM leads GROUP BY status").fetchall():
+        db.execute("SELECT status, COUNT(*) as cnt FROM leads GROUP BY status")
+        for row in db.fetchall():
             by_status[row["status"]] = row["cnt"]
 
         return {

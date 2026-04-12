@@ -22,25 +22,28 @@ class AnalyticsReportingService:
         """Get compliance KPI dashboard for a specific agency."""
         with get_db() as db:
             # Total candidates
-            total = db.execute(
+            db.execute(
                 "SELECT COUNT(*) AS cnt FROM agency_candidates WHERE agency_id=%s",
                 (agency_id,),
-            ).fetchone()["cnt"]
+            )["cnt"]
+            total = db.fetchone()
 
             # Compliance status breakdown
-            compliant = db.execute(
+            db.execute(
                 """SELECT COUNT(DISTINCT ac.candidate_id) FROM agency_candidates ac
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
                    WHERE ac.agency_id=%s AND cr.overall_status='compliant'""",
                 (agency_id,),
-            ).fetchone()["cnt"]
+            )["cnt"]
+            compliant = db.fetchone()
 
-            non_compliant = db.execute(
+            db.execute(
                 """SELECT COUNT(DISTINCT ac.candidate_id) FROM agency_candidates ac
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
                    WHERE ac.agency_id=%s AND cr.overall_status='non_compliant'""",
                 (agency_id,),
-            ).fetchone()["cnt"]
+            )["cnt"]
+            non_compliant = db.fetchone()
 
             pending = total - compliant - non_compliant
 
@@ -55,12 +58,13 @@ class AnalyticsReportingService:
             avg_score = round(list(avg_score_row.values())[0] or 0, 1)
 
             # Active alerts
-            active_alerts = db.execute(
+            db.execute(
                 """SELECT COUNT(*) AS cnt FROM monitoring_alerts ma
                    JOIN agency_candidates ac ON ma.candidate_id = ac.candidate_id
                    WHERE ac.agency_id=%s AND ma.is_resolved=0""",
                 (agency_id,),
-            ).fetchone()["cnt"]
+            )["cnt"]
+            active_alerts = db.fetchone()
 
             # Checks completed this month
             month_start = datetime.now(timezone.utc).replace(day=1).strftime("%Y-%m-%d")
@@ -68,12 +72,13 @@ class AnalyticsReportingService:
             for table in ["identity_checks", "dbs_checks", "right_to_work_checks", "registration_checks"]:
                 try:
                     col = "completed_at" if table != "right_to_work_checks" else "checked_at"
-                    count = db.execute(
+                    db.execute(
                         f"""SELECT COUNT(*) AS cnt FROM {table} t
                             JOIN agency_candidates ac ON t.candidate_id = ac.candidate_id
                             WHERE ac.agency_id=%s AND t.{col} >= %s""",
                         (agency_id, month_start),
-                    ).fetchone()["cnt"]
+                    )["cnt"]
+                    count = db.fetchone()
                     checks_this_month += count
                 except Exception:
                     pass
@@ -382,10 +387,11 @@ class AnalyticsReportingService:
                     ("registration_checks", "last_checked"),
                 ]:
                     try:
-                        count = db.execute(
+                        db.execute(
                             f"SELECT COUNT(*) AS cnt FROM {table} WHERE {col} >= %s AND {col} < %s",
                             (start_str, end_str),
-                        ).fetchone()["cnt"]
+                        )["cnt"]
+                        count = db.fetchone()
                         total += count
                     except Exception:
                         pass

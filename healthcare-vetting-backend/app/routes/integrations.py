@@ -158,10 +158,11 @@ async def create_api_key(
 
     with get_db() as db:
         # Limit to 5 active keys per agency
-        count = db.execute(
+        db.execute(
             "SELECT COUNT(*) AS cnt FROM api_keys WHERE agency_id=%s AND is_active=1",
             (agency_id,),
-        ).fetchone()["cnt"]
+        )["cnt"]
+        count = db.fetchone()
         if count >= 5:
             raise HTTPException(status_code=400, detail="Maximum 5 active API keys per agency")
 
@@ -259,10 +260,11 @@ async def create_webhook_subscription(
 
     with get_db() as db:
         # Limit to 10 webhooks per agency
-        count = db.execute(
+        db.execute(
             "SELECT COUNT(*) AS cnt FROM webhook_subscriptions WHERE agency_id=%s AND is_active=1",
             (agency_id,),
-        ).fetchone()["cnt"]
+        )["cnt"]
+        count = db.fetchone()
         if count >= 10:
             raise HTTPException(status_code=400, detail="Maximum 10 active webhook subscriptions per agency")
 

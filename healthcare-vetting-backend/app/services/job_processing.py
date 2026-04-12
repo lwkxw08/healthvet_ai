@@ -118,10 +118,11 @@ class JobProcessingService:
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         with get_db() as db:
-            total = db.execute(
+            db.execute(
                 f"SELECT COUNT(*) AS cnt FROM background_jobs {where}",
                 tuple(params),
-            ).fetchone()["cnt"]
+            )["cnt"]
+            total = db.fetchone()
 
             rows = db.execute(
                 f"""SELECT id, task_name, status, priority, attempt, max_retries,
@@ -137,9 +138,10 @@ class JobProcessingService:
             stats = {}
             for s in [STATUS_QUEUED, STATUS_RUNNING, STATUS_COMPLETED,
                       STATUS_FAILED, STATUS_DEAD, STATUS_TIMED_OUT]:
-                count = db.execute(
+                db.execute(
                     "SELECT COUNT(*) AS cnt FROM background_jobs WHERE status=%s", (s,)
-                ).fetchone()["cnt"]
+                )["cnt"]
+                count = db.fetchone()
                 stats[s] = count
 
             return {
