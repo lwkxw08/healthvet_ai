@@ -774,6 +774,10 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
         db.execute("SELECT * FROM fraud_flags WHERE candidate_id=%s AND is_resolved=0", (candidate_id,))
         fraud = [dict(r) for r in db.fetchall()]
 
+        # TrustID checks
+        db.execute("SELECT * FROM trustid_checks WHERE candidate_id=%s ORDER BY created_at DESC", (candidate_id,))
+        trustid = [dict(r) for r in db.fetchall()]
+
         # Agency associations
         db.execute(
             """SELECT a.id, a.name, a.email, ac.employment_status, ac.assigned_at
@@ -792,6 +796,7 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
             "employment_history": emp_history,
             "employment_verifications": emp_ver,
             "training_certificates": training,
+            "trustid_checks": trustid,
             "compliance": dict(compliance) if compliance else None,
             "active_alerts": alerts,
             "fraud_flags": fraud,

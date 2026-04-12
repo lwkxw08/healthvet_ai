@@ -245,6 +245,30 @@ class AuditTrailService:
             except Exception:
                 pass
 
+            # TrustID check reports (for CQC audit evidence)
+            trustid_checks = []
+            try:
+                trustid_sql = "SELECT tc.*, c.first_name, c.last_name, c.email FROM trustid_checks tc JOIN candidates c ON tc.candidate_id = c.id"
+                trustid_conditions = []
+                trustid_params = []
+                if date_from:
+                    trustid_conditions.append("tc.created_at >= %s")
+                    trustid_params.append(date_from)
+                if date_to:
+                    trustid_conditions.append("tc.created_at <= %s")
+                    trustid_params.append(date_to)
+                if agency_id:
+                    trustid_conditions.append("tc.candidate_id IN (SELECT candidate_id FROM agency_candidates WHERE agency_id = %s)")
+                    trustid_params.append(agency_id)
+                if trustid_conditions:
+                    trustid_sql += " WHERE " + " AND ".join(trustid_conditions)
+                trustid_sql += " ORDER BY tc.created_at DESC"
+                db.execute(trustid_sql, tuple(trustid_params))
+                rows = db.fetchall()
+                trustid_checks = [dict(r) for r in rows]
+            except Exception:
+                pass
+
             return {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "agency_id": agency_id,
@@ -253,6 +277,8 @@ class AuditTrailService:
                 "audit_entries": len(audit_entries),
                 "data_access_entries": len(access_entries),
                 "retention_policies": retention_policies,
+                "trustid_checks": trustid_checks,
+                "trustid_reports_count": len(trustid_checks),
                 "entries": [dict(r) for r in audit_entries],
                 "access_log": [dict(r) for r in access_entries],
             }

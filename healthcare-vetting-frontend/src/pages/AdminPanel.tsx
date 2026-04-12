@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi, documentsApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
 import LeadGenerationPanel from "./LeadGenerationPanel";
 import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
@@ -245,6 +245,7 @@ export default function AdminPanel() {
   const [trustidResultValue, setTrustidResultValue] = useState("pass");
   const [trustidResultRef, setTrustidResultRef] = useState("");
   const [trustidResultNotes, setTrustidResultNotes] = useState("");
+  const [trustidReportFile, setTrustidReportFile] = useState<File | null>(null);
   const [savingTrustid, setSavingTrustid] = useState(false);
   const [trustidTaskFilter, setTrustidTaskFilter] = useState("");
 
@@ -413,9 +414,21 @@ export default function AdminPanel() {
     if (!token || !trustidResultId) return;
     setSavingTrustid(true);
     try {
-      await trustidApi.adminRecordResult(token, { check_id: trustidResultId, result: trustidResultValue, trustid_reference: trustidResultRef || undefined, notes: trustidResultNotes || undefined });
-      showMessage("TrustID result recorded successfully");
-      setTrustidResultId(null); setTrustidResultValue("pass"); setTrustidResultRef(""); setTrustidResultNotes("");
+      // Upload TrustID report PDF if provided
+      let reportDocId: string | undefined;
+      if (trustidReportFile) {
+        const uploadResult = await documentsApi.upload(token, trustidReportFile, "trustid_report") as Record<string, unknown>;
+        reportDocId = (uploadResult.id || uploadResult.document_id) as string;
+      }
+      await trustidApi.adminRecordResult(token, {
+        check_id: trustidResultId,
+        result: trustidResultValue,
+        trustid_reference: trustidResultRef || undefined,
+        report_document_id: reportDocId,
+        notes: trustidResultNotes || undefined,
+      });
+      showMessage("TrustID result recorded successfully" + (reportDocId ? " (report uploaded)" : ""));
+      setTrustidResultId(null); setTrustidResultValue("pass"); setTrustidResultRef(""); setTrustidResultNotes(""); setTrustidReportFile(null);
       await loadTrustidData();
     } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
     finally { setSavingTrustid(false); }
@@ -1355,6 +1368,13 @@ export default function AdminPanel() {
                                   <label className="block text-slate-400 text-xs mb-1">Notes</label>
                                   <input type="text" value={trustidResultNotes} onChange={(e) => setTrustidResultNotes(e.target.value)} placeholder="Notes"
                                     className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs" />
+                                </div>
+                                <div className="flex-1">
+                                  <label className="block text-slate-400 text-xs mb-1">TrustID Report (PDF)</label>
+                                  <input type="file" accept=".pdf,application/pdf"
+                                    onChange={(e) => setTrustidReportFile(e.target.files?.[0] || null)}
+                                    className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs file:mr-2 file:py-0.5 file:px-2 file:rounded file:border-0 file:text-xs file:bg-slate-500 file:text-white" />
+                                  {trustidReportFile && <span className="text-green-400 text-xs mt-1 block">{trustidReportFile.name}</span>}
                                 </div>
                                 <button onClick={handleTrustidRecordResult} disabled={savingTrustid}
                                   className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-3 py-1 rounded text-xs font-medium">
@@ -3125,6 +3145,7 @@ export default function AdminPanel() {
           const empHistory = (detail.employment_history || []) as Record<string, unknown>[];
           const empVerifications = (detail.employment_verifications || []) as Record<string, unknown>[];
           const trainingCerts = (detail.training_certificates || []) as Record<string, unknown>[];
+          const trustidChecks = (detail.trustid_checks || []) as Record<string, unknown>[];
 
           return (
           <div className="space-y-6">
@@ -3531,6 +3552,62 @@ export default function AdminPanel() {
                 </div>
               )) : (
                 <p className="text-slate-500 text-sm">No training certificates recorded yet</p>
+              )}
+            </div>
+
+            {/* ── TrustID Reports ── */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-3">TrustID Check Reports ({trustidChecks.length})</h3>
+              {trustidChecks.length > 0 ? trustidChecks.map((check) => (
+                <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-white text-sm font-medium">
+                        {(check.check_type as string || "").replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                        check.result === "pass" ? "bg-green-500/20 text-green-400 border-green-500/30" :
+                        check.result === "fail" ? "bg-red-500/20 text-red-400 border-red-500/30" :
+                        check.status === "completed" ? "bg-blue-500/20 text-blue-400 border-blue-500/30" :
+                        "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                      }`}>
+                        {(check.result as string) || (check.status as string) || "pending"}
+                      </span>
+                    </div>
+                    <span className="text-xs text-slate-500">{(check.completed_at as string) || (check.created_at as string)}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div><span className="text-slate-400">Status:</span> <span className="text-slate-300">{(check.status as string) || "N/A"}</span></div>
+                    <div><span className="text-slate-400">TrustID Ref:</span> <span className="text-slate-300">{(check.trustid_reference as string) || "N/A"}</span></div>
+                    <div><span className="text-slate-400">Mode:</span> <span className="text-slate-300">{(check.submission_mode as string) || "manual"}</span></div>
+                    {String(check.admin_completed_by || "") !== "" && (
+                      <div><span className="text-slate-400">Completed by:</span> <span className="text-slate-300">{check.admin_completed_by as string}</span></div>
+                    )}
+                    {String(check.admin_notes || "") !== "" && (
+                      <div className="col-span-2"><span className="text-slate-400">Notes:</span> <span className="text-slate-300">{check.admin_notes as string}</span></div>
+                    )}
+                  </div>
+                  {String(check.report_document_id || "") !== "" && (
+                    <div className="mt-3 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded flex items-center justify-between">
+                      <span className="text-emerald-400 text-xs font-medium">TrustID Report Document Attached</span>
+                      <button
+                        onClick={async () => {
+                          if (!token) return;
+                          try {
+                            const result = await documentsApi.getSignedUrl(token, check.report_document_id as string);
+                            window.open(result.signed_url, "_blank");
+                          } catch {
+                            showMessage("Failed to get download link");
+                          }
+                        }}
+                        className="text-xs bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 px-3 py-1 rounded hover:bg-emerald-600/30">
+                        Download Report
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )) : (
+                <p className="text-slate-500 text-sm">No TrustID checks recorded yet</p>
               )}
             </div>
           </div>
