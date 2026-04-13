@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi, documentsApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi, documentsApi, smsApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
 import LeadGenerationPanel from "./LeadGenerationPanel";
 import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
@@ -248,6 +248,16 @@ export default function AdminPanel() {
   const [trustidReportFile, setTrustidReportFile] = useState<File | null>(null);
   const [savingTrustid, setSavingTrustid] = useState(false);
   const [trustidTaskFilter, setTrustidTaskFilter] = useState("");
+
+  // SMS management state
+  const [smsConfig, setSmsConfig] = useState<{ enabled: boolean; provider: string; twilio_configured: boolean } | null>(null);
+  const [smsHistory, setSmsHistory] = useState<Record<string, unknown>[]>([]);
+  const [smsLoading, setSmsLoading] = useState(false);
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsToNumber, setSmsToNumber] = useState("");
+  const [smsMessage, setSmsMessage] = useState("");
+  const [smsCategory, setSmsCategory] = useState("general");
+  const [smsSendResult, setSmsSendResult] = useState<string | null>(null);
 
   const loadBenchmarkData = useCallback(async () => {
     if (!token) return;
@@ -997,6 +1007,39 @@ export default function AdminPanel() {
 
   useEffect(() => { if (mainTab === "settings" && subTab === "invoice-settings" && !invoiceSettingsLoaded) loadInvoiceSettings(); }, [mainTab, subTab, invoiceSettingsLoaded, loadInvoiceSettings]);
 
+  // SMS handlers
+  const loadSmsData = useCallback(async () => {
+    if (!token) return;
+    setSmsLoading(true);
+    try {
+      const [config, historyResp] = await Promise.all([
+        smsApi.getConfig(token),
+        smsApi.getHistory(token, 50, 0),
+      ]);
+      setSmsConfig(config);
+      setSmsHistory(historyResp.sms_notifications || []);
+    } catch { /* ignore */ }
+    finally { setSmsLoading(false); }
+  }, [token]);
+
+  const handleSendSms = async () => {
+    if (!token || !smsToNumber || !smsMessage) return;
+    setSmsSending(true);
+    setSmsSendResult(null);
+    try {
+      const result = await smsApi.sendSms(token, { to_number: smsToNumber, message: smsMessage, category: smsCategory });
+      const status = (result as Record<string, unknown>).status as string;
+      setSmsSendResult(status === "sent" || status === "disabled" ? `SMS ${status}` : `SMS send result: ${status}`);
+      setSmsToNumber("");
+      setSmsMessage("");
+      await loadSmsData();
+    } catch (e) {
+      setSmsSendResult(`Error: ${e instanceof Error ? e.message : "Failed"}`);
+    } finally { setSmsSending(false); }
+  };
+
+  useEffect(() => { if (mainTab === "settings" && subTab === "sms") loadSmsData(); }, [mainTab, subTab, loadSmsData]);
+
   const handleGenerateGroupedInvoice = async (agencyId: string, dateFrom: string, dateTo: string, setLoading: (v: boolean) => void) => {
     if (!token || !agencyId || !dateFrom || !dateTo) { showMessage("Error: Please select an agency and date range"); return; }
     setLoading(true);
@@ -1197,7 +1240,7 @@ export default function AdminPanel() {
       {mainTab === "settings" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "trustid", label: "TrustID" }, { key: "alerts-config", label: "Alert Settings" }, { key: "invoice-settings", label: "Invoice Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }].map((s) => (
+            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "industry-plans", label: "Industry Plans" }, { key: "trustid", label: "TrustID" }, { key: "alerts-config", label: "Alert Settings" }, { key: "invoice-settings", label: "Invoice Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }, { key: "sms", label: "SMS / Twilio" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -3130,6 +3173,148 @@ export default function AdminPanel() {
               </button>
               <button onClick={() => setEditInvoiceSettings(invoiceSettings)} className="text-slate-400 hover:text-white text-sm px-4 py-2.5">Reset to Saved</button>
             </div>
+          </div>
+        )}
+
+        {/* Settings Tab — SMS / Twilio sub-tab */}
+        {tab === "settings" && subTab === "sms" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><Send className="text-purple-400" size={22} /> SMS / Twilio Configuration</h2>
+              <button onClick={loadSmsData} className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1"><RefreshCw size={14} /> Refresh</button>
+            </div>
+            <p className="text-slate-400 text-sm">Configure SMS notifications via Twilio. When enabled, SMS can be used for verification reminders, expiry warnings, and status updates to candidates.</p>
+
+            {smsLoading ? <p className="text-slate-500 text-sm">Loading SMS configuration...</p> : (
+              <>
+                {/* SMS Config Status */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
+                    <p className="text-slate-400 text-xs font-medium mb-2">SMS Status</p>
+                    <div className="flex items-center gap-2">
+                      {smsConfig?.enabled ? (
+                        <span className="flex items-center gap-1.5 text-green-400 font-semibold"><CheckCircle size={18} /> Enabled</span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-amber-400 font-semibold"><AlertTriangle size={18} /> Disabled</span>
+                      )}
+                    </div>
+                    <p className="text-slate-500 text-xs mt-2">Set <code className="bg-slate-700 px-1.5 py-0.5 rounded text-xs">SMS_ENABLED=1</code> env var to enable</p>
+                  </div>
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
+                    <p className="text-slate-400 text-xs font-medium mb-2">Provider</p>
+                    <p className="text-white font-semibold capitalize">{smsConfig?.provider || "Not configured"}</p>
+                    <p className="text-slate-500 text-xs mt-2">Set <code className="bg-slate-700 px-1.5 py-0.5 rounded text-xs">SMS_PROVIDER=twilio</code> for production</p>
+                  </div>
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
+                    <p className="text-slate-400 text-xs font-medium mb-2">Twilio Credentials</p>
+                    <div className="flex items-center gap-2">
+                      {smsConfig?.twilio_configured ? (
+                        <span className="flex items-center gap-1.5 text-green-400 font-semibold"><CheckCircle size={18} /> Configured</span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-red-400 font-semibold"><XCircle size={18} /> Not Configured</span>
+                      )}
+                    </div>
+                    <p className="text-slate-500 text-xs mt-2">Requires TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER</p>
+                  </div>
+                </div>
+
+                {/* Environment Variables Guide */}
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                  <h3 className="text-white font-semibold mb-3 flex items-center gap-2"><Settings size={16} className="text-blue-400" /> Required Environment Variables</h3>
+                  <p className="text-slate-400 text-sm mb-3">Set these on your hosting platform (Railway, etc.) to enable SMS functionality:</p>
+                  <div className="bg-slate-900/60 rounded-lg p-4 font-mono text-xs space-y-1">
+                    <p className="text-green-400"># Enable SMS</p>
+                    <p className="text-slate-300">SMS_ENABLED=1</p>
+                    <p className="text-slate-300">SMS_PROVIDER=twilio</p>
+                    <p className="text-green-400 mt-2"># Twilio Credentials</p>
+                    <p className="text-slate-300">TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</p>
+                    <p className="text-slate-300">TWILIO_AUTH_TOKEN=your_auth_token</p>
+                    <p className="text-slate-300">TWILIO_FROM_NUMBER=+441234567890</p>
+                  </div>
+                </div>
+
+                {/* Send Test SMS */}
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                  <h3 className="text-white font-semibold mb-3 flex items-center gap-2"><Send size={16} className="text-purple-400" /> Send Test SMS</h3>
+                  {!smsConfig?.enabled && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-4">
+                      <p className="text-amber-400 text-sm">SMS is currently disabled. Enable it by setting SMS_ENABLED=1 in your environment variables. Test messages will still be logged when using the console provider.</p>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="text-slate-400 text-xs font-medium block mb-1">Phone Number</label>
+                      <input type="text" value={smsToNumber} onChange={(e) => setSmsToNumber(e.target.value)} placeholder="+44 7123 456789"
+                        className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:border-purple-500 focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 text-xs font-medium block mb-1">Category</label>
+                      <select value={smsCategory} onChange={(e) => setSmsCategory(e.target.value)}
+                        className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none">
+                        <option value="general">General</option>
+                        <option value="verification_reminder">Verification Reminder</option>
+                        <option value="expiry_warning">Expiry Warning</option>
+                        <option value="status_update">Status Update</option>
+                        <option value="test">Test</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mb-4">
+                    <label className="text-slate-400 text-xs font-medium block mb-1">Message</label>
+                    <textarea value={smsMessage} onChange={(e) => setSmsMessage(e.target.value)} placeholder="Enter your SMS message..."
+                      rows={3} className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:border-purple-500 focus:outline-none resize-none" />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={handleSendSms} disabled={smsSending || !smsToNumber || !smsMessage}
+                      className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 disabled:opacity-50 text-white px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                      {smsSending ? <><RefreshCw size={14} className="animate-spin" /> Sending...</> : <><Send size={14} /> Send SMS</>}
+                    </button>
+                    {smsSendResult && (
+                      <span className={`text-sm ${smsSendResult.startsWith("Error") ? "text-red-400" : "text-green-400"}`}>{smsSendResult}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* SMS History */}
+                <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                  <h3 className="text-white font-semibold mb-3 flex items-center gap-2"><History size={16} className="text-blue-400" /> SMS History ({smsHistory.length})</h3>
+                  {smsHistory.length === 0 ? (
+                    <p className="text-slate-500 text-sm">No SMS messages sent yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-slate-400 text-xs border-b border-slate-700">
+                            <th className="text-left py-2 px-3">Date</th>
+                            <th className="text-left py-2 px-3">To</th>
+                            <th className="text-left py-2 px-3">Category</th>
+                            <th className="text-left py-2 px-3">Status</th>
+                            <th className="text-left py-2 px-3">Provider</th>
+                            <th className="text-left py-2 px-3">Message</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {smsHistory.map((sms, i) => (
+                            <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/20">
+                              <td className="py-2 px-3 text-slate-300 text-xs whitespace-nowrap">{String(sms.created_at || "").slice(0, 19).replace("T", " ")}</td>
+                              <td className="py-2 px-3 text-white font-mono text-xs">{String(sms.to_number || "")}</td>
+                              <td className="py-2 px-3"><span className="bg-slate-700/50 text-slate-300 px-2 py-0.5 rounded text-xs">{String(sms.category || "general")}</span></td>
+                              <td className="py-2 px-3">
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${sms.status === "sent" || sms.status === "logged" ? "bg-green-500/20 text-green-400" : sms.status === "failed" ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400"}`}>
+                                  {String(sms.status || "unknown")}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 text-slate-400 text-xs capitalize">{String(sms.provider || "")}</td>
+                              <td className="py-2 px-3 text-slate-300 text-xs max-w-xs truncate">{String(sms.message || "").slice(0, 80)}{String(sms.message || "").length > 80 ? "..." : ""}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 

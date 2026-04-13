@@ -948,6 +948,20 @@ export const trustidApi = {
     apiRequest<Record<string, unknown>>("/api/trustid/admin/record-result", { method: "POST", body: data, token }),
 };
 
+// SMS API
+export const smsApi = {
+  getConfig: (token: string) =>
+    apiRequest<{ enabled: boolean; provider: string; twilio_configured: boolean }>("/api/sms/config", { token }),
+  sendSms: (token: string, data: { to_number: string; message: string; category?: string; reference_id?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/sms/send", { method: "POST", body: data, token }),
+  getHistory: (token: string, limit?: number, offset?: number) => {
+    const qs = new URLSearchParams();
+    if (limit) qs.set("limit", String(limit));
+    if (offset) qs.set("offset", String(offset));
+    return apiRequest<{ sms_notifications: Record<string, unknown>[]; total: number }>(`/api/sms/history?${qs.toString()}`, { token });
+  },
+};
+
 // Agency Invites API
 export const agencyInvitesApi = {
   getVettingPricing: (token: string) =>

@@ -1,5 +1,6 @@
 import './App.css'
 import { brand, APP_URL } from './config/brand'
+import { Link } from 'react-router-dom'
 import {
   Shield, UserCheck, FileCheck, Award, BarChart3, Brain,
   Lock, Building2, ClipboardCheck, Heart, FileSearch, Download,
@@ -622,9 +623,15 @@ function Footer() {
               <ul className="space-y-2.5">
                 {col.links.map((link, j) => (
                   <li key={j}>
-                    <a href={link.href} className="text-sm text-slate-400 hover:text-white transition-colors">
-                      {link.label}
-                    </a>
+                    {link.href.startsWith('/') && !link.href.startsWith('/#') ? (
+                      <Link to={link.href} className="text-sm text-slate-400 hover:text-white transition-colors">
+                        {link.label}
+                      </Link>
+                    ) : (
+                      <a href={link.href} className="text-sm text-slate-400 hover:text-white transition-colors">
+                        {link.label}
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -635,9 +642,9 @@ function Footer() {
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-sm text-slate-500">&copy; {brand.footer.copyright}</p>
           <div className="flex items-center gap-6">
-            <a href="#" className="text-sm text-slate-500 hover:text-white transition-colors">Privacy</a>
-            <a href="#" className="text-sm text-slate-500 hover:text-white transition-colors">Terms</a>
-            <a href="#" className="text-sm text-slate-500 hover:text-white transition-colors">Cookies</a>
+            <Link to="/privacy" className="text-sm text-slate-500 hover:text-white transition-colors">Privacy</Link>
+            <Link to="/terms" className="text-sm text-slate-500 hover:text-white transition-colors">Terms</Link>
+            <Link to="/cookies" className="text-sm text-slate-500 hover:text-white transition-colors">Cookies</Link>
           </div>
         </div>
       </div>
