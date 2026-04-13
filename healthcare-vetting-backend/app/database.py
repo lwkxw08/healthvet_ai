@@ -166,10 +166,12 @@ def migrate_db():
     _add_column_if_missing(cursor, "agency_invites", "include_monitoring", "INTEGER DEFAULT 0")
     _add_column_if_missing(cursor, "agency_invites", "vetting_cost", "REAL DEFAULT 0")
     _add_column_if_missing(cursor, "agency_invites", "monitoring_cost", "REAL DEFAULT 0")
-    # Add discount_percent and billing_mode columns to agencies if missing
+    # Add missing columns to agencies table
+    _add_column_if_missing(cursor, "agencies", "status", "TEXT DEFAULT 'active'")
     _add_column_if_missing(cursor, "agencies", "discount_percent", "REAL DEFAULT 0")
     _add_column_if_missing(cursor, "agencies", "billing_mode", "TEXT DEFAULT 'manual_invoicing'")
     _add_column_if_missing(cursor, "agencies", "stripe_customer_id", "TEXT")
+    _add_column_if_missing(cursor, "agencies", "industry_template_id", "TEXT")
     # Add adjusted_amount, adjustment_notes, payment_method, stripe_session_id columns to invoices if missing
     _add_column_if_missing(cursor, "invoices", "adjusted_amount", "REAL")
     _add_column_if_missing(cursor, "invoices", "adjustment_notes", "TEXT")
@@ -1001,6 +1003,11 @@ def init_db():
             phone TEXT,
             plan TEXT DEFAULT 'standard',
             monthly_fee REAL DEFAULT 300.0,
+            status TEXT DEFAULT 'active',
+            discount_percent REAL DEFAULT 0,
+            billing_mode TEXT DEFAULT 'manual_invoicing',
+            stripe_customer_id TEXT,
+            industry_template_id TEXT,
             created_at TEXT DEFAULT (NOW()::text)
         );
 
