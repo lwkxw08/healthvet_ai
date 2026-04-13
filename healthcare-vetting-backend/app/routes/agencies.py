@@ -1,5 +1,6 @@
 """Agency management and invite routes."""
 import logging
+import os
 import secrets
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Request
@@ -256,8 +257,8 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
     # Send candidate invite email
     try:
         reload_email_config()
-        base_url = str(request.base_url).rstrip("/")
-        invite_link = f"{base_url}/%sinvite={invite_code}"
+        base_url = os.environ.get("BASE_URL", str(request.base_url).rstrip("/"))
+        invite_link = f"{base_url}/?invite={invite_code}"
         email_result = EmailTemplateService.send_email(
             template_key="candidate_invite",
             recipient_email=data.candidate_email,
@@ -362,8 +363,8 @@ async def resend_invite(invite_id: str, request: Request, current_user: dict = D
         # Send the invite email again
         try:
             reload_email_config()
-            base_url = str(request.base_url).rstrip("/")
-            invite_link = f"{base_url}/%sinvite={invite['invite_code']}"
+            base_url = os.environ.get("BASE_URL", str(request.base_url).rstrip("/"))
+            invite_link = f"{base_url}/?invite={invite['invite_code']}"
             email_result = EmailTemplateService.send_email(
                 template_key="candidate_invite",
                 recipient_email=invite["candidate_email"],
