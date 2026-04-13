@@ -49,8 +49,8 @@ export default function CandidateOnboarding() {
   // TrustID state
   const [trustidConfig, setTrustidConfig] = useState<Record<string, Record<string, unknown>>>({});
   const [trustidChecks, setTrustidChecks] = useState<Record<string, unknown>[]>([]);
-  const [trustidSubmitted, setTrustidSubmitted] = useState(false);
-  const [submittingTrustid, setSubmittingTrustid] = useState(false);
+  const [trustidSubmitted] = useState(false);
+  // submittingTrustid state removed — TrustID submission handled by backend trigger engine
 
   // Re-vet state
   const [revetToken] = useState<string | null>(getRevetTokenFromURL());
@@ -118,24 +118,7 @@ export default function CandidateOnboarding() {
     return cfg.submission_mode === "manual";
   };
 
-  const submitTrustidChecks = async () => {
-    if (!token) return;
-    setSubmittingTrustid(true);
-    try {
-      const candidateId = (candidateInfo.id as string) || "";
-      await trustidApi.submitChecks(token, {
-        candidate_id: candidateId,
-        candidate_name: `${candidateInfo.first_name || ""} ${candidateInfo.last_name || ""}`.trim() || undefined,
-        candidate_email: candidateInfo.email as string || undefined,
-        candidate_dob: candidateInfo.date_of_birth as string || undefined,
-      });
-      setTrustidSubmitted(true);
-      setError("");
-      await loadTrustidData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit TrustID checks");
-    } finally { setSubmittingTrustid(false); }
-  };
+  // TrustID check submission is now handled by the backend trigger engine after candidate consent
 
   const loadSubmission = async () => {
     try {
@@ -279,8 +262,6 @@ export default function CandidateOnboarding() {
       isManualMode={isManualMode}
       trustidChecks={trustidChecks}
       trustidSubmitted={trustidSubmitted}
-      submittingTrustid={submittingTrustid}
-      onSubmitTrustid={submitTrustidChecks}
       onRefresh={() => submissionId ? loadStatus(submissionId) : undefined}
       onLogout={logout}
     />;
@@ -367,8 +348,6 @@ export default function CandidateOnboarding() {
             isManualMode={isManualMode}
             trustidChecks={trustidChecks}
             trustidSubmitted={trustidSubmitted}
-            submittingTrustid={submittingTrustid}
-            onSubmitTrustid={submitTrustidChecks}
             token={token || undefined}
           />
         ) : (
@@ -412,7 +391,7 @@ export default function CandidateOnboarding() {
 // Sections that candidates can update after submission
 const EDITABLE_SECTIONS = new Set(["references", "training", "cv", "employment"]);
 
-function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, submissionStatus, submissionId, token, sectionData, candidateInfo, isManualMode, trustidChecks, trustidSubmitted, submittingTrustid, onSubmitTrustid, onRefresh, onLogout }: {
+function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, submissionStatus, submissionId, token, sectionData, candidateInfo, isManualMode, trustidChecks, trustidSubmitted, onRefresh, onLogout }: {
   checkStatuses: Record<string, {status: string; label: string}>;
   complianceScore: number;
   complianceStatus: string;
@@ -424,8 +403,6 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
   isManualMode: (checkType: string) => boolean;
   trustidChecks: Record<string, unknown>[];
   trustidSubmitted: boolean;
-  submittingTrustid: boolean;
-  onSubmitTrustid: () => void;
   onRefresh: () => void;
   onLogout: () => void;
 }) {
@@ -576,8 +553,6 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
                         isManualMode={isManualMode}
                         trustidChecks={trustidChecks}
                         trustidSubmitted={trustidSubmitted}
-                        submittingTrustid={submittingTrustid}
-                        onSubmitTrustid={onSubmitTrustid}
                         token={token || undefined}
                       />
                       <div className="flex justify-end gap-3 mt-4">
@@ -608,7 +583,7 @@ function StatusDashboard({ checkStatuses, complianceScore, complianceStatus, sub
   );
 }
 
-function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isManualMode, trustidChecks, trustidSubmitted, submittingTrustid, onSubmitTrustid, token }: {
+function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isManualMode, trustidChecks, trustidSubmitted, token }: {
   section: { key: string; label: string };
   data: Record<string, unknown>;
   candidateInfo: Record<string, unknown>;
@@ -617,11 +592,9 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
   isManualMode: (checkType: string) => boolean;
   trustidChecks: Record<string, unknown>[];
   trustidSubmitted: boolean;
-  submittingTrustid: boolean;
-  onSubmitTrustid: () => void;
   token?: string;
 }) {
-  const hasSubmittedTrustid = trustidSubmitted || trustidChecks.length > 0;
+  void(trustidSubmitted); void(trustidChecks); // used by parent for conditional rendering
   const inputClass = "w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
   const labelClass = "block text-slate-400 text-xs mb-1.5 font-medium";
   const [uploading, setUploading] = useState<string | null>(null);
