@@ -595,7 +595,7 @@ async def retrigger_reference_verification(
     from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
 
     from app.config import BASE_URL
-    reference_link = f"{BASE_URL}/verify%stoken={ref_dict['token']}&type=reference"
+    reference_link = f"{BASE_URL}/verify?token={ref_dict['token']}&type=reference"
     verification_code = ref_dict.get("verification_code", "")
 
     email_result = EmailTemplateService.send_email(
@@ -692,7 +692,7 @@ async def retrigger_employment_verification(
     from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
 
     from app.config import BASE_URL
-    verification_link = f"{BASE_URL}/verify%stoken={ver_dict['token']}&type=employment"
+    verification_link = f"{BASE_URL}/verify?token={ver_dict['token']}&type=employment"
     verification_code = ver_dict.get("verification_code", "")
 
     email_result = EmailTemplateService.send_email(
@@ -785,6 +785,57 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
                WHERE ac.candidate_id=%s""", (candidate_id,))
         agencies_linked = db.fetchall()
 
+        # AI Analysis Results
+        ai_cv_analyses = []
+        ai_ref_analyses = []
+        ai_anomalies = []
+        try:
+            db.execute("SELECT * FROM ai_cv_gap_analyses WHERE candidate_id=%s ORDER BY created_at DESC", (candidate_id,))
+            ai_cv_rows = db.fetchall()
+            for r in ai_cv_rows:
+                d = dict(r)
+                try:
+                    import json as _json
+                    d["result"] = _json.loads(d.pop("result_json", "{}"))
+                except Exception:
+                    d["result"] = {}
+                ai_cv_analyses.append(d)
+        except Exception:
+            pass
+        try:
+            db.execute("SELECT * FROM ai_reference_analyses WHERE candidate_id=%s ORDER BY created_at DESC", (candidate_id,))
+            ai_ref_rows = db.fetchall()
+            for r in ai_ref_rows:
+                d = dict(r)
+                try:
+                    import json as _json
+                    d["result"] = _json.loads(d.pop("result_json", "{}"))
+                except Exception:
+                    d["result"] = {}
+                ai_ref_analyses.append(d)
+        except Exception:
+            pass
+        try:
+            db.execute(
+                """SELECT * FROM ai_anomaly_scans ORDER BY created_at DESC LIMIT 1"""
+            )
+            anomaly_scan = db.fetchone()
+            if anomaly_scan:
+                d = dict(anomaly_scan)
+                try:
+                    import json as _json
+                    scan_data = _json.loads(d.get("result_json", "{}"))
+                    candidate_anomalies = [
+                        a for a in scan_data.get("anomalies", [])
+                        if a.get("candidate_id") == candidate_id
+                    ]
+                    if candidate_anomalies:
+                        ai_anomalies = candidate_anomalies
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         return {
             "candidate": dict(cand),
             "identity_checks": identity,
@@ -801,6 +852,9 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
             "active_alerts": alerts,
             "fraud_flags": fraud,
             "agencies": [dict(r) for r in agencies_linked],
+            "ai_cv_gap_analyses": ai_cv_analyses,
+            "ai_reference_analyses": ai_ref_analyses,
+            "ai_anomalies": ai_anomalies,
         }
 
 

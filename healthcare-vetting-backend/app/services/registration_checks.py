@@ -1,7 +1,8 @@
 """
 Professional Registration Check Service
-Queries NMC, GMC, HCPC, GPhC public registers via headless scraping (live mode)
+Queries NMC, GMC, HCPC, GPhC public registers via HTTP scraping (live mode)
 or simulation (dev/test). Controlled by REGISTRATION_MODE env var.
+Set REGISTRATION_MODE=live to use real HTTP-based scrapers (no Chrome/Selenium needed).
 """
 import json
 import logging

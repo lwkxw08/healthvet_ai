@@ -269,6 +269,61 @@ class AuditTrailService:
             except Exception:
                 pass
 
+            # AI Analysis Results (for CQC audit evidence)
+            ai_cv_analyses = []
+            ai_ref_analyses = []
+            ai_anomaly_scans = []
+            try:
+                ai_cv_sql = "SELECT a.*, c.first_name, c.last_name FROM ai_cv_gap_analyses a JOIN candidates c ON a.candidate_id = c.id"
+                ai_cv_conditions = []
+                ai_cv_params = []
+                if date_from:
+                    ai_cv_conditions.append("a.created_at >= %s")
+                    ai_cv_params.append(date_from)
+                if date_to:
+                    ai_cv_conditions.append("a.created_at <= %s")
+                    ai_cv_params.append(date_to)
+                if agency_id:
+                    ai_cv_conditions.append("a.candidate_id IN (SELECT candidate_id FROM agency_candidates WHERE agency_id = %s)")
+                    ai_cv_params.append(agency_id)
+                if ai_cv_conditions:
+                    ai_cv_sql += " WHERE " + " AND ".join(ai_cv_conditions)
+                ai_cv_sql += " ORDER BY a.created_at DESC"
+                db.execute(ai_cv_sql, tuple(ai_cv_params))
+                rows = db.fetchall()
+                ai_cv_analyses = [dict(r) for r in rows]
+            except Exception:
+                pass
+
+            try:
+                ai_ref_sql = "SELECT a.*, c.first_name, c.last_name FROM ai_reference_analyses a JOIN candidates c ON a.candidate_id = c.id"
+                ai_ref_conditions = []
+                ai_ref_params = []
+                if date_from:
+                    ai_ref_conditions.append("a.created_at >= %s")
+                    ai_ref_params.append(date_from)
+                if date_to:
+                    ai_ref_conditions.append("a.created_at <= %s")
+                    ai_ref_params.append(date_to)
+                if agency_id:
+                    ai_ref_conditions.append("a.candidate_id IN (SELECT candidate_id FROM agency_candidates WHERE agency_id = %s)")
+                    ai_ref_params.append(agency_id)
+                if ai_ref_conditions:
+                    ai_ref_sql += " WHERE " + " AND ".join(ai_ref_conditions)
+                ai_ref_sql += " ORDER BY a.created_at DESC"
+                db.execute(ai_ref_sql, tuple(ai_ref_params))
+                rows = db.fetchall()
+                ai_ref_analyses = [dict(r) for r in rows]
+            except Exception:
+                pass
+
+            try:
+                db.execute("SELECT * FROM ai_anomaly_scans ORDER BY created_at DESC LIMIT 5")
+                rows = db.fetchall()
+                ai_anomaly_scans = [dict(r) for r in rows]
+            except Exception:
+                pass
+
             return {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "agency_id": agency_id,
@@ -279,6 +334,11 @@ class AuditTrailService:
                 "retention_policies": retention_policies,
                 "trustid_checks": trustid_checks,
                 "trustid_reports_count": len(trustid_checks),
+                "ai_cv_gap_analyses": ai_cv_analyses,
+                "ai_cv_analyses_count": len(ai_cv_analyses),
+                "ai_reference_analyses": ai_ref_analyses,
+                "ai_reference_analyses_count": len(ai_ref_analyses),
+                "ai_anomaly_scans": ai_anomaly_scans,
                 "entries": [dict(r) for r in audit_entries],
                 "access_log": [dict(r) for r in access_entries],
             }

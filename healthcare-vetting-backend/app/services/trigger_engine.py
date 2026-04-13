@@ -206,7 +206,7 @@ class TriggerEngine:
 
     @staticmethod
     def _run_rtw(candidate_id: str, data: dict) -> str:
-        """Fire right to work check."""
+        """Fire right to work check and notify agency for imposter declaration."""
         try:
             method = data.get("method", "uk_citizen")
             if method == "uk_citizen":
@@ -222,9 +222,85 @@ class TriggerEngine:
                     candidate_id=candidate_id,
                     share_code=data.get("share_code", ""),
                 )
+
+            # Notify the agency that an imposter declaration is required
+            TriggerEngine._notify_agency_imposter_check(candidate_id)
+
             return "completed"
         except Exception as e:
             return f"error: {str(e)}"
+
+    @staticmethod
+    def _notify_agency_imposter_check(candidate_id: str):
+        """Create a notification and send email to the agency when imposter declaration is needed."""
+        try:
+            with get_db() as db:
+                # Get candidate details
+                db.execute("SELECT full_name, email FROM candidates WHERE id=%s", (candidate_id,))
+                cand = db.fetchone()
+                if not cand:
+                    return
+                cand_name = dict(cand).get("full_name", "Unknown")
+
+                # Get linked agency
+                db.execute(
+                    "SELECT a.id, a.name, a.email, a.contact_email FROM agencies a "
+                    "JOIN agency_candidates ac ON a.id = ac.agency_id "
+                    "WHERE ac.candidate_id=%s LIMIT 1",
+                    (candidate_id,),
+                )
+                agency = db.fetchone()
+                if not agency:
+                    return
+                agency_data = dict(agency)
+                agency_email = agency_data.get("email") or agency_data.get("contact_email")
+
+                # Check if imposter declaration already exists
+                db.execute(
+                    "SELECT id FROM imposter_declarations WHERE candidate_id=%s AND agency_id=%s",
+                    (candidate_id, agency_data["id"]),
+                )
+                existing = db.fetchone()
+                if existing:
+                    return  # Already declared
+
+                # Create in-app notification
+                now = datetime.now(timezone.utc).isoformat()
+                db.execute(
+                    """INSERT INTO notifications (id, user_id, user_type, category, title, message, link, created_at, read)
+                       VALUES (%s, %s, 'agency', 'compliance', %s, %s, %s, %s, 0)""",
+                    (
+                        generate_id(),
+                        agency_data["id"],
+                        f"Imposter Declaration Required - {cand_name}",
+                        f"Right to Work check completed for {cand_name}. An imposter declaration is required before RTW compliance can be confirmed. Please verify the candidate's identity in person or via compliant video call.",
+                        f"/candidates/{candidate_id}",
+                        now,
+                    ),
+                )
+
+            # Send email notification to agency
+            if agency_email:
+                try:
+                    from app.services.email_templates import EmailTemplateService
+                    import os
+                    base_url = os.environ.get("BASE_URL", "https://app.viperai.io")
+                    EmailTemplateService.send_email(
+                        template_key="imposter_check_required",
+                        recipient_email=agency_email,
+                        recipient_name=agency_data.get("name", "Agency"),
+                        variables={
+                            "agency_name": agency_data.get("name", "Agency"),
+                            "candidate_name": cand_name,
+                            "candidate_id": candidate_id,
+                            "imposter_check_link": f"{base_url}/candidates/{candidate_id}",
+                        },
+                    )
+                except Exception as email_err:
+                    logger.warning(f"Failed to send imposter check email: {email_err}")
+
+        except Exception as e:
+            logger.warning(f"Failed to notify agency for imposter check: {e}")
 
     @staticmethod
     def _run_dbs(candidate_id: str, data: dict) -> str:

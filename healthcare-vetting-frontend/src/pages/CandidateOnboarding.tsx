@@ -686,28 +686,11 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
         if (isManualMode("identity_verification")) {
           return (
             <>
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
-                <p className="text-blue-300 text-sm"><strong>Identity Verification via TrustID</strong></p>
-                <p className="text-slate-400 text-xs mt-1">Your identity verification will be handled by our trusted partner TrustID. No document upload or selfie is required here — TrustID will contact you directly to complete the verification process.</p>
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-5">
+                <p className="text-amber-300 text-sm font-semibold mb-2">No action required here</p>
+                <p className="text-slate-400 text-sm">Your identity verification will be handled separately by our trusted partner <strong className="text-white">TrustID</strong>. They will contact you directly within 24 hours of your submission to complete the verification process.</p>
+                <p className="text-slate-500 text-xs mt-3">Please click <strong>Save & Next</strong> to continue to the next section.</p>
               </div>
-              {hasSubmittedTrustid ? (
-                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-6 text-center">
-                  <CheckCircle className="text-green-400 mx-auto mb-2" size={32} />
-                  <h3 className="text-green-400 font-semibold text-lg">Submission Confirmed</h3>
-                  <p className="text-slate-400 text-sm mt-2">TrustID will contact you within 24 hours to complete your identity verification.</p>
-                </div>
-              ) : (
-                <div className="text-center mt-4">
-                  <p className="text-slate-400 text-sm mb-4">Click below to submit your details for TrustID verification. Your personal information will be securely shared with TrustID.</p>
-                  <button
-                    onClick={onSubmitTrustid}
-                    disabled={submittingTrustid}
-                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white rounded-lg font-semibold text-sm cursor-pointer border-none transition-all"
-                  >
-                    {submittingTrustid ? "Submitting..." : "Submit for TrustID Verification"}
-                  </button>
-                </div>
-              )}
             </>
           );
         }
@@ -750,22 +733,11 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
         if (isManualMode("right_to_work")) {
           return (
             <>
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
-                <p className="text-blue-300 text-sm"><strong>Right to Work via TrustID</strong></p>
-                <p className="text-slate-400 text-xs mt-1">Your right to work check will be handled by our trusted partner TrustID. No document upload is required here — TrustID will contact you directly.</p>
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-5">
+                <p className="text-amber-300 text-sm font-semibold mb-2">No action required here</p>
+                <p className="text-slate-400 text-sm">Your right to work check will be handled separately by our trusted partner <strong className="text-white">TrustID</strong>. They will contact you directly within 24 hours of your submission to complete the verification.</p>
+                <p className="text-slate-500 text-xs mt-3">Please click <strong>Save & Next</strong> to continue to the next section.</p>
               </div>
-              {hasSubmittedTrustid ? (
-                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-6 text-center">
-                  <CheckCircle className="text-green-400 mx-auto mb-2" size={32} />
-                  <h3 className="text-green-400 font-semibold text-lg">Submitted to TrustID</h3>
-                  <p className="text-slate-400 text-sm mt-2">TrustID will contact you within 24 hours to verify your right to work.</p>
-                </div>
-              ) : (
-                <div className="text-center mt-4">
-                  <p className="text-slate-400 text-sm mb-4">Submit your details on the Identity Documents tab to begin all TrustID verifications.</p>
-                  <button onClick={() => {}} disabled className="px-6 py-3 bg-slate-600 text-slate-400 rounded-lg font-semibold text-sm cursor-not-allowed border-none">Submit via Identity Tab First</button>
-                </div>
-              )}
             </>
           );
         }
@@ -820,22 +792,11 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
         if (isManualMode("dbs_check")) {
           return (
             <>
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
-                <p className="text-blue-300 text-sm"><strong>DBS Check via TrustID</strong></p>
-                <p className="text-slate-400 text-xs mt-1">Your DBS check will be handled by our trusted partner TrustID. No application form is required here — TrustID will contact you directly.</p>
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-5">
+                <p className="text-amber-300 text-sm font-semibold mb-2">No action required here</p>
+                <p className="text-slate-400 text-sm">Your DBS check will be handled separately by our trusted partner <strong className="text-white">TrustID</strong>. They will contact you directly within 24 hours of your submission to complete the DBS application.</p>
+                <p className="text-slate-500 text-xs mt-3">Please click <strong>Save & Next</strong> to continue to the next section.</p>
               </div>
-              {hasSubmittedTrustid ? (
-                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-6 text-center">
-                  <CheckCircle className="text-green-400 mx-auto mb-2" size={32} />
-                  <h3 className="text-green-400 font-semibold text-lg">Submitted to TrustID</h3>
-                  <p className="text-slate-400 text-sm mt-2">TrustID will contact you within 24 hours regarding your DBS check.</p>
-                </div>
-              ) : (
-                <div className="text-center mt-4">
-                  <p className="text-slate-400 text-sm mb-4">Submit your details on the Identity Documents tab to begin all TrustID verifications.</p>
-                  <button onClick={() => {}} disabled className="px-6 py-3 bg-slate-600 text-slate-400 rounded-lg font-semibold text-sm cursor-not-allowed border-none">Submit via Identity Tab First</button>
-                </div>
-              )}
             </>
           );
         }

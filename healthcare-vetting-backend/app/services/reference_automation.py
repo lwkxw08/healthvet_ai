@@ -318,7 +318,7 @@ class ReferenceAutomationService:
                     agency_name = dict(agency)["name"]
 
         from app.config import BASE_URL
-        reference_link = f"{BASE_URL}/verify%stoken={token}&type=reference"
+        reference_link = f"{BASE_URL}/verify?token={token}&type=reference"
 
         variables = {
             "candidate_name": candidate_name,

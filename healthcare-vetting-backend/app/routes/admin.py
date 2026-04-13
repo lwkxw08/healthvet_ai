@@ -1,4 +1,6 @@
 """Admin settings, analytics, and pricing routes."""
+import io
+import base64
 import logging
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Depends
@@ -1026,14 +1028,38 @@ async def send_invoice_email(
     fallback_subject = f"Invoice #{invoice_ref} - \u00a3{total_due:.2f}"
     fallback_body = f"Dear {variables['agency_name']},\n\nPlease find attached invoice #{invoice_ref} for \u00a3{total_due:.2f}.\n\nBest regards,\n{settings.get('company_name', 'Viper AI')}"
 
+    # Generate PDF invoice
+    pdf_attachments = []
+    try:
+        pdf_bytes = _generate_invoice_pdf(
+            invoice_ref=invoice_ref,
+            invoice_date=invoice_date,
+            due_date=due_date,
+            agency_name=variables["agency_name"],
+            agency_email=agency_email,
+            invoices=invoices,
+            subtotal=subtotal,
+            vat_rate_pct=vat_rate_pct,
+            vat_amount=vat_amount,
+            total_due=total_due,
+            settings=settings,
+            terms=terms,
+        )
+        pdf_attachments = [{
+            "content": base64.b64encode(pdf_bytes).decode("utf-8"),
+            "filename": f"Invoice-{invoice_ref}.pdf",
+            "type": "application/pdf",
+        }]
+    except Exception as e:
+        logger.warning(f"PDF generation failed, sending email without attachment: {e}")
+
     try:
         EmailTemplateService.send_email(
             template_key="invoice_notification",
             recipient_email=agency_email,
             recipient_name=variables["agency_name"],
             variables=variables,
-            fallback_subject=fallback_subject,
-            fallback_body=fallback_body,
+            attachments=pdf_attachments if pdf_attachments else None,
         )
     except Exception as e:
         logger.error(f"Failed to send invoice email: {e}")
@@ -1041,8 +1067,133 @@ async def send_invoice_email(
 
     return {
         "success": True,
-        "message": f"Invoice email sent to {agency_email}",
+        "message": f"Invoice email sent to {agency_email}" + (" with PDF attached" if pdf_attachments else ""),
         "invoice_ref": invoice_ref,
         "total_due": f"\u00a3{total_due:.2f}",
         "line_items_count": len(invoices),
+        "pdf_attached": bool(pdf_attachments),
     }
+
+
+def _generate_invoice_pdf(
+    invoice_ref: str, invoice_date: str, due_date: str,
+    agency_name: str, agency_email: str,
+    invoices: list, subtotal: float, vat_rate_pct: float,
+    vat_amount: float, total_due: float, settings: dict, terms: str,
+) -> bytes:
+    """Generate an itemised PDF invoice using reportlab."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=20*mm, rightMargin=20*mm,
+                            topMargin=20*mm, bottomMargin=20*mm)
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle("InvTitle", parent=styles["Heading1"],
+                                  fontSize=22, textColor=colors.HexColor("#1e293b"))
+    company_style = ParagraphStyle("Company", parent=styles["Normal"],
+                                    fontSize=10, textColor=colors.HexColor("#64748b"))
+    label_style = ParagraphStyle("Label", parent=styles["Normal"],
+                                  fontSize=9, textColor=colors.HexColor("#64748b"))
+    value_style = ParagraphStyle("Value", parent=styles["Normal"],
+                                  fontSize=10, textColor=colors.HexColor("#1e293b"))
+
+    elements = []
+
+    # Header
+    company_name = settings.get("company_name", "Viper AI")
+    elements.append(Paragraph(f"<b>{company_name}</b>", title_style))
+    addr = settings.get("company_address", "")
+    if addr:
+        elements.append(Paragraph(addr.replace("\n", "<br/>"), company_style))
+    comp_email = settings.get("company_email", "")
+    comp_phone = settings.get("company_phone", "")
+    if comp_email or comp_phone:
+        elements.append(Paragraph(f"{comp_email}  {comp_phone}", company_style))
+    reg = settings.get("company_reg_info", "")
+    vat_num = settings.get("vat_number", "")
+    if reg:
+        elements.append(Paragraph(reg, company_style))
+    if vat_num:
+        elements.append(Paragraph(f"VAT: {vat_num}", company_style))
+    elements.append(Spacer(1, 8*mm))
+
+    # Invoice details
+    elements.append(Paragraph("<b>INVOICE</b>", ParagraphStyle(
+        "InvLabel", parent=styles["Heading2"], fontSize=16,
+        textColor=colors.HexColor("#0f172a"))))
+    elements.append(Spacer(1, 3*mm))
+
+    info_data = [
+        [Paragraph("<b>Invoice #:</b>", label_style), Paragraph(invoice_ref, value_style),
+         Paragraph("<b>Bill To:</b>", label_style), Paragraph(agency_name, value_style)],
+        [Paragraph("<b>Date:</b>", label_style), Paragraph(invoice_date, value_style),
+         Paragraph("<b>Email:</b>", label_style), Paragraph(agency_email, value_style)],
+        [Paragraph("<b>Due Date:</b>", label_style), Paragraph(due_date, value_style),
+         Paragraph("<b>Terms:</b>", label_style), Paragraph(terms, value_style)],
+    ]
+    info_table = Table(info_data, colWidths=[65, 120, 55, 200])
+    info_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 8*mm))
+
+    # Line items table
+    header_row = ["Description", "Candidate", "Amount"]
+    table_data = [header_row]
+    for inv in invoices:
+        sell = inv.get("sell_amount") or inv.get("cost_amount") or 0.0
+        desc = inv.get("description") or inv.get("check_type") or "Vetting Service"
+        cand = inv.get("candidate_name", "")
+        table_data.append([desc, cand, f"\u00a3{sell:.2f}"])
+
+    # Totals
+    table_data.append(["", "Subtotal:", f"\u00a3{subtotal:.2f}"])
+    if vat_rate_pct > 0:
+        table_data.append(["", f"VAT ({vat_rate_pct:.0f}%):", f"\u00a3{vat_amount:.2f}"])
+    table_data.append(["", "TOTAL DUE:", f"\u00a3{total_due:.2f}"])
+
+    col_widths = [220, 160, 80]
+    t = Table(table_data, colWidths=col_widths)
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("ALIGN", (-1, 0), (-1, -1), "RIGHT"),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("GRID", (0, 0), (-1, len(invoices)), 0.5, colors.HexColor("#e2e8f0")),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+        ("TOPPADDING", (0, 1), (-1, -1), 6),
+    ]
+    # Bold totals
+    total_start = len(invoices) + 1
+    style_cmds.append(("FONTNAME", (1, total_start), (-1, -1), "Helvetica-Bold"))
+    style_cmds.append(("LINEABOVE", (1, total_start), (-1, total_start), 1, colors.HexColor("#1e293b")))
+    t.setStyle(TableStyle(style_cmds))
+    elements.append(t)
+    elements.append(Spacer(1, 10*mm))
+
+    # Bank details
+    bank_name = settings.get("bank_account_name", "")
+    bank_sort = settings.get("bank_sort_code", "")
+    bank_acct = settings.get("bank_account_number", "")
+    if bank_name or bank_sort or bank_acct:
+        elements.append(Paragraph("<b>Payment Details</b>", value_style))
+        elements.append(Spacer(1, 2*mm))
+        if bank_name:
+            elements.append(Paragraph(f"Account Name: {bank_name}", company_style))
+        if bank_sort:
+            elements.append(Paragraph(f"Sort Code: {bank_sort}", company_style))
+        if bank_acct:
+            elements.append(Paragraph(f"Account Number: {bank_acct}", company_style))
+
+    doc.build(elements)
+    return buf.getvalue()

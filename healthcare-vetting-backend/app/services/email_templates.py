@@ -843,6 +843,60 @@ Viper AI Team""",
             {"key": "dashboard_link", "description": "Link to the agency dashboard"},
         ]),
     },
+    {
+        "template_key": "imposter_check_required",
+        "name": "Imposter Declaration Required",
+        "description": "Sent to agency when a candidate's RTW check completes and an imposter declaration is needed.",
+        "category": "compliance",
+        "subject": "Imposter Declaration Required — {{candidate_name}}",
+        "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+<div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+    <h1 style="color: #f59e0b; margin: 0; font-size: 24px;">Action Required</h1>
+    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Imposter Declaration — Viper AI</p>
+</div>
+<div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
+    <p>Dear {{agency_name}},</p>
+    <p>The Right to Work check for <strong>{{candidate_name}}</strong> has been completed. Before RTW compliance can be confirmed, an <strong>imposter declaration</strong> is required.</p>
+    <div style="background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 15px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400e; font-weight: 600;">What you need to do:</p>
+        <ol style="color: #92400e; margin: 10px 0 0; padding-left: 20px;">
+            <li>Conduct an in-person or compliant video identity check with the candidate</li>
+            <li>Verify the individual matches the documentation provided</li>
+            <li>Log in to your dashboard and submit the imposter declaration</li>
+        </ol>
+    </div>
+    <div style="text-align: center; margin: 20px 0;">
+        <a href="{{imposter_check_link}}" style="background: #f59e0b; color: #1e293b; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">Complete Imposter Declaration</a>
+    </div>
+    <p style="color: #64748b; font-size: 13px;">This declaration is a legal requirement under UK Right to Work regulations. RTW compliance cannot be confirmed without it.</p>
+    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+    <p style="color: #64748b; font-size: 11px;">Viper AI — Vetting Intelligence Platform for Enterprise Risk</p>
+</div>
+</div>""",
+        "body_text": """Imposter Declaration Required — {{candidate_name}}
+
+Dear {{agency_name}},
+
+The Right to Work check for {{candidate_name}} has been completed. Before RTW compliance can be confirmed, an imposter declaration is required.
+
+What you need to do:
+1. Conduct an in-person or compliant video identity check with the candidate
+2. Verify the individual matches the documentation provided
+3. Log in to your dashboard and submit the imposter declaration
+
+Complete the declaration here: {{imposter_check_link}}
+
+This declaration is a legal requirement under UK Right to Work regulations.
+
+Best regards,
+Viper AI Team""",
+        "variables": json.dumps([
+            {"key": "agency_name", "description": "Name of the agency"},
+            {"key": "candidate_name", "description": "Name of the candidate"},
+            {"key": "candidate_id", "description": "Candidate ID"},
+            {"key": "imposter_check_link", "description": "Direct link to complete the imposter declaration"},
+        ]),
+    },
 ]
 
 
@@ -1130,8 +1184,11 @@ class EmailTemplateService:
         recipient_email: str,
         recipient_name: str,
         variables: dict,
+        attachments: list = None,
     ) -> dict:
-        """Render and send an email using SendGrid (or log if no API key)."""
+        """Render and send an email using SendGrid (or log if no API key).
+        attachments: list of dicts with keys: filename, content (base64), type (mime type)
+        """
         reload_email_config()  # ensure DB-stored API keys are loaded
         rendered = EmailTemplateService.render_template(template_key, variables)
         if not rendered:
@@ -1167,6 +1224,7 @@ class EmailTemplateService:
                 result = send_fn(
                     recipient_email, recipient_name,
                     rendered["subject"], rendered["body_html"], rendered["body_text"],
+                    attachments=attachments,
                 )
                 with get_db() as db:
                     db.execute(
@@ -1215,9 +1273,36 @@ class EmailTemplateService:
     def _send_via_sendgrid(
         to_email: str, to_name: str,
         subject: str, html_content: str, text_content: str,
+        attachments: list = None,
     ) -> dict:
-        """Send email via SendGrid API."""
+        """Send email via SendGrid API with optional attachments."""
         import httpx
+
+        payload = {
+            "personalizations": [{
+                "to": [{"email": to_email, "name": to_name}],
+            }],
+            "from": {
+                "email": _config["email_from_address"],
+                "name": _config["email_from_name"],
+            },
+            "subject": subject,
+            "content": [
+                {"type": "text/plain", "value": text_content or subject},
+                {"type": "text/html", "value": html_content},
+            ],
+        }
+
+        if attachments:
+            payload["attachments"] = [
+                {
+                    "content": att["content"],
+                    "filename": att["filename"],
+                    "type": att.get("type", "application/pdf"),
+                    "disposition": "attachment",
+                }
+                for att in attachments
+            ]
 
         response = httpx.post(
             "https://api.sendgrid.com/v3/mail/send",
@@ -1225,21 +1310,8 @@ class EmailTemplateService:
                 "Authorization": f"Bearer {_config['sendgrid_api_key']}",
                 "Content-Type": "application/json",
             },
-            json={
-                "personalizations": [{
-                    "to": [{"email": to_email, "name": to_name}],
-                }],
-                "from": {
-                    "email": _config["email_from_address"],
-                    "name": _config["email_from_name"],
-                },
-                "subject": subject,
-                "content": [
-                    {"type": "text/plain", "value": text_content or subject},
-                    {"type": "text/html", "value": html_content},
-                ],
-            },
-            timeout=10,
+            json=payload,
+            timeout=30,
         )
 
         if response.status_code in (200, 201, 202):
@@ -1252,6 +1324,7 @@ class EmailTemplateService:
     def _send_via_mailgun(
         to_email: str, to_name: str,
         subject: str, html_content: str, text_content: str,
+        attachments: list = None,
     ) -> dict:
         """Send email via Mailgun API."""
         import httpx
@@ -1279,6 +1352,7 @@ class EmailTemplateService:
     def _send_via_resend(
         to_email: str, to_name: str,
         subject: str, html_content: str, text_content: str,
+        attachments: list = None,
     ) -> dict:
         """Send email via Resend API."""
         import httpx

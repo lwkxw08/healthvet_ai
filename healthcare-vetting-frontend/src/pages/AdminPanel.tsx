@@ -17,7 +17,7 @@ import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
   DollarSign, FileText, TrendingUp, ShieldAlert, Zap, Download, CreditCard,
-  Edit, Trash2, UserPlus, Ban, History, Send, PlusCircle, Building2,
+  Edit, Trash2, UserPlus, Ban, History, Send, PlusCircle, Building2, Brain,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
@@ -3146,6 +3146,9 @@ export default function AdminPanel() {
           const empVerifications = (detail.employment_verifications || []) as Record<string, unknown>[];
           const trainingCerts = (detail.training_certificates || []) as Record<string, unknown>[];
           const trustidChecks = (detail.trustid_checks || []) as Record<string, unknown>[];
+          const aiCvAnalyses = (detail.ai_cv_gap_analyses || []) as Record<string, unknown>[];
+          const aiRefAnalyses = (detail.ai_reference_analyses || []) as Record<string, unknown>[];
+          const aiAnomalies = (detail.ai_anomalies || []) as Record<string, unknown>[];
 
           return (
           <div className="space-y-6">
@@ -3608,6 +3611,108 @@ export default function AdminPanel() {
                 </div>
               )) : (
                 <p className="text-slate-500 text-sm">No TrustID checks recorded yet</p>
+              )}
+            </div>
+
+            {/* ── AI CV Gap Analysis Results ── */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><Brain className="text-purple-400" size={18} /> AI CV Gap Analysis ({aiCvAnalyses.length})</h3>
+              {aiCvAnalyses.length > 0 ? aiCvAnalyses.map((analysis, i) => {
+                const result = (analysis.result || {}) as Record<string, unknown>;
+                const gaps = (result.gaps || []) as Record<string, unknown>[];
+                const redFlags = (result.red_flags || []) as Record<string, unknown>[];
+                return (
+                <div key={i} className="p-4 bg-slate-700/30 rounded-lg border border-slate-600/50 mb-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${String(analysis.overall_risk) === "low" ? "bg-green-500/20 text-green-400" : String(analysis.overall_risk) === "medium" ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-400"}`}>
+                      Risk: {String(analysis.overall_risk || "unknown").toUpperCase()}
+                    </span>
+                    <span className="text-slate-500 text-xs">{String(analysis.method || "rule_based")} &middot; {String(analysis.created_at || "").slice(0, 19).replace("T", " ")}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 text-xs mb-3">
+                    <div className="bg-slate-800/60 rounded p-2 text-center"><span className="text-amber-400 font-bold text-lg">{String(analysis.gaps_count || 0)}</span><br/><span className="text-slate-400">Gaps Found</span></div>
+                    <div className="bg-slate-800/60 rounded p-2 text-center"><span className="text-blue-400 font-bold text-lg">{String(analysis.overlaps_count || 0)}</span><br/><span className="text-slate-400">Overlaps</span></div>
+                    <div className="bg-slate-800/60 rounded p-2 text-center"><span className="text-red-400 font-bold text-lg">{String(analysis.red_flags_count || 0)}</span><br/><span className="text-slate-400">Red Flags</span></div>
+                  </div>
+                  {gaps.length > 0 && (
+                    <div className="mb-2">
+                      <p className="text-slate-400 text-xs font-medium mb-1">Employment Gaps:</p>
+                      {gaps.map((g, gi) => (
+                        <div key={gi} className="text-xs text-amber-300 bg-amber-500/10 rounded px-2 py-1 mb-1">
+                          {String(g.start_date || "")} to {String(g.end_date || "")} ({String(g.duration_months || "?")} months) {String(g.description || "")}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {redFlags.length > 0 && (
+                    <div>
+                      <p className="text-slate-400 text-xs font-medium mb-1">Red Flags:</p>
+                      {redFlags.map((rf, rfi) => (
+                        <div key={rfi} className="text-xs text-red-300 bg-red-500/10 rounded px-2 py-1 mb-1">
+                          {String(rf.description || rf.flag || rf)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );}) : (
+                <p className="text-slate-500 text-sm">No AI CV analysis results yet. Analysis runs automatically when a CV is submitted.</p>
+              )}
+            </div>
+
+            {/* ── AI Reference Sentiment Analysis ── */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><Brain className="text-blue-400" size={18} /> AI Reference Sentiment Analysis ({aiRefAnalyses.length})</h3>
+              {aiRefAnalyses.length > 0 ? aiRefAnalyses.map((analysis, i) => {
+                const result = (analysis.result || {}) as Record<string, unknown>;
+                const concerns = (result.concerns || []) as string[];
+                const sentimentScore = Number(analysis.sentiment_score || 0);
+                return (
+                <div key={i} className="p-4 bg-slate-700/30 rounded-lg border border-slate-600/50 mb-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-white text-sm font-medium">Reference #{String(analysis.reference_id || i + 1)}</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${sentimentScore >= 0.7 ? "bg-green-500/20 text-green-400" : sentimentScore >= 0.4 ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-400"}`}>
+                        Sentiment: {(sentimentScore * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <span className="text-slate-500 text-xs">{String(analysis.method || "rule_based")} &middot; {String(analysis.created_at || "").slice(0, 19).replace("T", " ")}</span>
+                  </div>
+                  <p className="text-slate-300 text-sm mb-2">{String(analysis.assessment || result.assessment || "No assessment available")}</p>
+                  <div className="w-full bg-slate-700 rounded-full h-2 mb-3">
+                    <div className={`h-2 rounded-full ${sentimentScore >= 0.7 ? "bg-green-500" : sentimentScore >= 0.4 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${sentimentScore * 100}%` }}></div>
+                  </div>
+                  {concerns.length > 0 && (
+                    <div>
+                      <p className="text-slate-400 text-xs font-medium mb-1">Concerns ({String(analysis.concerns_count || concerns.length)}):</p>
+                      {concerns.map((c, ci) => (
+                        <div key={ci} className="text-xs text-amber-300 bg-amber-500/10 rounded px-2 py-1 mb-1">{String(c)}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );}) : (
+                <p className="text-slate-500 text-sm">No AI reference sentiment analysis yet. Analysis runs when references are submitted via the verification portal.</p>
+              )}
+            </div>
+
+            {/* ── AI Anomaly Detection ── */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><AlertTriangle className="text-red-400" size={18} /> AI Anomaly Detection ({aiAnomalies.length})</h3>
+              {aiAnomalies.length > 0 ? aiAnomalies.map((anomaly, i) => (
+                <div key={i} className="p-3 bg-slate-700/30 rounded-lg border border-slate-600/50 mb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${String(anomaly.severity) === "high" ? "bg-red-500/20 text-red-400" : String(anomaly.severity) === "medium" ? "bg-amber-500/20 text-amber-400" : "bg-blue-500/20 text-blue-400"}`}>
+                        {String(anomaly.severity || "medium").toUpperCase()}
+                      </span>
+                      <span className="text-white text-sm">{String(anomaly.type || anomaly.anomaly_type || "Unknown")}</span>
+                    </div>
+                  </div>
+                  <p className="text-slate-400 text-xs mt-1">{String(anomaly.description || anomaly.details || "")}</p>
+                </div>
+              )) : (
+                <p className="text-slate-500 text-sm">No anomalies detected for this candidate. Anomaly scans run automatically during the vetting process.</p>
               )}
             </div>
           </div>

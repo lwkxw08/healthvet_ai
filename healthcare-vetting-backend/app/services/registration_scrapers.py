@@ -1,57 +1,44 @@
 """
-Professional Registration Scrapers
-Real headless Selenium scrapers for NMC, GMC, HCPC, GPhC public registers.
-Used to verify healthcare professional registrations against live public data.
+Professional Registration Scrapers (HTTP-based)
+Queries NMC, GMC, HCPC, GPhC public registers using HTTP requests + BeautifulSoup.
+No Selenium/Chrome dependency - works on Railway and other headless servers.
 """
 import json
 import re
 import time
 import logging
 import traceback
+import random
 from datetime import datetime, timezone
 from typing import Optional
+
+import requests
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-
-def _get_headless_driver():
-    """Create a headless Chrome/Selenium driver."""
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-    driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(30)
-    driver.implicitly_wait(5)
-    return driver
+# Shared session with realistic headers
+_SESSION = requests.Session()
+_SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-GB,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+})
 
 
-def _random_delay(min_s=1.0, max_s=3.0):
-    import random
+def _random_delay(min_s=0.5, max_s=1.5):
     time.sleep(random.uniform(min_s, max_s))
 
 
-# ── NMC Register Scraper ──────────────────────────────────────────────
-
-def scrape_nmc_register(registration_number: str) -> dict:
-    """
-    Scrape the NMC (Nursing and Midwifery Council) public register.
-    URL: https://www.nmc.org.uk/registration/search-the-register/
-    Searches by PIN (registration number).
-    """
-    result = {
-        "body": "NMC",
+def _make_result(body, registration_number, source):
+    """Create a standard result dict."""
+    return {
+        "body": body,
         "registration_number": registration_number,
-        "scrape_source": "nmc_register",
+        "scrape_source": source,
         "registrant_name": "",
         "registration_status": "unknown",
         "expiry_date": "",
@@ -62,289 +49,152 @@ def scrape_nmc_register(registration_number: str) -> dict:
         "error": None,
     }
 
-    driver = None
+
+# -- NMC Register Scraper (HTTP) --
+
+def scrape_nmc_register(registration_number: str) -> dict:
+    """Query the NMC (Nursing and Midwifery Council) public register via HTTP."""
+    result = _make_result("NMC", registration_number, "nmc_http")
     try:
-        driver = _get_headless_driver()
+        logger.info(f"NMC HTTP scrape for PIN: {registration_number}")
 
-        # Navigate to NMC search
-        url = f"https://www.nmc.org.uk/registration/search-the-register/%squery={registration_number}"
-        logger.info(f"Scraping NMC register for: {registration_number}")
-        driver.get(url)
-        _random_delay(2.0, 4.0)
+        query_url = "https://www.nmc.org.uk/registration/search-the-register/?query=" + registration_number
+        _random_delay()
+        resp = _SESSION.get(query_url, timeout=15)
+        resp.raise_for_status()
 
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        soup = BeautifulSoup(resp.text, "html.parser")
         page_text = soup.get_text()
 
-        # Look for search results
-        # NMC shows results in a table or card format
-        result_cards = soup.select(".search-results .result, .register-result, table tbody tr, .card")
+        result_elements = soup.select(
+            ".search-results .result, .register-result, .search-result-item, "
+            "table tbody tr, .card, .registrant-card, article"
+        )
+        pin_upper = registration_number.upper().strip()
 
-        if not result_cards:
-            # Try finding any element with the registration number
-            if registration_number.upper() in page_text.upper():
-                result["raw_data"]["page_contains_number"] = True
-            else:
-                result["error"] = "No results found for this registration number"
-                return result
+        if result_elements:
+            for el in result_elements:
+                el_text = el.get_text()
+                if pin_upper in el_text.upper() or len(result_elements) == 1:
+                    name_el = el.select_one("h2, h3, .name, strong, a")
+                    if name_el:
+                        result["registrant_name"] = name_el.get_text(strip=True)
+                    el_lower = el_text.lower()
+                    status_map = {
+                        "registered": "active",
+                        "effective": "active",
+                        "not currently practising": "not_practising",
+                        "lapsed": "lapsed",
+                        "removed": "removed",
+                        "suspended": "suspended",
+                        "struck off": "struck_off",
+                        "caution": "caution",
+                    }
+                    for keyword, status in status_map.items():
+                        if keyword in el_lower:
+                            result["registration_status"] = status
+                            break
+                    date_match = re.search(
+                        r'(?:expir|renewal|valid until)[\s:]*(\d{1,2}[\s/\-]\w+[\s/\-]\d{2,4})',
+                        el_text, re.IGNORECASE,
+                    )
+                    if date_match:
+                        result["expiry_date"] = date_match.group(1).strip()
+                    sanction_keywords = [
+                        "sanction", "conditions of practice", "suspension",
+                        "striking off", "caution order", "interim order",
+                    ]
+                    for sk in sanction_keywords:
+                        if sk in el_lower:
+                            result["sanctions"].append({
+                                "type": sk.replace(" ", "_"),
+                                "detail": "Found in register entry",
+                            })
+                    result["raw_data"]["matched_text"] = el_text[:500]
+                    result["success"] = True
+                    break
 
-        # Parse the first matching result
-        for card in result_cards:
-            card_text = card.get_text()
-            if registration_number.upper() in card_text.upper() or len(result_cards) == 1:
-                # Extract name
-                name_el = card.select_one("h2, h3, .name, td:first-child, strong")
-                if name_el:
-                    result["registrant_name"] = name_el.get_text(strip=True)
-
-                # Extract status
-                status_keywords = {
-                    "registered": "active",
-                    "active": "active",
-                    "lapsed": "lapsed",
-                    "removed": "removed",
-                    "suspended": "suspended",
-                    "struck off": "struck_off",
-                    "caution": "caution",
-                }
-                card_text_lower = card_text.lower()
-                for keyword, status in status_keywords.items():
-                    if keyword in card_text_lower:
-                        result["registration_status"] = status
-                        break
-
-                # Extract expiry/renewal date
-                date_patterns = [
-                    r'(?:expir|renewal|renew|valid until|registration expires?)[\s:]+(\d{1,2}[\s/\-]\w+[\s/\-]\d{2,4})',
-                    r'(\d{1,2}\s+\w+\s+\d{4})',
-                ]
-                for pattern in date_patterns:
-                    match = re.search(pattern, card_text, re.IGNORECASE)
-                    if match:
-                        result["expiry_date"] = match.group(1).strip()
-                        break
-
-                # Check for sanctions/conditions
-                sanction_keywords = ["sanction", "conditions of practice", "suspension", "striking off", "caution order", "interim order"]
-                for sk in sanction_keywords:
-                    if sk in card_text_lower:
-                        result["sanctions"].append({
-                            "type": sk.replace(" ", "_"),
-                            "detail": f"Found reference to '{sk}' in register entry",
-                        })
-
-                result["raw_data"]["card_text"] = card_text[:1000]
-                result["success"] = True
-                break
-
-        # If we didn't find specific status, check page-level indicators
-        if result["registration_status"] == "unknown" and result["success"]:
-            if "registered" in page_text.lower():
+        if not result["success"] and pin_upper in page_text.upper():
+            result["success"] = True
+            result["raw_data"]["page_contains_pin"] = True
+            if "registered" in page_text.lower() or "effective" in page_text.lower():
                 result["registration_status"] = "active"
 
+        if not result["success"]:
+            result["error"] = "No results found for NMC PIN: " + registration_number
+    except requests.RequestException as e:
+        result["error"] = "HTTP error: " + str(e)
+        logger.error(f"NMC HTTP scrape error: {e}")
     except Exception as e:
         result["error"] = str(e)
-        logger.error(f"NMC scrape error: {e}\n{traceback.format_exc()}")
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
+        logger.error(f"NMC scrape error: {e}")
     return result
 
 
-# ── GMC Register Scraper ──────────────────────────────────────────────
+# -- GMC Register Scraper (HTTP) --
 
 def scrape_gmc_register(registration_number: str) -> dict:
-    """
-    Scrape the GMC (General Medical Council) public register.
-    URL: https://www.gmc-uk.org/registration-and-licensing/the-medical-register
-    The GMC has a structured search by GMC reference number.
-    """
-    result = {
-        "body": "GMC",
-        "registration_number": registration_number,
-        "scrape_source": "gmc_register",
-        "registrant_name": "",
-        "registration_status": "unknown",
-        "expiry_date": "",
-        "sanctions": [],
-        "conditions": [],
-        "raw_data": {},
-        "success": False,
-        "error": None,
-    }
-
-    driver = None
+    """Query the GMC (General Medical Council) register via HTTP."""
+    result = _make_result("GMC", registration_number, "gmc_http")
     try:
-        driver = _get_headless_driver()
+        search_url = (
+            "https://www.gmc-uk.org/registration-and-licensing/the-medical-register"
+            "?query=" + registration_number
+        )
+        logger.info(f"GMC HTTP scrape for ref: {registration_number}")
+        _random_delay()
+        resp = _SESSION.get(search_url, timeout=15)
+        resp.raise_for_status()
 
-        # GMC register search
-        url = f"https://www.gmc-uk.org/registration-and-licensing/the-medical-register/a-]doctor-on-the-medical-register%squery={registration_number}"
-        logger.info(f"Scraping GMC register for: {registration_number}")
-        driver.get(url)
-        _random_delay(2.0, 4.0)
-
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        soup = BeautifulSoup(resp.text, "html.parser")
         page_text = soup.get_text()
+        page_lower = page_text.lower()
 
-        # GMC shows doctor details on a result page
-        # Look for doctor name and registration details
-        name_el = soup.select_one("h1.doctor-name, .doctor-details h1, h2.name, .registrant-name")
+        name_el = soup.select_one(
+            "h1.doctor-name, .doctor-details h1, h2.name, "
+            ".registrant-name, .search-results h2, .search-results h3"
+        )
         if name_el:
-            result["registrant_name"] = name_el.get_text(strip=True)
+            name_text = name_el.get_text(strip=True)
+            if name_text and "register" not in name_text.lower():
+                result["registrant_name"] = name_text
 
-        # Look for registration status
-        status_el = soup.select_one(".registration-status, .status, .reg-status")
-        if status_el:
-            status_text = status_el.get_text(strip=True).lower()
-            if "registered" in status_text or "licence to practise" in status_text:
-                result["registration_status"] = "active"
-            elif "suspended" in status_text:
-                result["registration_status"] = "suspended"
-            elif "erased" in status_text or "removed" in status_text:
-                result["registration_status"] = "removed"
-        else:
-            # Fallback: check page text
-            page_lower = page_text.lower()
-            if "registered with a licence to practise" in page_lower:
-                result["registration_status"] = "active"
-            elif "registered without a licence to practise" in page_lower:
-                result["registration_status"] = "registered_no_licence"
-            elif "provisionally registered" in page_lower:
-                result["registration_status"] = "provisional"
+        if "registered with a licence to practise" in page_lower:
+            result["registration_status"] = "active"
+        elif "registered without a licence to practise" in page_lower:
+            result["registration_status"] = "registered_no_licence"
+        elif "provisionally registered" in page_lower:
+            result["registration_status"] = "provisional"
+        elif "suspended" in page_lower and registration_number in page_text:
+            result["registration_status"] = "suspended"
+        elif "erased" in page_lower and registration_number in page_text:
+            result["registration_status"] = "removed"
 
-        # Check for fitness to practise history
-        ftp_section = soup.select_one(".fitness-to-practise, .ftp-history, #ftp")
-        if ftp_section:
-            ftp_text = ftp_section.get_text()
-            if any(w in ftp_text.lower() for w in ["conditions", "suspension", "undertakings", "warning"]):
-                result["sanctions"].append({
-                    "type": "fitness_to_practise",
-                    "detail": ftp_text[:500].strip(),
-                })
-
-        # Search results fallback
-        search_results = soup.select(".search-result, .doctor-result, tr")
+        search_results = soup.select(
+            ".search-result, .doctor-result, .result-item, article"
+        )
         for sr in search_results:
             sr_text = sr.get_text()
             if registration_number in sr_text:
                 result["raw_data"]["search_result"] = sr_text[:500]
                 if not result["registrant_name"]:
-                    name_candidate = sr.select_one("a, strong, td:first-child")
-                    if name_candidate:
-                        result["registrant_name"] = name_candidate.get_text(strip=True)
+                    nc = sr.select_one("a, strong, h2, h3")
+                    if nc:
+                        result["registrant_name"] = nc.get_text(strip=True)
                 result["success"] = True
                 break
 
-        if result["registrant_name"] or result["registration_status"] != "unknown":
-            result["success"] = True
-
-        if not result["success"]:
-            # Check if page has any content about the number
-            if registration_number in page_text:
-                result["raw_data"]["page_contains_number"] = True
-                result["success"] = True
-            else:
-                result["error"] = "No results found for this GMC number"
-
-    except Exception as e:
-        result["error"] = str(e)
-        logger.error(f"GMC scrape error: {e}\n{traceback.format_exc()}")
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
-    return result
-
-
-# ── HCPC Register Scraper ──────────────────────────────────────────────
-
-def scrape_hcpc_register(registration_number: str) -> dict:
-    """
-    Scrape the HCPC (Health and Care Professions Council) public register.
-    URL: https://www.hcpc-uk.org/check-the-register/
-    """
-    result = {
-        "body": "HCPC",
-        "registration_number": registration_number,
-        "scrape_source": "hcpc_register",
-        "registrant_name": "",
-        "registration_status": "unknown",
-        "expiry_date": "",
-        "sanctions": [],
-        "conditions": [],
-        "raw_data": {},
-        "success": False,
-        "error": None,
-    }
-
-    driver = None
-    try:
-        driver = _get_headless_driver()
-
-        # HCPC online register search
-        url = f"https://www.hcpc-uk.org/check-the-register/by-registration-number/%squery={registration_number}"
-        logger.info(f"Scraping HCPC register for: {registration_number}")
-        driver.get(url)
-        _random_delay(2.0, 4.0)
-
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        page_text = soup.get_text()
-
-        # HCPC shows registrant details
-        # Look for name
-        name_el = soup.select_one("h1, h2, .registrant-name, .name")
-        if name_el:
-            name_text = name_el.get_text(strip=True)
-            # Filter out generic page titles
-            if name_text and "check the register" not in name_text.lower() and "HCPC" not in name_text:
-                result["registrant_name"] = name_text
-
-        # Look for registration details
-        detail_rows = soup.select("dl dt, dl dd, .detail-row, table tr, .info-row")
-        current_label = ""
-        for el in detail_rows:
-            text = el.get_text(strip=True)
-            if el.name == "dt" or "label" in (el.get("class") or []):
-                current_label = text.lower()
-            elif current_label:
-                if "name" in current_label and not result["registrant_name"]:
-                    result["registrant_name"] = text
-                elif "status" in current_label or "registration" in current_label:
-                    if "registered" in text.lower():
-                        result["registration_status"] = "active"
-                    elif "suspended" in text.lower():
-                        result["registration_status"] = "suspended"
-                    elif "struck off" in text.lower():
-                        result["registration_status"] = "struck_off"
-                elif "expir" in current_label or "renewal" in current_label:
-                    result["expiry_date"] = text
-                elif "profession" in current_label:
-                    result["raw_data"]["profession"] = text
-                current_label = ""
-
-        # Check for sanctions
-        sanctions_section = soup.select_one(".sanctions, .fitness-to-practise, #sanctions")
-        if sanctions_section:
-            sanctions_text = sanctions_section.get_text(strip=True)
-            if sanctions_text and len(sanctions_text) > 10:
+        ftp_keywords = [
+            "conditions", "suspension", "undertakings", "warning", "erasure",
+        ]
+        for kw in ftp_keywords:
+            if kw in page_lower and registration_number in page_text:
+                idx = page_lower.index(kw)
+                context = page_text[max(0, idx - 50):idx + 150].strip()
                 result["sanctions"].append({
-                    "type": "fitness_to_practise",
-                    "detail": sanctions_text[:500],
+                    "type": "ftp_" + kw,
+                    "detail": context[:300],
                 })
-
-        # Fallback: check page text for status
-        if result["registration_status"] == "unknown":
-            page_lower = page_text.lower()
-            if "your search returned" in page_lower and registration_number.lower() in page_lower:
-                result["success"] = True
-                if "registered" in page_lower:
-                    result["registration_status"] = "active"
 
         if result["registrant_name"] or result["registration_status"] != "unknown":
             result["success"] = True
@@ -352,70 +202,126 @@ def scrape_hcpc_register(registration_number: str) -> dict:
             result["success"] = True
             result["raw_data"]["page_contains_number"] = True
         else:
-            result["error"] = "No results found for this HCPC number"
-
+            result["error"] = "No results found for GMC ref: " + registration_number
+    except requests.RequestException as e:
+        result["error"] = "HTTP error: " + str(e)
+        logger.error(f"GMC HTTP scrape error: {e}")
     except Exception as e:
         result["error"] = str(e)
-        logger.error(f"HCPC scrape error: {e}\n{traceback.format_exc()}")
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
+        logger.error(f"GMC scrape error: {e}")
     return result
 
 
-# ── GPhC Register Scraper ──────────────────────────────────────────────
+# -- HCPC Register Scraper (HTTP) --
 
-def scrape_gphc_register(registration_number: str) -> dict:
-    """
-    Scrape the GPhC (General Pharmaceutical Council) public register.
-    URL: https://www.pharmacyregulation.org/registers/pharmacist
-    """
-    result = {
-        "body": "GPhC",
-        "registration_number": registration_number,
-        "scrape_source": "gphc_register",
-        "registrant_name": "",
-        "registration_status": "unknown",
-        "expiry_date": "",
-        "sanctions": [],
-        "conditions": [],
-        "raw_data": {},
-        "success": False,
-        "error": None,
-    }
-
-    driver = None
+def scrape_hcpc_register(registration_number: str) -> dict:
+    """Query the HCPC (Health and Care Professions Council) register via HTTP."""
+    result = _make_result("HCPC", registration_number, "hcpc_http")
     try:
-        driver = _get_headless_driver()
+        search_url = (
+            "https://www.hcpc-uk.org/check-the-register/"
+            "?query=" + registration_number
+        )
+        logger.info(f"HCPC HTTP scrape for reg: {registration_number}")
+        _random_delay()
+        resp = _SESSION.get(search_url, timeout=15)
+        resp.raise_for_status()
 
-        # GPhC register search
-        url = f"https://www.pharmacyregulation.org/registers/pharmacist/registrationnumber/{registration_number}"
-        logger.info(f"Scraping GPhC register for: {registration_number}")
-        driver.get(url)
-        _random_delay(2.0, 4.0)
-
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        soup = BeautifulSoup(resp.text, "html.parser")
         page_text = soup.get_text()
 
-        # Parse registrant details
-        # GPhC typically shows name, registration number, status in a structured format
-        name_el = soup.select_one("h1.page-title, .registrant-name, h2")
+        detail_rows = soup.select(
+            "dl dt, dl dd, .detail-row, table tr, .info-row, .field-item"
+        )
+        current_label = ""
+        for el in detail_rows:
+            text = el.get_text(strip=True)
+            tag = el.name
+            classes = " ".join(el.get("class", []))
+            if tag == "dt" or "label" in classes:
+                current_label = text.lower()
+            elif current_label:
+                if "name" in current_label and not result["registrant_name"]:
+                    result["registrant_name"] = text
+                elif "status" in current_label or "registration" in current_label:
+                    tl = text.lower()
+                    if "registered" in tl:
+                        result["registration_status"] = "active"
+                    elif "suspended" in tl:
+                        result["registration_status"] = "suspended"
+                    elif "struck off" in tl:
+                        result["registration_status"] = "struck_off"
+                elif "expir" in current_label or "renewal" in current_label:
+                    result["expiry_date"] = text
+                elif "profession" in current_label:
+                    result["raw_data"]["profession"] = text
+                current_label = ""
+
+        page_lower = page_text.lower()
+        if result["registration_status"] == "unknown":
+            if "registered" in page_lower and registration_number in page_text:
+                result["registration_status"] = "active"
+
+        sanction_keywords = [
+            "conditions of practice", "suspension", "striking off", "caution",
+        ]
+        for sk in sanction_keywords:
+            if sk in page_lower:
+                result["sanctions"].append({
+                    "type": sk.replace(" ", "_"),
+                    "detail": "Found in HCPC register entry",
+                })
+
+        if result["registrant_name"] or result["registration_status"] != "unknown":
+            result["success"] = True
+        elif registration_number in page_text:
+            result["success"] = True
+            result["raw_data"]["page_contains_number"] = True
+        else:
+            result["error"] = "No results found for HCPC reg: " + registration_number
+    except requests.RequestException as e:
+        result["error"] = "HTTP error: " + str(e)
+        logger.error(f"HCPC HTTP scrape error: {e}")
+    except Exception as e:
+        result["error"] = str(e)
+        logger.error(f"HCPC scrape error: {e}")
+    return result
+
+
+# -- GPhC Register Scraper (HTTP) --
+
+def scrape_gphc_register(registration_number: str) -> dict:
+    """Query the GPhC (General Pharmaceutical Council) register via HTTP."""
+    result = _make_result("GPhC", registration_number, "gphc_http")
+    try:
+        search_url = (
+            "https://www.pharmacyregulation.org/registers/pharmacist"
+            "/registrationnumber/" + registration_number
+        )
+        logger.info(f"GPhC HTTP scrape for reg: {registration_number}")
+        _random_delay()
+        resp = _SESSION.get(search_url, timeout=15)
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        page_text = soup.get_text()
+
+        name_el = soup.select_one(
+            "h1.page-title, .registrant-name, h2, .views-field-title"
+        )
         if name_el:
             name_text = name_el.get_text(strip=True)
-            if name_text and "register" not in name_text.lower() and "search" not in name_text.lower():
+            if (name_text
+                    and "register" not in name_text.lower()
+                    and "search" not in name_text.lower()):
                 result["registrant_name"] = name_text
 
-        # Parse detail fields
-        fields = soup.select(".field, .views-field, dl dt, dl dd, .detail, tr td")
+        fields = soup.select(
+            ".field, .views-field, dl dt, dl dd, .detail, tr td, .field-item"
+        )
         for i, field in enumerate(fields):
             text = field.get_text(strip=True).lower()
-            if "registration number" in text and i + 1 < len(fields):
-                pass  # Already have it
-            elif "name" in text and i + 1 < len(fields):
+            if "name" in text and i + 1 < len(fields):
                 next_text = fields[i + 1].get_text(strip=True)
                 if next_text and not result["registrant_name"]:
                     result["registrant_name"] = next_text
@@ -428,17 +334,18 @@ def scrape_gphc_register(registration_number: str) -> dict:
                 elif "suspended" in status_text:
                     result["registration_status"] = "suspended"
 
-        # Check for fitness to practise
-        ftp_keywords = ["conditions", "suspension order", "removal", "warning", "undertaking"]
         page_lower = page_text.lower()
+        ftp_keywords = [
+            "conditions", "suspension order", "removal",
+            "warning", "undertaking",
+        ]
         for kw in ftp_keywords:
             if kw in page_lower:
-                # Find context around the keyword
                 idx = page_lower.index(kw)
                 context = page_text[max(0, idx - 50):idx + 100].strip()
                 result["sanctions"].append({
                     "type": kw.replace(" ", "_"),
-                    "detail": context,
+                    "detail": context[:300],
                 })
 
         if result["registrant_name"] or result["registration_status"] != "unknown":
@@ -447,40 +354,39 @@ def scrape_gphc_register(registration_number: str) -> dict:
             result["success"] = True
             result["raw_data"]["page_contains_number"] = True
         else:
-            result["error"] = "No results found for this GPhC number"
-
+            result["error"] = "No results found for GPhC reg: " + registration_number
+    except requests.RequestException as e:
+        result["error"] = "HTTP error: " + str(e)
+        logger.error(f"GPhC HTTP scrape error: {e}")
     except Exception as e:
         result["error"] = str(e)
-        logger.error(f"GPhC scrape error: {e}\n{traceback.format_exc()}")
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
+        logger.error(f"GPhC scrape error: {e}")
     return result
 
 
-# ── Master Registration Scraper ──────────────────────────────────────
+# -- Master Registration Scraper --
 
 SCRAPER_MAP = {
     "NMC": scrape_nmc_register,
     "GMC": scrape_gmc_register,
     "HCPC": scrape_hcpc_register,
+    "GPHC": scrape_gphc_register,
     "GPhC": scrape_gphc_register,
 }
 
 
 def scrape_registration(body: str, registration_number: str) -> dict:
     """Run the appropriate registration scraper for the given body."""
-    scraper = SCRAPER_MAP.get(body.upper())
+    scraper = SCRAPER_MAP.get(body.upper(), SCRAPER_MAP.get(body))
     if not scraper:
         return {
             "body": body,
             "registration_number": registration_number,
             "scrape_source": "unsupported",
             "success": False,
-            "error": f"No scraper available for registration body: {body}. Supported: {', '.join(SCRAPER_MAP.keys())}",
+            "error": (
+                "No scraper for body: " + body
+                + ". Supported: NMC, GMC, HCPC, GPhC"
+            ),
         }
     return scraper(registration_number)

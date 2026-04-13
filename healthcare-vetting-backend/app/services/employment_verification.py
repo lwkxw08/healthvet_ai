@@ -430,7 +430,7 @@ class EmploymentVerificationService:
                     agency_name = dict(agency)["name"]
 
         from app.config import BASE_URL
-        verification_link = f"{BASE_URL}/verify%stoken={token}&type=employment"
+        verification_link = f"{BASE_URL}/verify?token={token}&type=employment"
 
         variables = {
             "candidate_name": candidate_name,

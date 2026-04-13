@@ -279,62 +279,103 @@ class CVAnalysisService:
         return " ".join(parts)
 
     @staticmethod
+    def _extract_employment_history_via_llm(cv_text: str) -> list | None:
+        """Use OpenAI to extract structured employment history from CV text."""
+        try:
+            from app.routes.email_config import get_openai_api_key
+            api_key = get_openai_api_key()
+            if not api_key:
+                return None
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+
+            prompt = f"""Extract all employment history entries from this CV text. Focus on the last 5 years.
+For each job, extract: employer name, job title, start date, end date (or "present" if current role).
+
+CV TEXT:
+---
+{cv_text[:6000]}
+---
+
+Respond ONLY with valid JSON array. Each entry must have these exact keys:
+[
+  {{
+    "employer": "Company Name",
+    "job_title": "Role Title",
+    "start_date": "YYYY-MM",
+    "end_date": "YYYY-MM or null if current",
+    "is_current": true/false,
+    "duties": "Brief description or null"
+  }}
+]
+Return an empty array [] if no employment entries can be extracted."""
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an expert CV parser. Extract employment history accurately. Always respond with valid JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
+                max_tokens=2000,
+            )
+            content = response.choices[0].message.content or "[]"
+            content = re.sub(r"^```(?:json)?\s*", "", content.strip())
+            content = re.sub(r"\s*```$", "", content.strip())
+            entries = json.loads(content)
+            if isinstance(entries, list):
+                logger.info("OpenAI extracted %d employment entries from CV", len(entries))
+                return entries
+            return None
+        except Exception as e:
+            logger.warning("OpenAI employment extraction failed: %s", e)
+            return None
+
+    @staticmethod
     def _extract_employment_history(cv_text: str) -> list:
         """Extract employment history entries from CV text.
-
-        In production, use an LLM to parse unstructured CV text into structured
-        employment entries. This simulation uses pattern matching + heuristics.
+        Uses OpenAI LLM first for accurate extraction, falls back to regex/heuristics.
         """
-        entries = []
-        cv_lower = cv_text.lower()
+        # Try OpenAI extraction first
+        llm_entries = CVAnalysisService._extract_employment_history_via_llm(cv_text)
+        if llm_entries is not None and len(llm_entries) > 0:
+            # Filter to last 5 years
+            cutoff_year = datetime.now().year - 5
+            filtered = []
+            for e in llm_entries:
+                try:
+                    start_yr = int(str(e.get("start_date", "0"))[:4]) if e.get("start_date") else 0
+                    end_yr = datetime.now().year if e.get("is_current") else int(str(e.get("end_date", "0"))[:4]) if e.get("end_date") else 0
+                    if end_yr >= cutoff_year or e.get("is_current"):
+                        filtered.append(e)
+                except (ValueError, TypeError):
+                    filtered.append(e)
+            return filtered[:6]
 
-        # Try to find date range patterns associated with employer/role info
-        # Pattern: YYYY - YYYY or YYYY - Present with surrounding context
-        date_blocks = re.findall(
-            r'(%s:^|\n)([^\n]{0,100}%s)(\d{4})\s*[-–to]+\s*(\d{4}|present|current)([^\n]{0,200})',
-            cv_lower,
-            re.IGNORECASE,
+        # Fallback: regex-based extraction
+        entries = []
+        date_patterns = re.findall(
+            r'(\d{4})\s*[-–to]+\s*(\d{4}|present|current)',
+            cv_text.lower(),
         )
 
-        # Common healthcare employers for simulation
-        sample_employers = [
-            "NHS Royal London Hospital",
-            "St Thomas' Hospital NHS Trust",
-            "Bupa Health Clinics",
-            "Care UK Primary Care",
-            "Circle Health Group",
-        ]
-        sample_titles = [
-            "Staff Nurse",
-            "Senior Healthcare Assistant",
-            "Registered Nurse - Band 5",
-            "Ward Manager - Band 6",
-            "Clinical Lead",
-        ]
-
-        if date_blocks:
-            for i, block in enumerate(date_blocks):
-                prefix, start_year, end_year, suffix = block
-                context = (prefix + suffix).strip()
-
-                # Try to extract employer and title from context
-                employer = None
-                title = None
-                for keyword in ["hospital", "clinic", "nhs", "trust", "care", "health", "medical"]:
-                    if keyword in context:
-                        # Grab the phrase around the keyword
-                        employer = context[:80].strip().title()
-                        break
-
-                if not employer and i < len(sample_employers):
-                    employer = sample_employers[i]
-                elif not employer:
-                    employer = f"Healthcare Provider {i + 1}"
-
-                if not title and i < len(sample_titles):
-                    title = sample_titles[i]
-                elif not title:
-                    title = "Healthcare Professional"
+        if date_patterns:
+            # Try to extract context around each date pattern for employer/title
+            lines = cv_text.split('\n')
+            for i, (start_year, end_year) in enumerate(date_patterns):
+                employer = f"Employer {i + 1}"
+                title = "Role Not Extracted"
+                # Search surrounding lines for context
+                for line in lines:
+                    if start_year in line:
+                        clean = re.sub(r'\d{4}\s*[-–to]+\s*(\d{4}|present|current)', '', line, flags=re.IGNORECASE).strip()
+                        if clean and len(clean) > 3:
+                            # Use the line as either employer or title
+                            if not any(kw in clean.lower() for kw in ['nurse', 'doctor', 'manager', 'assistant', 'lead', 'officer']):
+                                employer = clean[:80]
+                            else:
+                                title = clean[:80]
+                            break
 
                 is_current = end_year in ("present", "current")
                 entries.append({
@@ -345,24 +386,8 @@ class CVAnalysisService:
                     "is_current": is_current,
                     "duties": None,
                 })
-        else:
-            # If no date patterns found, generate simulated entries based on CV content
-            current_year = datetime.now().year
-            num_entries = random.randint(2, 4)
-            for i in range(num_entries):
-                start_yr = current_year - 5 + i
-                end_yr = start_yr + random.randint(1, 2)
-                is_current = i == num_entries - 1
-                entries.append({
-                    "employer": sample_employers[i % len(sample_employers)],
-                    "job_title": sample_titles[i % len(sample_titles)],
-                    "start_date": f"{start_yr}-{random.randint(1,12):02d}",
-                    "end_date": None if is_current else f"{min(end_yr, current_year)}-{random.randint(1,12):02d}",
-                    "is_current": is_current,
-                    "duties": None,
-                })
 
-        # Only keep entries within the last 5 years
+        # Filter to last 5 years
         cutoff_year = datetime.now().year - 5
         filtered = []
         for e in entries:
@@ -374,7 +399,7 @@ class CVAnalysisService:
             except (ValueError, TypeError):
                 filtered.append(e)
 
-        return filtered[:6]  # Cap at 6 entries
+        return filtered[:6]
 
     @staticmethod
     def get_analysis(analysis_id: str) -> dict:
