@@ -9,6 +9,9 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://healthvet:healthvet@localhost:5432/healthvet_db",
 )
+# Railway uses postgres:// but psycopg2 requires postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Connection pool for efficiency
 _pool = None

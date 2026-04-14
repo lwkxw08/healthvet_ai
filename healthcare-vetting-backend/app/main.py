@@ -135,22 +135,38 @@ app.include_router(ws_routes.router)
 
 @app.on_event("startup")
 async def startup():
-    init_db()
-    migrate_db()
-    # Seed default email templates and rules
-    from app.services.email_templates import EmailTemplateService
-    EmailTemplateService.seed_defaults()
-    from app.services.email_rules import EmailRulesService
-    EmailRulesService.seed_defaults()
-    # Recover any scrape jobs orphaned by a previous server restart
-    from app.routes.lead_generation import recover_stale_scrape_jobs
-    recover_stale_scrape_jobs()
-    # Start the background scheduler for monitoring tasks
-    from app.services.scheduler import start_scheduler
-    start_scheduler()
-    # Register API v1 versioned routes (mirrors /api/* under /api/v1/*)
-    from app.routes.api_versioning import register_v1_routes
-    register_v1_routes(app)
+    import traceback
+    _log = logging.getLogger("startup")
+    try:
+        _log.info("Starting init_db...")
+        init_db()
+        _log.info("init_db complete. Starting migrate_db...")
+        migrate_db()
+        _log.info("migrate_db complete.")
+    except Exception as e:
+        _log.error(f"Database init/migration failed: {e}\n{traceback.format_exc()}")
+    try:
+        from app.services.email_templates import EmailTemplateService
+        EmailTemplateService.seed_defaults()
+        from app.services.email_rules import EmailRulesService
+        EmailRulesService.seed_defaults()
+    except Exception as e:
+        _log.error(f"Email template seeding failed: {e}")
+    try:
+        from app.routes.lead_generation import recover_stale_scrape_jobs
+        recover_stale_scrape_jobs()
+    except Exception as e:
+        _log.error(f"Scrape job recovery failed: {e}")
+    try:
+        from app.services.scheduler import start_scheduler
+        start_scheduler()
+    except Exception as e:
+        _log.error(f"Scheduler start failed: {e}")
+    try:
+        from app.routes.api_versioning import register_v1_routes
+        register_v1_routes(app)
+    except Exception as e:
+        _log.error(f"API versioning failed: {e}")
 
 
 @app.on_event("shutdown")
