@@ -36,31 +36,26 @@ class AuditPackService:
                 "SELECT * FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC",
                 (candidate_id,),
             )
-            identity = db.fetchone()
             identity = db.fetchall()
             db.execute(
                 "SELECT * FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC",
                 (candidate_id,),
             )
-            rtw = db.fetchone()
             rtw = db.fetchall()
             db.execute(
                 "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC",
                 (candidate_id,),
             )
-            dbs = db.fetchone()
             dbs = db.fetchall()
             db.execute(
                 "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC",
                 (candidate_id,),
             )
-            cv = db.fetchone()
             cv = db.fetchall()
             db.execute(
                 "SELECT * FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC",
                 (candidate_id,),
             )
-            reg = db.fetchone()
             reg = db.fetchall()
             db.execute(
                 "SELECT * FROM references_ WHERE candidate_id=%s",
@@ -71,7 +66,6 @@ class AuditPackService:
                 "SELECT * FROM employment_history WHERE candidate_id=%s ORDER BY start_date DESC",
                 (candidate_id,),
             )
-            emp_history = db.fetchone()
             emp_history = db.fetchall()
             db.execute(
                 "SELECT * FROM employment_verifications WHERE candidate_id=%s",
@@ -101,7 +95,6 @@ class AuditPackService:
                     "SELECT * FROM training_certificates WHERE candidate_id=%s",
                     (candidate_id,),
                 )
-                training = db.fetchone()
                 training = db.fetchall()
             except Exception:
                 pass

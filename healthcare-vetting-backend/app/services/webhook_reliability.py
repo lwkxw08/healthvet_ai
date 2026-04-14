@@ -332,7 +332,6 @@ class WebhookReliabilityService:
                 "SELECT id, attempt FROM webhook_deliveries WHERE status='pending_retry' AND next_retry_at <= %s",
                 (now,),
             )
-            due = db.fetchone()
             due = db.fetchall()
 
             results = []

@@ -124,7 +124,6 @@ def run_expiry_warnings():
                    WHERE r.visa_expiry IS NOT NULL AND r.verified = 1
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             )
-            visa_expiring = db.fetchone()
             visa_expiring = db.fetchall()
 
             expiry_notifications = []
@@ -157,7 +156,6 @@ def run_expiry_warnings():
                    WHERE d.next_renewal IS NOT NULL
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             )
-            dbs_expiring = db.fetchone()
             dbs_expiring = db.fetchall()
 
             for row in dbs_expiring:
@@ -189,7 +187,6 @@ def run_expiry_warnings():
                    WHERE r.next_check IS NOT NULL AND r.is_active = 1
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             )
-            reg_expiring = db.fetchone()
             reg_expiring = db.fetchall()
 
             for row in reg_expiring:
@@ -223,7 +220,6 @@ def run_expiry_warnings():
                        WHERE t.expiry_date IS NOT NULL AND t.status = 'valid'
                        AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
                 )
-                training_expiring = db.fetchone()
                 training_expiring = db.fetchall()
 
                 for row in training_expiring:

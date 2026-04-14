@@ -479,25 +479,21 @@ async def api_get_checks(
             "SELECT id, status, result, started_at, completed_at FROM identity_checks WHERE candidate_id=%s",
             (candidate_id,),
         )
-        identity = db.fetchone()
         identity = db.fetchall()
         db.execute(
             "SELECT id, status, verified, verification_method, checked_at FROM right_to_work_checks WHERE candidate_id=%s",
             (candidate_id,),
         )
-        rtw = db.fetchone()
         rtw = db.fetchall()
         db.execute(
             "SELECT id, status, check_type, certificate_number, result, submitted_at, completed_at FROM dbs_checks WHERE candidate_id=%s",
             (candidate_id,),
         )
-        dbs = db.fetchone()
         dbs = db.fetchall()
         db.execute(
             "SELECT id, body, status, is_active, last_checked FROM registration_checks WHERE candidate_id=%s",
             (candidate_id,),
         )
-        reg = db.fetchone()
         reg = db.fetchall()
 
         return {

@@ -478,7 +478,6 @@ class TriggerEngine:
                     "SELECT employment_id FROM employment_verifications WHERE candidate_id=%s",
                     (candidate_id,),
                 )
-                existing = db.fetchone()
                 existing = db.fetchall()
                 existing_ids = {dict(e)["employment_id"] for e in existing}
 

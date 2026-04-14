@@ -453,7 +453,6 @@ async def get_plans_by_industry(current_user: dict = Depends(get_current_user)):
                 "SELECT * FROM industry_check_pricing WHERE industry_template_id=%s AND is_active=1 ORDER BY check_type",
                 (industry_id,),
             )
-            check_pricing = db.fetchone()
             check_pricing = db.fetchall()
 
             # Get template checks

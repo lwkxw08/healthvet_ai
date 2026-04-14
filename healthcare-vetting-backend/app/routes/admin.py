@@ -236,7 +236,6 @@ async def get_operations_analytics(
             db.execute(
                 "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s", (agency_id,)
             )
-            linked = db.fetchone()
             linked = db.fetchall()
             linked_ids = {dict(r)["candidate_id"] for r in linked}
             candidates = [c for c in candidates if c["id"] in linked_ids]
@@ -342,7 +341,6 @@ async def get_agency_analytics(
                 "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s",
                 (agency["id"],),
             )
-            linked = db.fetchone()
             linked = db.fetchall()
             candidate_ids = [dict(r)["candidate_id"] for r in linked]
 

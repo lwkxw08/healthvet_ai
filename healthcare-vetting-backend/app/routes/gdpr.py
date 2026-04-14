@@ -104,7 +104,6 @@ async def request_data_export(
         db.execute(
             "SELECT * FROM identity_checks WHERE candidate_id=%s", (candidate_id,),
         )
-        identity = db.fetchone()
         identity = db.fetchall()
         export["sections"]["identity_checks"] = [dict(r) for r in identity]
 
@@ -112,7 +111,6 @@ async def request_data_export(
         db.execute(
             "SELECT * FROM right_to_work_checks WHERE candidate_id=%s", (candidate_id,),
         )
-        rtw = db.fetchone()
         rtw = db.fetchall()
         export["sections"]["right_to_work_checks"] = [dict(r) for r in rtw]
 
@@ -120,7 +118,6 @@ async def request_data_export(
         db.execute(
             "SELECT * FROM dbs_checks WHERE candidate_id=%s", (candidate_id,),
         )
-        dbs = db.fetchone()
         dbs = db.fetchall()
         export["sections"]["dbs_checks"] = [dict(r) for r in dbs]
 
@@ -128,7 +125,6 @@ async def request_data_export(
         db.execute(
             "SELECT * FROM cv_analyses WHERE candidate_id=%s", (candidate_id,),
         )
-        cv = db.fetchone()
         cv = db.fetchall()
         export["sections"]["cv_analyses"] = [dict(r) for r in cv]
 
@@ -136,7 +132,6 @@ async def request_data_export(
         db.execute(
             "SELECT * FROM registration_checks WHERE candidate_id=%s", (candidate_id,),
         )
-        reg = db.fetchone()
         reg = db.fetchall()
         export["sections"]["registration_checks"] = [dict(r) for r in reg]
 
@@ -151,7 +146,6 @@ async def request_data_export(
         db.execute(
             "SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,),
         )
-        emp = db.fetchone()
         emp = db.fetchall()
         export["sections"]["employment_history"] = [dict(r) for r in emp]
 
@@ -159,7 +153,6 @@ async def request_data_export(
         db.execute(
             "SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,),
         )
-        emp_v = db.fetchone()
         emp_v = db.fetchall()
         export["sections"]["employment_verifications"] = [dict(r) for r in emp_v]
 
@@ -168,7 +161,6 @@ async def request_data_export(
             db.execute(
                 "SELECT * FROM training_certificates WHERE candidate_id=%s", (candidate_id,),
             )
-            training = db.fetchone()
             training = db.fetchall()
             export["sections"]["training_certificates"] = [dict(r) for r in training]
         except Exception:
@@ -178,7 +170,6 @@ async def request_data_export(
         db.execute(
             "SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,),
         )
-        comp = db.fetchone()
         comp = db.fetchall()
         export["sections"]["compliance_records"] = [dict(r) for r in comp]
 
@@ -193,7 +184,6 @@ async def request_data_export(
         db.execute(
             "SELECT * FROM imposter_declarations WHERE candidate_id=%s", (candidate_id,),
         )
-        imp = db.fetchone()
         imp = db.fetchall()
         export["sections"]["imposter_declarations"] = [dict(r) for r in imp]
 

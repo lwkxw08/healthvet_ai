@@ -317,7 +317,6 @@ class FraudDetectionService:
                 db.execute(
                     "SELECT * FROM fraud_flags ORDER BY created_at DESC LIMIT 100",
                 )
-                rows = db.fetchone()
                 rows = db.fetchall()
             return [dict(r) for r in rows]
 
@@ -332,7 +331,6 @@ class FraudDetectionService:
                    FROM fraud_flags GROUP BY flag_type, severity
                    ORDER BY cnt DESC""",
             )
-            by_type = db.fetchone()
             by_type = db.fetchall()
             db.execute(
                 "SELECT COUNT(*) as cnt FROM fraud_flags WHERE is_resolved=0",

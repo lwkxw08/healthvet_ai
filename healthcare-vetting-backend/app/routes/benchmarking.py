@@ -181,7 +181,6 @@ async def get_benchmarking_trends(current_user: dict = Depends(get_current_user)
                FROM invoices
                GROUP BY month ORDER BY month"""
         )
-        monthly_revenue = db.fetchone()
         monthly_revenue = db.fetchall()
 
         # Monthly compliance completions
@@ -193,7 +192,6 @@ async def get_benchmarking_trends(current_user: dict = Depends(get_current_user)
                FROM compliance_records
                GROUP BY month ORDER BY month"""
         )
-        monthly_compliance = db.fetchone()
         monthly_compliance = db.fetchall()
 
         return {

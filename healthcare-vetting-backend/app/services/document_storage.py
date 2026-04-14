@@ -356,7 +356,6 @@ def enforce_retention_policy() -> int:
         db.execute(
             "SELECT id, storage_key, thumbnail_key FROM documents WHERE retention_expires_at < %s", (now,)
         )
-        expired = db.fetchone()
         expired = db.fetchall()
         count = 0
         for row in expired:

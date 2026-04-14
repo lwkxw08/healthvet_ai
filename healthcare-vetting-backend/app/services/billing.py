@@ -909,7 +909,6 @@ class BillingService:
                    ORDER BY i.created_at ASC""",
                 (reminder_threshold,),
             )
-            unpaid = db.fetchone()
             unpaid = db.fetchall()
 
             for row in unpaid:
