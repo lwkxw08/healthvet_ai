@@ -8,7 +8,7 @@ import os
 
 # ── Base URL for outbound links (verification emails, reference requests) ────
 # Must be set to the public-facing URL of this deployment.
-BASE_URL = os.environ.get("BASE_URL", "https://app-wwjesgoe.fly.dev")
+BASE_URL = os.environ.get("BASE_URL", "https://app.viperai.io")
 
 # ── Dashboard URL for notification emails (may differ if frontend is hosted separately) ──
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", BASE_URL)
