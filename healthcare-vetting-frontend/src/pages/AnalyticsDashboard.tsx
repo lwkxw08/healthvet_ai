@@ -107,14 +107,7 @@ export default function AnalyticsDashboard({ agencyId }: AnalyticsDashboardProps
   const handleExportCsv = async () => {
     if (!token) return;
     try {
-      const result = await analyticsApi.exportComplianceCsv(token, agencyId);
-      const blob = new Blob([result.csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `compliance_report_${new Date().toISOString().split("T")[0]}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await analyticsApi.exportComplianceCsv(token, agencyId);
     } catch { /* ignore */ }
   };
 

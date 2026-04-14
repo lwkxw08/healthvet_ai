@@ -611,12 +611,12 @@ export const leadGenerationApi = {
   bulkDeleteLeads: (token: string, leadIds: string[]) =>
     apiRequest<Record<string, unknown>>("/api/lead-generation/leads/bulk-delete", { method: "POST", body: { lead_ids: leadIds }, token }),
   exportLeads: async (token: string, params?: Record<string, string>): Promise<void> => {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const headers: Record<string, string> = {};
     if (token) headers["X-Auth-Token"] = token;
-    const response = await fetch(`${API_URL}/api/lead-generation/leads/export`, {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    const response = await fetch(`${API_URL}/api/lead-generation/leads/export${qs}`, {
       method: "POST",
       headers,
-      body: params ? JSON.stringify(params) : undefined,
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: "Export failed" }));
@@ -754,9 +754,16 @@ export const analyticsApi = {
     if (months) qs.set("months", String(months));
     return apiRequest<Record<string, unknown>[]>(`/api/analytics/check-volume-trend?${qs.toString()}`, { token });
   },
-  exportComplianceCsv: (token: string, agencyId?: string) => {
+  exportComplianceCsv: async (token: string, agencyId?: string): Promise<void> => {
     const qs = agencyId ? `?agency_id=${agencyId}` : "";
-    return apiRequest<{ csv: string }>(`/api/analytics/export/compliance-csv${qs}`, { token });
+    const headers: Record<string, string> = {};
+    if (token) headers["X-Auth-Token"] = token;
+    const response = await fetch(`${API_URL}/api/analytics/export/compliance-csv${qs}`, { headers });
+    if (!response.ok) throw new Error("Export failed");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `compliance_report_${new Date().toISOString().split("T")[0]}.csv`; a.click();
+    URL.revokeObjectURL(url);
   },
   getScheduledReports: (token: string) =>
     apiRequest<Record<string, unknown>[]>("/api/analytics/scheduled-reports", { token }),
@@ -800,9 +807,16 @@ export const auditTrailApi = {
     const qs = new URLSearchParams(params || {});
     return apiRequest<Record<string, unknown>>(`/api/audit-trail/export/cqc?${qs.toString()}`, { token });
   },
-  downloadCqcCsv: (token: string, params?: Record<string, string>) => {
+  downloadCqcCsv: async (token: string, params?: Record<string, string>): Promise<void> => {
     const qs = new URLSearchParams(params || {});
-    return apiRequest<string>(`/api/audit-trail/export/cqc/download?${qs.toString()}`, { token });
+    const headers: Record<string, string> = {};
+    if (token) headers["X-Auth-Token"] = token;
+    const response = await fetch(`${API_URL}/api/audit-trail/export/cqc/download?${qs.toString()}`, { headers });
+    if (!response.ok) throw new Error("Export failed");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "cqc_audit_export.csv"; a.click();
+    URL.revokeObjectURL(url);
   },
   getSarReport: (token: string, candidateEmail: string) =>
     apiRequest<Record<string, unknown>>(`/api/audit-trail/sar/${encodeURIComponent(candidateEmail)}`, { token }),
