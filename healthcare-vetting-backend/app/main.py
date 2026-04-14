@@ -214,11 +214,13 @@ async def api_info():
 
 # Serve frontend static files
 STATIC_DIR = Path(__file__).parent.parent / "static"
+_ASSETS_DIR = STATIC_DIR / "assets"
 
-if STATIC_DIR.exists():
-    # Serve static assets (JS, CSS, images)
-    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="static-assets")
+if _ASSETS_DIR.exists():
+    # Serve static assets (JS, CSS, images) — only if the build was bundled
+    app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
 
+if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():
     @app.get("/{full_path:path}")
     async def serve_frontend(request: Request, full_path: str):
         """Serve the React SPA for any non-API route."""
@@ -230,7 +232,4 @@ if STATIC_DIR.exists():
         if full_path and file_path.exists() and file_path.is_file():
             return FileResponse(str(file_path))
         # Otherwise serve index.html for SPA routing
-        index_path = STATIC_DIR / "index.html"
-        if index_path.exists():
-            return FileResponse(str(index_path))
-        return HTMLResponse("<h1>Frontend not found</h1>", status_code=404)
+        return FileResponse(str(STATIC_DIR / "index.html"))
