@@ -54,7 +54,7 @@ class TrustIDService:
         """Update the TrustID configuration for a specific check type."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            existing = db.execute(
+            db.execute(
                 "SELECT * FROM trustid_config WHERE check_type=%s", (check_type,)
             )
             existing = db.fetchone()
@@ -100,7 +100,7 @@ class TrustIDService:
     def get_submission_mode(check_type: str) -> str:
         """Return 'manual' or 'api' for a given check type."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT submission_mode FROM trustid_config WHERE check_type=%s", (check_type,)
             )
             row = db.fetchone()
@@ -200,7 +200,7 @@ class TrustIDService:
         """Get all TrustID checks pending admin action."""
         with get_db() as db:
             if status:
-                rows = db.execute(
+                db.execute(
                     """SELECT tc.*, c.first_name, c.last_name, c.email as candidate_email_lookup
                        FROM trustid_checks tc
                        LEFT JOIN candidates c ON tc.candidate_id = c.id
@@ -210,7 +210,7 @@ class TrustIDService:
                 )
                 rows = db.fetchall()
             else:
-                rows = db.execute(
+                db.execute(
                     """SELECT tc.*, c.first_name, c.last_name, c.email as candidate_email_lookup
                        FROM trustid_checks tc
                        LEFT JOIN candidates c ON tc.candidate_id = c.id
@@ -224,7 +224,7 @@ class TrustIDService:
     def get_checks_for_candidate(candidate_id: str) -> list:
         """Get all TrustID checks for a specific candidate."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM trustid_checks WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
             )
@@ -369,13 +369,13 @@ class TrustIDService:
         with get_db() as db:
             counts = {}
             for status in ["pending_admin", "awaiting_candidate", "submitted_to_trustid", "completed"]:
-                row = db.execute(
+                db.execute(
                     "SELECT COUNT(*) as cnt FROM trustid_checks WHERE status=%s", (status,)
                 )
                 row = db.fetchone()
                 counts[status] = dict(row)["cnt"]
             # Overdue = pending_admin for more than 24 hours
-            row = db.execute(
+            db.execute(
                 """SELECT COUNT(*) as cnt FROM trustid_checks
                    WHERE status='pending_admin'
                    AND created_at::timestamp < NOW() - INTERVAL '24 hours'"""

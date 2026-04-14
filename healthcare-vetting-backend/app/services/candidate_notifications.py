@@ -52,7 +52,7 @@ def create_pre_notification(
 def get_pending_notifications(candidate_id: str) -> list[dict]:
     """Get all pending pre-notifications for a candidate."""
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM candidate_pre_notifications WHERE candidate_id=%s AND status='pending' ORDER BY created_at DESC",
             (candidate_id,),
         )
@@ -64,7 +64,7 @@ def confirm_notification(notification_id: str, candidate_id: str) -> dict | None
     """Candidate confirms a pre-notification — the verification request can now proceed."""
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        notif = db.execute(
+        db.execute(
             "SELECT * FROM candidate_pre_notifications WHERE id=%s AND candidate_id=%s",
             (notification_id, candidate_id),
         )
@@ -86,7 +86,7 @@ def update_verifier_details(
 ) -> dict | None:
     """Candidate updates verifier contact details before the request is sent."""
     with get_db() as db:
-        notif = db.execute(
+        db.execute(
             "SELECT * FROM candidate_pre_notifications WHERE id=%s AND candidate_id=%s AND status='pending'",
             (notification_id, candidate_id),
         )
@@ -116,7 +116,7 @@ def get_ready_notifications(delay_hours: int = DEFAULT_DELAY_HOURS) -> list[dict
     These are ready for the verification request to be sent to the referee."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=delay_hours)).isoformat()
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             """SELECT * FROM candidate_pre_notifications
                WHERE (status='confirmed')
                   OR (status='pending' AND sent_at < %s)

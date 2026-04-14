@@ -64,7 +64,7 @@ def get_trust_signal_variables() -> dict:
     try:
         with get_db() as db:
             for key in TRUST_SIGNAL_DEFAULTS:
-                row = db.execute(
+                db.execute(
                     "SELECT setting_value FROM system_settings WHERE setting_key=%s",
                     (f"trust_{key}",),
                 )
@@ -82,7 +82,7 @@ def get_invoice_settings() -> dict:
     try:
         with get_db() as db:
             for key in INVOICE_SETTINGS_DEFAULTS:
-                row = db.execute(
+                db.execute(
                     "SELECT setting_value FROM system_settings WHERE setting_key=%s",
                     (f"invoice_{key}",),
                 )
@@ -911,7 +911,7 @@ class EmailTemplateService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             for tpl in DEFAULT_TEMPLATES:
-                existing = db.execute(
+                db.execute(
                     "SELECT id, subject, body_html FROM email_templates WHERE template_key=%s",
                     (tpl["template_key"],),
                 )
@@ -958,7 +958,7 @@ class EmailTemplateService:
     @staticmethod
     def get_all_templates() -> list:
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM email_templates ORDER BY category, name"
             )
             rows = db.fetchall()
@@ -967,7 +967,7 @@ class EmailTemplateService:
     @staticmethod
     def get_template(template_id: str) -> dict:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             )
             row = db.fetchone()
@@ -976,7 +976,7 @@ class EmailTemplateService:
     @staticmethod
     def get_template_by_key(template_key: str) -> dict:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_templates WHERE template_key=%s", (template_key,)
             )
             row = db.fetchone()
@@ -994,7 +994,7 @@ class EmailTemplateService:
     ) -> dict:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             )
             row = db.fetchone()
@@ -1018,7 +1018,7 @@ class EmailTemplateService:
                     template_id,
                 ),
             )
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             )
             row = db.fetchone()
@@ -1028,7 +1028,7 @@ class EmailTemplateService:
     def reset_template(template_id: str) -> dict:
         """Reset a template to its default content."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             )
             row = db.fetchone()
@@ -1058,7 +1058,7 @@ class EmailTemplateService:
                     template_id,
                 ),
             )
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             )
             row = db.fetchone()
@@ -1097,7 +1097,7 @@ class EmailTemplateService:
                     vars_json, now, now,
                 ),
             )
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             )
             row = db.fetchone()
@@ -1107,7 +1107,7 @@ class EmailTemplateService:
     def delete_template(template_id: str) -> bool:
         """Delete a custom email template. Returns False if template is a default (protected)."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_templates WHERE id=%s", (template_id,)
             )
             row = db.fetchone()

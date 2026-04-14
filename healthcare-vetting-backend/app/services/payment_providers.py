@@ -50,7 +50,7 @@ class PaymentProviderService:
     def get_providers() -> list:
         """Get all configured payment providers with masked keys."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM payment_provider_config ORDER BY provider"
             )
             rows = db.fetchall()
@@ -74,7 +74,7 @@ class PaymentProviderService:
     def get_provider(provider: str) -> Optional[dict]:
         """Get a single provider config (internal — includes decrypted keys)."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM payment_provider_config WHERE provider=%s",
                 (provider,),
             )
@@ -102,7 +102,7 @@ class PaymentProviderService:
         )
 
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT id FROM payment_provider_config WHERE provider=%s", (provider,)
             )
             row = db.fetchone()
@@ -264,7 +264,7 @@ class PaymentProviderService:
     def get_routing() -> list:
         """Get all payment routing rules."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM payment_routing ORDER BY payment_type"
             )
             rows = db.fetchall()
@@ -285,7 +285,7 @@ class PaymentProviderService:
             raise ValueError("Primary and fallback provider cannot be the same.")
 
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM payment_routing WHERE payment_type=%s", (payment_type,)
             )
             row = db.fetchone()
@@ -296,7 +296,7 @@ class PaymentProviderService:
                 "UPDATE payment_routing SET provider=%s, fallback_provider=%s, updated_at=%s WHERE payment_type=%s",
                 (provider, fallback_provider, now, payment_type),
             )
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM payment_routing WHERE payment_type=%s", (payment_type,)
             )
             row = db.fetchone()
@@ -367,7 +367,7 @@ class PaymentProviderService:
         """Confirm a payment has been completed (called from webhook or polling)."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            txn = db.execute(
+            db.execute(
                 "SELECT * FROM payment_transactions WHERE provider_payment_id=%s",
                 (provider_payment_id,),
             )
@@ -399,7 +399,7 @@ class PaymentProviderService:
     def process_refund(transaction_id: str, amount: Optional[float] = None) -> dict:
         """Process a refund for a completed payment."""
         with get_db() as db:
-            txn = db.execute(
+            db.execute(
                 "SELECT * FROM payment_transactions WHERE id=%s AND status='completed'",
                 (transaction_id,),
             )
@@ -458,13 +458,13 @@ class PaymentProviderService:
         """Get payment transaction history."""
         with get_db() as db:
             if agency_id:
-                rows = db.execute(
+                db.execute(
                     "SELECT * FROM payment_transactions WHERE agency_id=%s ORDER BY created_at DESC LIMIT %s",
                     (agency_id, limit),
                 )
                 rows = db.fetchall()
             else:
-                rows = db.execute(
+                db.execute(
                     "SELECT * FROM payment_transactions ORDER BY created_at DESC LIMIT %s",
                     (limit,),
                 )
@@ -611,7 +611,7 @@ def _mask_key(key: Optional[str]) -> Optional[str]:
 def _validate_provider_enabled(provider: str):
     """Raise if provider is not connected and enabled."""
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT is_enabled, api_key_set FROM payment_provider_config WHERE provider=%s",
             (provider,),
         )
@@ -628,7 +628,7 @@ def _validate_provider_enabled(provider: str):
 def _resolve_provider(payment_type: str) -> Optional[str]:
     """Resolve which provider should handle a given payment type."""
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT provider, fallback_provider FROM payment_routing WHERE payment_type=%s AND is_enabled=1",
             (payment_type,),
         )
@@ -639,7 +639,7 @@ def _resolve_provider(payment_type: str) -> Optional[str]:
         provider = r.get("provider")
         if provider:
             # Verify provider is still enabled
-            prow = db.execute(
+            db.execute(
                 "SELECT is_enabled FROM payment_provider_config WHERE provider=%s AND is_enabled=1",
                 (provider,),
             )
@@ -649,7 +649,7 @@ def _resolve_provider(payment_type: str) -> Optional[str]:
         # Try fallback
         fallback = r.get("fallback_provider")
         if fallback:
-            prow = db.execute(
+            db.execute(
                 "SELECT is_enabled FROM payment_provider_config WHERE provider=%s AND is_enabled=1",
                 (fallback,),
             )

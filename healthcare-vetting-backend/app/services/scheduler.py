@@ -114,7 +114,7 @@ def run_expiry_warnings():
     try:
         with get_db() as db:
             # Visa expiries in next 30 days
-            visa_expiring = db.execute(
+            db.execute(
                 """SELECT r.*, c.first_name, c.last_name, c.email as candidate_email,
                           a.email as agency_email, a.name as agency_name
                    FROM right_to_work_checks r
@@ -124,6 +124,7 @@ def run_expiry_warnings():
                    WHERE r.visa_expiry IS NOT NULL AND r.verified = 1
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             )
+            visa_expiring = db.fetchone()
             visa_expiring = db.fetchall()
 
             expiry_notifications = []
@@ -146,7 +147,7 @@ def run_expiry_warnings():
                     continue
 
             # DBS renewal checks
-            dbs_expiring = db.execute(
+            db.execute(
                 """SELECT d.*, c.first_name, c.last_name, c.email as candidate_email,
                           a.email as agency_email, a.name as agency_name
                    FROM dbs_checks d
@@ -156,6 +157,7 @@ def run_expiry_warnings():
                    WHERE d.next_renewal IS NOT NULL
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             )
+            dbs_expiring = db.fetchone()
             dbs_expiring = db.fetchall()
 
             for row in dbs_expiring:
@@ -177,7 +179,7 @@ def run_expiry_warnings():
                     continue
 
             # Registration renewals
-            reg_expiring = db.execute(
+            db.execute(
                 """SELECT r.*, c.first_name, c.last_name, c.email as candidate_email,
                           a.email as agency_email, a.name as agency_name
                    FROM registration_checks r
@@ -187,6 +189,7 @@ def run_expiry_warnings():
                    WHERE r.next_check IS NOT NULL AND r.is_active = 1
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             )
+            reg_expiring = db.fetchone()
             reg_expiring = db.fetchall()
 
             for row in reg_expiring:
@@ -210,7 +213,7 @@ def run_expiry_warnings():
 
             # Training certificate expiries
             try:
-                training_expiring = db.execute(
+                db.execute(
                     """SELECT t.*, c.first_name, c.last_name, c.email as candidate_email,
                               a.email as agency_email, a.name as agency_name
                        FROM training_certificates t
@@ -220,6 +223,7 @@ def run_expiry_warnings():
                        WHERE t.expiry_date IS NOT NULL AND t.status = 'valid'
                        AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
                 )
+                training_expiring = db.fetchone()
                 training_expiring = db.fetchall()
 
                 for row in training_expiring:
@@ -294,13 +298,13 @@ def run_weekly_admin_report():
             total_candidates = db.fetchone()
             total_candidates = dict(total_candidates)["cnt"] if total_candidates else 0
 
-            compliant = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt FROM candidates WHERE compliance_status='compliant'"
             )
             compliant = db.fetchone()
             compliant = dict(compliant)["cnt"] if compliant else 0
 
-            flagged = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt FROM candidates WHERE compliance_status IN ('flagged','incomplete')"
             )
             flagged = db.fetchone()
@@ -311,20 +315,20 @@ def run_weekly_admin_report():
             total_agencies = dict(total_agencies)["cnt"] if total_agencies else 0
 
             # Revenue this week
-            week_revenue = db.execute(
+            db.execute(
                 "SELECT COALESCE(SUM(sell_amount),0) as total FROM invoices WHERE status='paid' AND created_at >= date('now','-7 days')"
             )
             week_revenue = db.fetchone()
             week_revenue = dict(week_revenue)["total"] if week_revenue else 0
 
-            pending_invoices = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt, COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)),0) as total FROM invoices WHERE status='pending'"
             )
             pending_invoices = db.fetchone()
             pi = dict(pending_invoices) if pending_invoices else {"cnt": 0, "total": 0}
 
             # New candidates this week
-            new_candidates = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt FROM candidates WHERE created_at >= date('now','-7 days')"
             )
             new_candidates = db.fetchone()

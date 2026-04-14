@@ -25,50 +25,46 @@ class AnalyticsReportingService:
             db.execute(
                 "SELECT COUNT(*) AS cnt FROM agency_candidates WHERE agency_id=%s",
                 (agency_id,),
-            )
-            _row = db.fetchone()
-            total = (_row["cnt"] if _row else 0) or 0
+            )["cnt"]
+            total = db.fetchone()
 
             # Compliance status breakdown
             db.execute(
-                """SELECT COUNT(DISTINCT ac.candidate_id) AS cnt FROM agency_candidates ac
+                """SELECT COUNT(DISTINCT ac.candidate_id) FROM agency_candidates ac
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
                    WHERE ac.agency_id=%s AND cr.overall_status='compliant'""",
                 (agency_id,),
-            )
-            _row = db.fetchone()
-            compliant = (_row["cnt"] if _row else 0) or 0
+            )["cnt"]
+            compliant = db.fetchone()
 
             db.execute(
-                """SELECT COUNT(DISTINCT ac.candidate_id) AS cnt FROM agency_candidates ac
+                """SELECT COUNT(DISTINCT ac.candidate_id) FROM agency_candidates ac
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
                    WHERE ac.agency_id=%s AND cr.overall_status='non_compliant'""",
                 (agency_id,),
-            )
-            _row = db.fetchone()
-            non_compliant = (_row["cnt"] if _row else 0) or 0
+            )["cnt"]
+            non_compliant = db.fetchone()
 
             pending = total - compliant - non_compliant
 
             # Average compliance score
-            db.execute(
-                """SELECT AVG(cr.overall_score) AS avg_score FROM agency_candidates ac
+            avg_score_row = db.execute(
+                """SELECT AVG(cr.overall_score) FROM agency_candidates ac
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
                    WHERE ac.agency_id=%s""",
                 (agency_id,),
             )
             avg_score_row = db.fetchone()
-            avg_score = round((avg_score_row["avg_score"] if avg_score_row and avg_score_row["avg_score"] else 0), 1)
+            avg_score = round(list(avg_score_row.values())[0] or 0, 1)
 
             # Active alerts
             db.execute(
                 """SELECT COUNT(*) AS cnt FROM monitoring_alerts ma
                    JOIN agency_candidates ac ON ma.candidate_id = ac.candidate_id
-                   WHERE ac.agency_id=%s AND ma.is_resolved=false""",
+                   WHERE ac.agency_id=%s AND ma.is_resolved=0""",
                 (agency_id,),
-            )
-            _row = db.fetchone()
-            active_alerts = (_row["cnt"] if _row else 0) or 0
+            )["cnt"]
+            active_alerts = db.fetchone()
 
             # Checks completed this month
             month_start = datetime.now(timezone.utc).replace(day=1).strftime("%Y-%m-%d")
@@ -81,9 +77,8 @@ class AnalyticsReportingService:
                             JOIN agency_candidates ac ON t.candidate_id = ac.candidate_id
                             WHERE ac.agency_id=%s AND t.{col} >= %s""",
                         (agency_id, month_start),
-                    )
-                    _row = db.fetchone()
-                    count = (_row["cnt"] if _row else 0) or 0
+                    )["cnt"]
+                    count = db.fetchone()
                     checks_this_month += count
                 except Exception:
                     pass
@@ -118,7 +113,7 @@ class AnalyticsReportingService:
                 ("dbs", "dbs_checks", "submitted_at", "completed_at"),
             ]:
                 try:
-                    db.execute(
+                    row = db.execute(
                         f"""SELECT AVG(EXTRACT(EPOCH FROM ({end_col}::timestamp - {start_col}::timestamp)) / 86400.0) as avg_days,
                                    MIN(EXTRACT(EPOCH FROM ({end_col}::timestamp - {start_col}::timestamp)) / 86400.0) as min_days,
                                    MAX(EXTRACT(EPOCH FROM ({end_col}::timestamp - {start_col}::timestamp)) / 86400.0) as max_days,
@@ -140,7 +135,7 @@ class AnalyticsReportingService:
 
             # Employment verifications
             try:
-                db.execute(
+                row = db.execute(
                     f"""SELECT AVG(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as avg_days,
                                MIN(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as min_days,
                                MAX(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as max_days,
@@ -161,7 +156,7 @@ class AnalyticsReportingService:
 
             # References
             try:
-                db.execute(
+                row = db.execute(
                     """SELECT AVG(EXTRACT(EPOCH FROM (completed_at::timestamp - created_at::timestamp)) / 86400.0) as avg_days,
                               MIN(EXTRACT(EPOCH FROM (completed_at::timestamp - created_at::timestamp)) / 86400.0) as min_days,
                               MAX(EXTRACT(EPOCH FROM (completed_at::timestamp - created_at::timestamp)) / 86400.0) as max_days,
@@ -191,17 +186,13 @@ class AnalyticsReportingService:
             # Employment verifications
             try:
                 db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE sent_at IS NOT NULL")
-                _r = db.fetchone()
-                total_ev = (_r["cnt"] if _r else 0) or 0
+                total_ev = db.fetchone()
                 db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status IN ('verified', 'completed')")
-                _r = db.fetchone()
-                completed_ev = (_r["cnt"] if _r else 0) or 0
+                completed_ev = db.fetchone()
                 db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status='disputed'")
-                _r = db.fetchone()
-                disputed_ev = (_r["cnt"] if _r else 0) or 0
+                disputed_ev = db.fetchone()
                 db.execute("SELECT COUNT(*) AS cnt FROM employment_verifications WHERE status='sent'")
-                _r = db.fetchone()
-                pending_ev = (_r["cnt"] if _r else 0) or 0
+                pending_ev = db.fetchone()
                 rates["employment_verification"] = {
                     "total_sent": total_ev,
                     "completed": completed_ev,
@@ -215,14 +206,11 @@ class AnalyticsReportingService:
             # References
             try:
                 db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE created_at IS NOT NULL")
-                _r = db.fetchone()
-                total_ref = (_r["cnt"] if _r else 0) or 0
+                total_ref = db.fetchone()
                 db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE status='completed'")
-                _r = db.fetchone()
-                completed_ref = (_r["cnt"] if _r else 0) or 0
+                completed_ref = db.fetchone()
                 db.execute("SELECT COUNT(*) AS cnt FROM references_ WHERE status IN ('sent', 'pending')")
-                _r = db.fetchone()
-                pending_ref = (_r["cnt"] if _r else 0) or 0
+                pending_ref = db.fetchone()
                 rates["references"] = {
                     "total_sent": total_ref,
                     "completed": completed_ref,
@@ -246,7 +234,7 @@ class AnalyticsReportingService:
 
             # Visa expiries
             try:
-                db.execute(
+                rows = db.execute(
                     """SELECT r.candidate_id, c.first_name, c.last_name, r.visa_expiry
                        FROM right_to_work_checks r
                        JOIN candidates c ON r.candidate_id = c.id
@@ -261,7 +249,7 @@ class AnalyticsReportingService:
 
             # DBS renewals
             try:
-                db.execute(
+                rows = db.execute(
                     """SELECT d.candidate_id, c.first_name, c.last_name, d.next_renewal
                        FROM dbs_checks d
                        JOIN candidates c ON d.candidate_id = c.id
@@ -276,7 +264,7 @@ class AnalyticsReportingService:
 
             # Registration renewals
             try:
-                db.execute(
+                rows = db.execute(
                     """SELECT r.candidate_id, c.first_name, c.last_name, r.next_check, r.body
                        FROM registration_checks r
                        JOIN candidates c ON r.candidate_id = c.id
@@ -291,7 +279,7 @@ class AnalyticsReportingService:
 
             # Training expiries
             try:
-                db.execute(
+                rows = db.execute(
                     """SELECT t.candidate_id, c.first_name, c.last_name, t.expiry_date, t.certificate_name
                        FROM training_certificates t
                        JOIN candidates c ON t.candidate_id = c.id
@@ -323,7 +311,7 @@ class AnalyticsReportingService:
 
         with get_db() as db:
             if agency_id:
-                db.execute(
+                rows = db.execute(
                     """SELECT c.id, c.first_name, c.last_name, c.email, c.profession,
                               cr.overall_status, cr.overall_score, cr.details, cr.last_evaluated
                        FROM candidates c
@@ -335,7 +323,7 @@ class AnalyticsReportingService:
                 )
                 rows = db.fetchall()
             else:
-                db.execute(
+                rows = db.execute(
                     """SELECT c.id, c.first_name, c.last_name, c.email, c.profession,
                               cr.overall_status, cr.overall_score, cr.details, cr.last_evaluated
                        FROM candidates c
@@ -402,9 +390,8 @@ class AnalyticsReportingService:
                         db.execute(
                             f"SELECT COUNT(*) AS cnt FROM {table} WHERE {col} >= %s AND {col} < %s",
                             (start_str, end_str),
-                        )
-                        _r = db.fetchone()
-                        count = (_r["cnt"] if _r else 0) or 0
+                        )["cnt"]
+                        count = db.fetchone()
                         total += count
                     except Exception:
                         pass

@@ -42,7 +42,7 @@ async def create_submission(body: CreateSubmissionRequest, request: Request, cur
     with get_db() as db:
         # If this is a re-vet via token, validate it
         if body.revet_token:
-            revet = db.execute(
+            db.execute(
                 "SELECT * FROM revet_requests WHERE token=%s AND candidate_id=%s AND status='pending'",
                 (body.revet_token, candidate_id),
             )
@@ -54,7 +54,7 @@ async def create_submission(body: CreateSubmissionRequest, request: Request, cur
             submission_type = "partial"
         else:
             # Check for existing draft full submission
-            existing = db.execute(
+            db.execute(
                 "SELECT id FROM candidate_submissions WHERE candidate_id=%s AND submission_type='full' AND status='draft'",
                 (candidate_id,),
             )
@@ -103,7 +103,7 @@ async def get_current_submission(current_user: dict = Depends(get_current_user))
     candidate_id = current_user["sub"]
     with get_db() as db:
         # First check for any submitted/processing submissions (status dashboard)
-        active = db.execute(
+        db.execute(
             """SELECT * FROM candidate_submissions
                WHERE candidate_id=%s AND status IN ('submitted', 'processing', 'completed')
                ORDER BY submitted_at DESC LIMIT 1""",
@@ -115,7 +115,7 @@ async def get_current_submission(current_user: dict = Depends(get_current_user))
             sub = dict(active)
             sub["sections_requested"] = json.loads(sub["sections_requested"]) if sub["sections_requested"] else []
             # Load draft data
-            drafts = db.execute(
+            db.execute(
                 "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (sub["id"],)
             )
             drafts = db.fetchall()
@@ -129,7 +129,7 @@ async def get_current_submission(current_user: dict = Depends(get_current_user))
             return sub
 
         # Otherwise check for draft
-        draft = db.execute(
+        db.execute(
             """SELECT * FROM candidate_submissions
                WHERE candidate_id=%s AND status='draft'
                ORDER BY created_at DESC LIMIT 1""",
@@ -140,7 +140,7 @@ async def get_current_submission(current_user: dict = Depends(get_current_user))
         if draft:
             sub = dict(draft)
             sub["sections_requested"] = json.loads(sub["sections_requested"]) if sub["sections_requested"] else []
-            drafts = db.execute(
+            db.execute(
                 "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (sub["id"],)
             )
             drafts = db.fetchall()
@@ -160,7 +160,7 @@ async def get_current_submission(current_user: dict = Depends(get_current_user))
 async def get_submission(submission_id: str, current_user: dict = Depends(get_current_user)):
     """Get a specific submission with all its section data."""
     with get_db() as db:
-        sub = db.execute(
+        db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s", (submission_id,)
         )
         sub = db.fetchone()
@@ -175,7 +175,7 @@ async def get_submission(submission_id: str, current_user: dict = Depends(get_cu
             raise HTTPException(status_code=403, detail="Not your submission")
 
         # Load section data
-        drafts = db.execute(
+        db.execute(
             "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (submission_id,)
         )
         drafts = db.fetchall()
@@ -207,7 +207,7 @@ async def save_section(
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        sub = db.execute(
+        db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s AND candidate_id=%s",
             (submission_id, candidate_id),
         )
@@ -218,7 +218,7 @@ async def save_section(
             raise HTTPException(status_code=400, detail="Cannot modify a submitted application")
 
         # Upsert the section data
-        existing = db.execute(
+        db.execute(
             "SELECT id FROM candidate_draft_data WHERE submission_id=%s AND section=%s",
             (submission_id, section),
         )
@@ -291,7 +291,7 @@ async def update_section_post_submission(
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        sub = db.execute(
+        db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s AND candidate_id=%s",
             (submission_id, candidate_id),
         )
@@ -314,7 +314,7 @@ async def update_section_post_submission(
             raise HTTPException(status_code=400, detail=f"Section '{section}' cannot be edited after submission")
 
         # Save the updated section data
-        existing = db.execute(
+        db.execute(
             "SELECT id FROM candidate_draft_data WHERE submission_id=%s AND section=%s",
             (submission_id, section),
         )
@@ -442,7 +442,7 @@ async def validate_submission(submission_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=403, detail="Candidates only")
 
     with get_db() as db:
-        sub = db.execute(
+        db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s AND candidate_id=%s",
             (submission_id, current_user["sub"]),
         )
@@ -453,7 +453,7 @@ async def validate_submission(submission_id: str, current_user: dict = Depends(g
         sub_data = dict(sub)
         sections_requested = json.loads(sub_data["sections_requested"]) if sub_data["sections_requested"] else []
 
-        drafts = db.execute(
+        db.execute(
             "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (submission_id,)
         )
         drafts = db.fetchall()
@@ -540,7 +540,7 @@ async def submit_with_consent(
     user_agent = request.headers.get("User-Agent", "")
 
     with get_db() as db:
-        sub = db.execute(
+        db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s AND candidate_id=%s",
             (submission_id, candidate_id),
         )
@@ -593,7 +593,7 @@ async def submit_with_consent(
 async def get_processing_status(submission_id: str, current_user: dict = Depends(get_current_user)):
     """Get the processing status of a submission (status-only view for candidates)."""
     with get_db() as db:
-        sub = db.execute(
+        db.execute(
             "SELECT * FROM candidate_submissions WHERE id=%s", (submission_id,)
         )
         sub = db.fetchone()
@@ -610,7 +610,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         check_statuses = {}
 
         # Personal Details — verified when core candidate fields are populated
-        cand = db.execute(
+        db.execute(
             "SELECT first_name, last_name, email, phone, date_of_birth FROM candidates WHERE id=%s",
             (candidate_id,),
         )
@@ -632,7 +632,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
             check_statuses["personal"] = {"status": "pending", "label": "Personal Details Pending"}
 
         # Identity
-        identity = db.execute(
+        db.execute(
             "SELECT status, result FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -649,7 +649,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
             check_statuses["identity"] = {"status": "pending", "label": "Identity Check Pending"}
 
         # Right to Work
-        rtw = db.execute(
+        db.execute(
             "SELECT status, verified FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -664,7 +664,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
             check_statuses["rtw"] = {"status": "pending", "label": "Right to Work Pending"}
 
         # DBS
-        dbs = db.execute(
+        db.execute(
             "SELECT status, result FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -681,7 +681,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
             check_statuses["dbs"] = {"status": "pending", "label": "DBS Check Pending"}
 
         # CV
-        cv = db.execute(
+        db.execute(
             "SELECT status FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -692,7 +692,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
             check_statuses["cv"] = {"status": "pending", "label": "CV Analysis Pending"}
 
         # Registration
-        reg = db.execute(
+        db.execute(
             "SELECT is_active FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC LIMIT 1",
             (candidate_id,),
         )
@@ -706,7 +706,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
             check_statuses["registration"] = {"status": "pending", "label": "Registration Check Pending"}
 
         # References
-        refs = db.execute(
+        db.execute(
             "SELECT status FROM references_ WHERE candidate_id=%s", (candidate_id,)
         )
         refs = db.fetchall()
@@ -720,12 +720,12 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
             check_statuses["references"] = {"status": "pending", "label": "References Pending"}
 
         # Employment
-        emp_count = db.execute(
+        db.execute(
             "SELECT COUNT(*) as cnt FROM employment_verifications WHERE candidate_id=%s AND status='completed'",
             (candidate_id,),
         )
         emp_count = db.fetchone()
-        emp_total = db.execute(
+        db.execute(
             "SELECT COUNT(*) as cnt FROM employment_history WHERE candidate_id=%s",
             (candidate_id,),
         )
@@ -740,7 +740,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
             check_statuses["employment"] = {"status": "pending", "label": "Employment Verification Pending"}
 
         # Training
-        training = db.execute(
+        db.execute(
             "SELECT COUNT(*) as cnt FROM training_certificates WHERE candidate_id=%s",
             (candidate_id,),
         )
@@ -751,7 +751,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
             check_statuses["training"] = {"status": "pending", "label": "Training Certificates Pending"}
 
         # Compliance score
-        compliance = db.execute(
+        db.execute(
             "SELECT score, overall_status, cqc_ready FROM compliance_records WHERE candidate_id=%s",
             (candidate_id,),
         )
@@ -774,7 +774,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
 async def get_revet_info(token: str):
     """Public endpoint: get re-vet request details by token."""
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             """SELECT rr.*, a.name as agency_name, c.first_name, c.last_name, c.email
                FROM revet_requests rr
                JOIN agencies a ON rr.agency_id = a.id

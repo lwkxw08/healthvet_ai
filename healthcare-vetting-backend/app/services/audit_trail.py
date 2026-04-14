@@ -34,7 +34,7 @@ class AuditTrailService:
 
         with get_db() as db:
             # Get the hash of the last audit entry for the chain
-            prev = db.execute(
+            db.execute(
                 "SELECT id, chain_hash FROM audit_trail ORDER BY created_at DESC, rowid DESC LIMIT 1"
             )
             prev = db.fetchone()
@@ -79,7 +79,7 @@ class AuditTrailService:
     def verify_chain_integrity(limit: int = 1000) -> dict:
         """Verify the integrity of the audit trail hash chain."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM audit_trail ORDER BY created_at ASC, rowid ASC LIMIT %s",
                 (limit,),
             )
@@ -150,7 +150,7 @@ class AuditTrailService:
             )["cnt"]
             total = db.fetchone()
 
-            rows = db.execute(
+            db.execute(
                 f"SELECT * FROM audit_trail {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
                 tuple(params) + (limit, offset),
             )
@@ -195,7 +195,7 @@ class AuditTrailService:
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 f"SELECT * FROM data_access_log {where} ORDER BY created_at DESC LIMIT %s",
                 tuple(params) + (limit,),
             )
@@ -220,14 +220,14 @@ class AuditTrailService:
 
             where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-            audit_entries = db.execute(
+            db.execute(
                 f"SELECT * FROM audit_trail {where} ORDER BY created_at ASC",
                 tuple(params),
             )
             audit_entries = db.fetchall()
 
             # Data access entries
-            access_entries = db.execute(
+            db.execute(
                 f"SELECT * FROM data_access_log {where} ORDER BY created_at ASC",
                 tuple(params),
             )
@@ -348,7 +348,7 @@ class AuditTrailService:
         """Generate a Subject Access Request report for a candidate."""
         with get_db() as db:
             # Find candidate
-            candidate = db.execute(
+            db.execute(
                 "SELECT * FROM candidates WHERE email=%s", (candidate_email,)
             )
             candidate = db.fetchone()
@@ -359,7 +359,7 @@ class AuditTrailService:
             candidate_id = c["id"]
 
             # All data mutations related to this candidate
-            mutations = db.execute(
+            db.execute(
                 """SELECT * FROM audit_trail
                    WHERE (entity_type='candidate' AND entity_id=%s)
                       OR (entity_type LIKE '%check%' AND entity_id IN
@@ -372,7 +372,7 @@ class AuditTrailService:
             mutations = db.fetchall()
 
             # All data access events for this candidate
-            access_events = db.execute(
+            db.execute(
                 """SELECT * FROM data_access_log
                    WHERE (entity_type='candidate' AND entity_id=%s)
                    ORDER BY created_at ASC""",
@@ -433,7 +433,7 @@ class AuditTrailService:
                 pass
 
             # Last retention run from audit logs
-            last_run = db.execute(
+            db.execute(
                 """SELECT created_at, details FROM audit_logs
                    WHERE action='retention_policy_applied'
                    ORDER BY created_at DESC LIMIT 1""",

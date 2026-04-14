@@ -29,7 +29,7 @@ class ComplianceEngine:
         Resolution chain: sub-account template → agency template → default template → hardcoded defaults.
         Returns (rules_dict, template_config, compliance_label, compliance_threshold)."""
         # Find the agency (and possibly sub-account) this candidate belongs to
-        agency_link = db.execute(
+        db.execute(
             "SELECT agency_id, invited_by_sub_account_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
             (candidate_id,),
         )
@@ -44,7 +44,7 @@ class ComplianceEngine:
         # 1. Check if the inviting sub-account has a specific industry template
         sub_account_id = agency_link_data.get("invited_by_sub_account_id")
         if sub_account_id:
-            sub_acc = db.execute(
+            db.execute(
                 "SELECT industry_template_id FROM agency_sub_accounts WHERE id=%s AND is_active=1",
                 (sub_account_id,),
             )
@@ -54,7 +54,7 @@ class ComplianceEngine:
 
         # 2. Fall back to agency-level template
         if not template_id:
-            agency = db.execute(
+            db.execute(
                 "SELECT industry_template_id FROM agencies WHERE id=%s",
                 (agency_link_data["agency_id"],),
             )
@@ -64,7 +64,7 @@ class ComplianceEngine:
 
         # 3. Fall back to default template
         if not template_id:
-            default_tmpl = db.execute(
+            db.execute(
                 "SELECT * FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
             )
             default_tmpl = db.fetchone()
@@ -77,7 +77,7 @@ class ComplianceEngine:
 
         # Load the template
         if template_data is None:
-            template_row = db.execute(
+            db.execute(
                 "SELECT * FROM industry_templates WHERE id=%s AND is_active=1",
                 (template_id,),
             )
@@ -87,7 +87,7 @@ class ComplianceEngine:
             template_data = dict(template_row)
 
         # Load checks for this template
-        checks = db.execute(
+        db.execute(
             "SELECT * FROM industry_template_checks WHERE template_id=%s AND is_enabled=1 ORDER BY sort_order ASC",
             (template_id,),
         )
@@ -129,37 +129,37 @@ class ComplianceEngine:
                 ComplianceEngine._get_template_for_candidate(db, candidate_id)
 
             # Gather all check results
-            identity = db.execute(
+            db.execute(
                 "SELECT * FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC LIMIT 1",
                 (candidate_id,),
             )
             identity = db.fetchone()
 
-            rtw = db.execute(
+            db.execute(
                 "SELECT * FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC LIMIT 1",
                 (candidate_id,),
             )
             rtw = db.fetchone()
 
-            dbs = db.execute(
+            db.execute(
                 "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC LIMIT 1",
                 (candidate_id,),
             )
             dbs = db.fetchone()
 
-            reg = db.execute(
+            db.execute(
                 "SELECT * FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC LIMIT 1",
                 (candidate_id,),
             )
             reg = db.fetchone()
 
-            refs = db.execute(
+            db.execute(
                 "SELECT * FROM references_ WHERE candidate_id=%s AND status='completed'",
                 (candidate_id,),
             )
             refs = db.fetchall()
 
-            cv = db.execute(
+            db.execute(
                 "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC LIMIT 1",
                 (candidate_id,),
             )
@@ -190,7 +190,7 @@ class ComplianceEngine:
 
                 rtw_check_pass = rtw and dict(rtw).get("verified") == 1
                 if requires_imposter:
-                    imposter_decl = db.execute(
+                    db.execute(
                         "SELECT * FROM imposter_declarations WHERE candidate_id=%s ORDER BY created_at DESC LIMIT 1",
                         (candidate_id,),
                     )
@@ -316,7 +316,7 @@ class ComplianceEngine:
                     "Basic Life Support (BLS)", "Fire Safety", "Health & Safety",
                 ])
                 try:
-                    training_certs = db.execute(
+                    db.execute(
                         "SELECT * FROM training_certificates WHERE candidate_id=%s",
                         (candidate_id,),
                     )
@@ -367,12 +367,12 @@ class ComplianceEngine:
 
             # Employment Verification
             if "employment_verified" in rules:
-                emp_verifications = db.execute(
+                db.execute(
                     "SELECT * FROM employment_verifications WHERE candidate_id=%s AND status IN ('completed', 'verified')",
                     (candidate_id,),
                 )
                 emp_verifications = db.fetchall()
-                emp_entries = db.execute(
+                db.execute(
                     "SELECT COUNT(*) as cnt FROM employment_history WHERE candidate_id=%s",
                     (candidate_id,),
                 )
@@ -425,7 +425,7 @@ class ComplianceEngine:
             cqc_ready = overall_status == "compliant"
 
             # Upsert compliance record
-            existing = db.execute(
+            db.execute(
                 "SELECT id FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
             )
@@ -504,7 +504,7 @@ class ComplianceEngine:
                 ),
             )
 
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
             )
@@ -518,7 +518,7 @@ class ComplianceEngine:
     @staticmethod
     def get_compliance(candidate_id: str) -> dict:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
             )
@@ -530,7 +530,7 @@ class ComplianceEngine:
     @staticmethod
     def get_audit_log(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM audit_logs WHERE entity_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
             )

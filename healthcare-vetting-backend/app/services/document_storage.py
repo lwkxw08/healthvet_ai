@@ -353,9 +353,10 @@ def enforce_retention_policy() -> int:
     now = datetime.now(timezone.utc).isoformat()
     storage = get_storage_backend()
     with get_db() as db:
-        expired = db.execute(
+        db.execute(
             "SELECT id, storage_key, thumbnail_key FROM documents WHERE retention_expires_at < %s", (now,)
         )
+        expired = db.fetchone()
         expired = db.fetchall()
         count = 0
         for row in expired:

@@ -32,57 +32,63 @@ class AuditPackService:
             c = dict(candidate)
 
             # Gather all check data
-            identity = db.execute(
+            db.execute(
                 "SELECT * FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC",
                 (candidate_id,),
             )
+            identity = db.fetchone()
             identity = db.fetchall()
-            rtw = db.execute(
+            db.execute(
                 "SELECT * FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC",
                 (candidate_id,),
             )
+            rtw = db.fetchone()
             rtw = db.fetchall()
-            dbs = db.execute(
+            db.execute(
                 "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC",
                 (candidate_id,),
             )
+            dbs = db.fetchone()
             dbs = db.fetchall()
-            cv = db.execute(
+            db.execute(
                 "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC",
                 (candidate_id,),
             )
+            cv = db.fetchone()
             cv = db.fetchall()
-            reg = db.execute(
+            db.execute(
                 "SELECT * FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC",
                 (candidate_id,),
             )
+            reg = db.fetchone()
             reg = db.fetchall()
-            refs = db.execute(
+            db.execute(
                 "SELECT * FROM references_ WHERE candidate_id=%s",
                 (candidate_id,),
             )
             refs = db.fetchall()
-            emp_history = db.execute(
+            db.execute(
                 "SELECT * FROM employment_history WHERE candidate_id=%s ORDER BY start_date DESC",
                 (candidate_id,),
             )
+            emp_history = db.fetchone()
             emp_history = db.fetchall()
-            emp_verifications = db.execute(
+            db.execute(
                 "SELECT * FROM employment_verifications WHERE candidate_id=%s",
                 (candidate_id,),
             )
             emp_verifications = db.fetchall()
-            compliance = db.execute(
+            db.execute(
                 "SELECT * FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
             )
             compliance = db.fetchone()
-            audit_logs = db.execute(
+            db.execute(
                 "SELECT * FROM audit_logs WHERE entity_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
             )
             audit_logs = db.fetchall()
-            alerts = db.execute(
+            db.execute(
                 "SELECT * FROM monitoring_alerts WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
             )
@@ -91,10 +97,11 @@ class AuditPackService:
             # Try to get training certificates
             training = []
             try:
-                training = db.execute(
+                db.execute(
                     "SELECT * FROM training_certificates WHERE candidate_id=%s",
                     (candidate_id,),
                 )
+                training = db.fetchone()
                 training = db.fetchall()
             except Exception:
                 pass
@@ -496,7 +503,7 @@ class AuditPackService:
                 raise ValueError("Agency not found")
             a = dict(agency)
 
-            candidates = db.execute(
+            db.execute(
                 """SELECT c.*, ac.employment_status FROM candidates c
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
                    WHERE ac.agency_id=%s""",

@@ -93,7 +93,7 @@ async def request_data_export(
         export["sections"]["personal_data"] = c
 
         # Consent logs
-        consents = db.execute(
+        db.execute(
             "SELECT * FROM consent_logs WHERE candidate_id=%s ORDER BY timestamp DESC",
             (candidate_id,),
         )
@@ -101,94 +101,104 @@ async def request_data_export(
         export["sections"]["consent_history"] = [dict(r) for r in consents]
 
         # Identity checks
-        identity = db.execute(
+        db.execute(
             "SELECT * FROM identity_checks WHERE candidate_id=%s", (candidate_id,),
         )
+        identity = db.fetchone()
         identity = db.fetchall()
         export["sections"]["identity_checks"] = [dict(r) for r in identity]
 
         # Right to work
-        rtw = db.execute(
+        db.execute(
             "SELECT * FROM right_to_work_checks WHERE candidate_id=%s", (candidate_id,),
         )
+        rtw = db.fetchone()
         rtw = db.fetchall()
         export["sections"]["right_to_work_checks"] = [dict(r) for r in rtw]
 
         # DBS checks
-        dbs = db.execute(
+        db.execute(
             "SELECT * FROM dbs_checks WHERE candidate_id=%s", (candidate_id,),
         )
+        dbs = db.fetchone()
         dbs = db.fetchall()
         export["sections"]["dbs_checks"] = [dict(r) for r in dbs]
 
         # CV analyses
-        cv = db.execute(
+        db.execute(
             "SELECT * FROM cv_analyses WHERE candidate_id=%s", (candidate_id,),
         )
+        cv = db.fetchone()
         cv = db.fetchall()
         export["sections"]["cv_analyses"] = [dict(r) for r in cv]
 
         # Registration checks
-        reg = db.execute(
+        db.execute(
             "SELECT * FROM registration_checks WHERE candidate_id=%s", (candidate_id,),
         )
+        reg = db.fetchone()
         reg = db.fetchall()
         export["sections"]["registration_checks"] = [dict(r) for r in reg]
 
         # References
-        refs = db.execute(
+        db.execute(
             "SELECT * FROM references_ WHERE candidate_id=%s", (candidate_id,),
         )
         refs = db.fetchall()
         export["sections"]["references"] = [dict(r) for r in refs]
 
         # Employment history
-        emp = db.execute(
+        db.execute(
             "SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,),
         )
+        emp = db.fetchone()
         emp = db.fetchall()
         export["sections"]["employment_history"] = [dict(r) for r in emp]
 
         # Employment verifications
-        emp_v = db.execute(
+        db.execute(
             "SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,),
         )
+        emp_v = db.fetchone()
         emp_v = db.fetchall()
         export["sections"]["employment_verifications"] = [dict(r) for r in emp_v]
 
         # Training certificates
         try:
-            training = db.execute(
+            db.execute(
                 "SELECT * FROM training_certificates WHERE candidate_id=%s", (candidate_id,),
             )
+            training = db.fetchone()
             training = db.fetchall()
             export["sections"]["training_certificates"] = [dict(r) for r in training]
         except Exception:
             export["sections"]["training_certificates"] = []
 
         # Compliance records
-        comp = db.execute(
+        db.execute(
             "SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,),
         )
+        comp = db.fetchone()
         comp = db.fetchall()
         export["sections"]["compliance_records"] = [dict(r) for r in comp]
 
         # Submissions
-        subs = db.execute(
+        db.execute(
             "SELECT * FROM candidate_submissions WHERE candidate_id=%s", (candidate_id,),
         )
         subs = db.fetchall()
         export["sections"]["submissions"] = [dict(r) for r in subs]
 
         # Imposter declarations
-        imp = db.execute(
+        db.execute(
             "SELECT * FROM imposter_declarations WHERE candidate_id=%s", (candidate_id,),
         )
+        imp = db.fetchone()
         imp = db.fetchall()
         export["sections"]["imposter_declarations"] = [dict(r) for r in imp]
 
         # Monitoring alerts
-        alerts = db.execute(
+        db.execute(
             "SELECT * FROM monitoring_alerts WHERE candidate_id=%s", (candidate_id,),
         )
         alerts = db.fetchall()
@@ -373,7 +383,7 @@ async def get_consent_history(
         raise HTTPException(status_code=403, detail="You can only view your own consent history")
 
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM consent_logs WHERE candidate_id=%s ORDER BY timestamp DESC",
             (candidate_id,),
         )
@@ -394,7 +404,7 @@ async def withdraw_consent(
     candidate_id = current_user["sub"]
 
     with get_db() as db:
-        existing = db.execute(
+        db.execute(
             "SELECT * FROM consent_logs WHERE id=%s AND candidate_id=%s",
             (consent_id, candidate_id),
         )
@@ -436,7 +446,7 @@ async def get_consent_summary(
     with get_db() as db:
         summary = {}
         for consent_type in required_consent_types:
-            row = db.execute(
+            db.execute(
                 """SELECT * FROM consent_logs
                    WHERE candidate_id=%s AND consent_type=%s
                    ORDER BY timestamp DESC LIMIT 1""",
@@ -484,7 +494,7 @@ async def verify_consent(
     """Verify whether a candidate has given a specific type of consent.
     Used by other services before processing data."""
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             """SELECT consent_given, timestamp FROM consent_logs
                WHERE candidate_id=%s AND consent_type=%s
                ORDER BY timestamp DESC LIMIT 1""",
@@ -515,7 +525,7 @@ async def verify_consent(
 async def list_dpias(current_user: dict = Depends(get_current_admin)):
     """List all Data Protection Impact Assessments."""
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM gdpr_dpias ORDER BY created_at DESC",
         )
         rows = db.fetchall()
@@ -578,7 +588,7 @@ async def update_dpia(
 async def list_retention_policies(current_user: dict = Depends(get_current_admin)):
     """List all data retention policies."""
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM gdpr_retention_policies ORDER BY data_category",
         )
         rows = db.fetchall()
@@ -595,7 +605,7 @@ async def create_retention_policy(
     policy_id = generate_id()
 
     with get_db() as db:
-        existing = db.execute(
+        db.execute(
             "SELECT id FROM gdpr_retention_policies WHERE data_category=%s",
             (data.data_category,),
         )
@@ -663,7 +673,7 @@ async def delete_retention_policy(
 async def list_erasure_requests(current_user: dict = Depends(get_current_admin)):
     """List all erasure requests for audit trail."""
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM gdpr_erasure_requests ORDER BY created_at DESC",
         )
         rows = db.fetchall()

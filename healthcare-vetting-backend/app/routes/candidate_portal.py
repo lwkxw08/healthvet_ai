@@ -36,7 +36,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
         checks = {}
 
         # 1. Identity verification
-        id_check = db.execute(
+        db.execute(
             "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='identity' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -44,7 +44,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
         checks["identity"] = _format_check(id_check, "Identity Verification")
 
         # 2. DBS check
-        dbs_check = db.execute(
+        db.execute(
             "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='dbs' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -52,7 +52,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
         checks["dbs"] = _format_check(dbs_check, "DBS Check")
 
         # 3. Right to Work
-        rtw_check = db.execute(
+        db.execute(
             "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='right_to_work' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -60,7 +60,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
         checks["right_to_work"] = _format_check(rtw_check, "Right to Work")
 
         # 4. Professional Registration
-        reg_check = db.execute(
+        db.execute(
             "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='professional_registration' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -68,7 +68,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
         checks["professional_registration"] = _format_check(reg_check, "Professional Registration")
 
         # 5. References
-        refs = db.execute(
+        db.execute(
             "SELECT * FROM references_ WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         )
@@ -83,7 +83,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
         }
 
         # 6. Employment verification
-        emp_vers = db.execute(
+        db.execute(
             "SELECT * FROM employment_verifications WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         )
@@ -98,7 +98,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
         }
 
         # 7. Training & qualifications
-        training_check = db.execute(
+        db.execute(
             "SELECT status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s AND check_type='training' ORDER BY created_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -106,7 +106,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
         checks["training"] = _format_check(training_check, "Training & Qualifications")
 
         # 8. Documents uploaded
-        docs = db.execute(
+        db.execute(
             "SELECT * FROM candidate_documents WHERE candidate_id=%s ORDER BY uploaded_at DESC",
             (candidate_id,),
         )
@@ -119,7 +119,7 @@ async def candidate_dashboard(request: Request, current_user: dict = Depends(get
         in_progress = sum(1 for c in checks.values() if c["status"] == "in_progress")
 
         # Pre-notifications pending
-        notifications = db.execute(
+        db.execute(
             "SELECT * FROM candidate_pre_notifications WHERE candidate_id=%s AND status='pending' ORDER BY created_at DESC",
             (candidate_id,),
         )
@@ -152,7 +152,7 @@ async def candidate_timeline(request: Request, current_user: dict = Depends(get_
 
     with get_db() as db:
         # Compliance checks
-        rows = db.execute(
+        db.execute(
             "SELECT check_type, status, created_at, updated_at FROM compliance_checks WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         )
@@ -168,7 +168,7 @@ async def candidate_timeline(request: Request, current_user: dict = Depends(get_
             })
 
         # References
-        refs = db.execute(
+        db.execute(
             "SELECT referee_name, status, created_at FROM references_ WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         )
@@ -183,7 +183,7 @@ async def candidate_timeline(request: Request, current_user: dict = Depends(get_
             })
 
         # Employment verifications
-        emps = db.execute(
+        db.execute(
             "SELECT employer_name, status, created_at FROM employment_verifications WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         )
@@ -198,7 +198,7 @@ async def candidate_timeline(request: Request, current_user: dict = Depends(get_
             })
 
         # Documents
-        docs = db.execute(
+        db.execute(
             "SELECT document_type, uploaded_at FROM candidate_documents WHERE candidate_id=%s ORDER BY uploaded_at DESC",
             (candidate_id,),
         )
@@ -280,7 +280,7 @@ async def list_documents(request: Request, current_user: dict = Depends(get_curr
     candidate_id = current_user["sub"]
     with get_db() as db:
         try:
-            docs = db.execute(
+            db.execute(
                 "SELECT id, document_type, file_name, file_size, description, uploaded_at FROM candidate_documents WHERE candidate_id=%s ORDER BY uploaded_at DESC",
                 (candidate_id,),
             )
@@ -298,7 +298,7 @@ async def delete_document(doc_id: str, request: Request, current_user: dict = De
 
     candidate_id = current_user["sub"]
     with get_db() as db:
-        doc = db.execute(
+        db.execute(
             "SELECT * FROM candidate_documents WHERE id=%s AND candidate_id=%s",
             (doc_id, candidate_id),
         )
@@ -324,7 +324,7 @@ async def confirm_pre_notification(notification_id: str, request: Request, curre
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        notif = db.execute(
+        db.execute(
             "SELECT * FROM candidate_pre_notifications WHERE id=%s AND candidate_id=%s",
             (notification_id, candidate_id),
         )
@@ -457,7 +457,7 @@ def _get_check_snapshot(candidate_id: str) -> dict:
     snapshot = {}
     with get_db() as db:
         for check_type in ["identity", "dbs", "right_to_work", "professional_registration", "training"]:
-            row = db.execute(
+            db.execute(
                 "SELECT status FROM compliance_checks WHERE candidate_id=%s AND check_type=%s ORDER BY created_at DESC LIMIT 1",
                 (candidate_id, check_type),
             )
@@ -465,7 +465,7 @@ def _get_check_snapshot(candidate_id: str) -> dict:
             snapshot[check_type] = dict(row)["status"] if row else "not_started"
 
         # References
-        refs = db.execute(
+        db.execute(
             "SELECT status FROM references_ WHERE candidate_id=%s",
             (candidate_id,),
         )
@@ -477,7 +477,7 @@ def _get_check_snapshot(candidate_id: str) -> dict:
             snapshot["references"] = "not_started"
 
         # Employment
-        emps = db.execute(
+        db.execute(
             "SELECT status FROM employment_verifications WHERE candidate_id=%s",
             (candidate_id,),
         )

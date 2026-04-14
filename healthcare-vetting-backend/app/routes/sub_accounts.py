@@ -82,7 +82,7 @@ async def list_sub_accounts(current_user: dict = Depends(get_current_user)):
     agency_id = current_user["sub"]
 
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             """SELECT id, agency_id, email, first_name, last_name, role, industry_template_id, is_active,
                       last_login_at, created_at
                FROM agency_sub_accounts WHERE agency_id=%s ORDER BY created_at""",
@@ -123,7 +123,7 @@ async def create_sub_account(data: SubAccountCreate, current_user: dict = Depend
 
     with get_db() as db:
         # Check if email already exists for this agency
-        existing = db.execute(
+        db.execute(
             "SELECT id FROM agency_sub_accounts WHERE agency_id=%s AND email=%s",
             (agency_id, data.email.lower()),
         )
@@ -178,7 +178,7 @@ async def update_sub_account(account_id: str, data: SubAccountUpdate, current_us
     agency_id = current_user["sub"]
 
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM agency_sub_accounts WHERE id=%s AND agency_id=%s",
             (account_id, agency_id),
         )
@@ -205,7 +205,7 @@ async def update_sub_account(account_id: str, data: SubAccountUpdate, current_us
             values = list(updates.values()) + [account_id]
             db.execute(f"UPDATE agency_sub_accounts SET {set_clause} WHERE id=%s", values)
 
-        row = db.execute(
+        db.execute(
             "SELECT id, agency_id, email, first_name, last_name, role, industry_template_id, is_active, last_login_at, created_at FROM agency_sub_accounts WHERE id=%s",
             (account_id,),
         )
@@ -233,7 +233,7 @@ async def delete_sub_account(account_id: str, current_user: dict = Depends(get_c
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM agency_sub_accounts WHERE id=%s AND agency_id=%s",
             (account_id, agency_id),
         )
@@ -257,7 +257,7 @@ async def delete_sub_account(account_id: str, current_user: dict = Depends(get_c
 async def sub_account_login(data: SubAccountLogin):
     """Login as a sub-account user."""
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM agency_sub_accounts WHERE email=%s AND is_active=1",
             (data.email.lower(),),
         )

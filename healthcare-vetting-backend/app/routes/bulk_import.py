@@ -80,7 +80,7 @@ async def bulk_import_candidates(data: BulkImportRequest, current_user: dict = D
                 candidate_id = dict(existing)["id"]
                 # If agency, link if not already linked
                 if agency_id:
-                    linked = db.execute(
+                    db.execute(
                         "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
                         (agency_id, candidate_id),
                     )

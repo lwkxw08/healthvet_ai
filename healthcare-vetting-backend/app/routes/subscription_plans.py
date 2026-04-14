@@ -45,7 +45,7 @@ CHECK_KEY_TO_PRICING_TYPE = {
 def _sync_industry_pricing(db, industry_template_id: str):
     """Ensure industry_check_pricing has a row for every enabled check in the template.
     Missing checks are auto-populated with defaults from pricing_settings."""
-    template_checks = db.execute(
+    db.execute(
         "SELECT check_key, check_label FROM industry_template_checks WHERE template_id=%s AND is_enabled=1 ORDER BY sort_order",
         (industry_template_id,)
     )
@@ -166,7 +166,7 @@ async def create_industry_plan_link(data: IndustryPlanLinkCreate, current_user: 
             raise HTTPException(status_code=404, detail="Industry template not found")
 
         # Check for duplicates
-        existing = db.execute(
+        db.execute(
             "SELECT id FROM industry_plan_links WHERE tier_key=%s AND industry_template_id=%s",
             (data.tier_key, data.industry_template_id),
         )
@@ -286,7 +286,7 @@ async def create_industry_check_pricing(data: IndustryCheckPricingCreate, curren
         if not template:
             raise HTTPException(status_code=404, detail="Industry template not found")
 
-        existing = db.execute(
+        db.execute(
             "SELECT id FROM industry_check_pricing WHERE industry_template_id=%s AND check_type=%s",
             (data.industry_template_id, data.check_type),
         )
@@ -380,7 +380,7 @@ async def bulk_set_industry_pricing(data: BulkIndustryPricingRequest, current_us
             if not check_type:
                 continue
 
-            existing = db.execute(
+            db.execute(
                 "SELECT id FROM industry_check_pricing WHERE industry_template_id=%s AND check_type=%s",
                 (data.industry_template_id, check_type),
             )
@@ -438,7 +438,7 @@ async def get_plans_by_industry(current_user: dict = Depends(get_current_user)):
             industry_id = t["id"]
 
             # Get plan links for this industry
-            plan_links = db.execute(
+            db.execute(
                 """SELECT ipl.*, stc.name as tier_name, stc.monthly_price as base_monthly_price,
                           stc.per_worker_price as base_per_worker_price, stc.monthly_checks as base_monthly_checks
                    FROM industry_plan_links ipl
@@ -449,14 +449,15 @@ async def get_plans_by_industry(current_user: dict = Depends(get_current_user)):
             plan_links = db.fetchall()
 
             # Get per-element pricing for this industry
-            check_pricing = db.execute(
+            db.execute(
                 "SELECT * FROM industry_check_pricing WHERE industry_template_id=%s AND is_active=1 ORDER BY check_type",
                 (industry_id,),
             )
+            check_pricing = db.fetchone()
             check_pricing = db.fetchall()
 
             # Get template checks
-            template_checks = db.execute(
+            db.execute(
                 "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order",
                 (industry_id,),
             )

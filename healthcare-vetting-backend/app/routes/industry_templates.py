@@ -51,14 +51,14 @@ class AgencyTemplateAssign(BaseModel):
 async def list_templates(admin=Depends(get_current_admin)):
     """List all industry templates with their check configurations."""
     with get_db() as db:
-        templates = db.execute(
+        db.execute(
             "SELECT * FROM industry_templates ORDER BY is_default DESC, name ASC"
         )
         templates = db.fetchall()
         result = []
         for t in templates:
             td = dict(t)
-            checks = db.execute(
+            db.execute(
                 "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
                 (td["id"],),
             )
@@ -70,7 +70,7 @@ async def list_templates(admin=Depends(get_current_admin)):
                 except (json.JSONDecodeError, TypeError):
                     c["config"] = {}
             # Count agencies using this template
-            agency_count = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt FROM agencies WHERE industry_template_id=%s",
                 (td["id"],),
             )
@@ -89,7 +89,7 @@ async def get_template(template_id: str, admin=Depends(get_current_admin)):
         if not t:
             raise HTTPException(status_code=404, detail="Template not found")
         td = dict(t)
-        checks = db.execute(
+        db.execute(
             "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
             (template_id,),
         )
@@ -196,7 +196,7 @@ async def delete_template(template_id: str, admin=Depends(get_current_admin)):
             raise HTTPException(status_code=400, detail="Cannot delete the default template")
 
         # Check if any agencies are using this template
-        agency_count = db.execute(
+        db.execute(
             "SELECT COUNT(*) as cnt FROM agencies WHERE industry_template_id=%s", (template_id,)
         )
         agency_count = db.fetchone()
@@ -236,7 +236,7 @@ async def clone_template(template_id: str, admin=Depends(get_current_admin)):
         )
 
         # Clone checks
-        checks = db.execute(
+        db.execute(
             "SELECT * FROM industry_template_checks WHERE template_id=%s", (template_id,)
         )
         checks = db.fetchall()
@@ -286,7 +286,7 @@ async def get_agency_template(agency_id: str, admin=Depends(get_current_admin)):
             default = db.fetchone()
             if default:
                 td = dict(default)
-                checks = db.execute(
+                db.execute(
                     "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
                     (td["id"],),
                 )
@@ -300,7 +300,7 @@ async def get_agency_template(agency_id: str, admin=Depends(get_current_admin)):
         if not t:
             return None
         td = dict(t)
-        checks = db.execute(
+        db.execute(
             "SELECT * FROM industry_template_checks WHERE template_id=%s ORDER BY sort_order ASC",
             (template_id,),
         )
@@ -322,7 +322,7 @@ async def list_templates_for_agency(current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=403, detail="Not authorized")
 
     with get_db() as db:
-        templates = db.execute(
+        db.execute(
             "SELECT id, name, description, compliance_label, compliance_threshold FROM industry_templates WHERE is_active=1 ORDER BY is_default DESC, name ASC"
         )
         templates = db.fetchall()

@@ -413,7 +413,7 @@ Return an empty array [] if no employment entries can be extracted."""
     @staticmethod
     def get_analyses_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC",
                 (candidate_id,),
             )

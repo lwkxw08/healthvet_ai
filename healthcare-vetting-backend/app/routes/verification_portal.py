@@ -61,7 +61,7 @@ def _lookup_by_code(code: str) -> tuple:
     normalized = code.strip().upper()
     with get_db() as db:
         # Try employment_verifications first
-        row = db.execute(
+        db.execute(
             "SELECT * FROM employment_verifications WHERE verification_code=%s",
             (normalized,),
         )
@@ -70,7 +70,7 @@ def _lookup_by_code(code: str) -> tuple:
             return dict(row), "employment"
 
         # Try references_
-        row = db.execute(
+        db.execute(
             "SELECT * FROM references_ WHERE verification_code=%s",
             (normalized,),
         )
@@ -390,7 +390,7 @@ def _get_candidate_name(candidate_id: str) -> str:
         return "Unknown"
     try:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s",
                 (candidate_id,),
             )
@@ -407,7 +407,7 @@ def _get_employment_job_title(employment_id: str) -> str:
         return ""
     try:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT job_title FROM employment_history WHERE id=%s",
                 (employment_id,),
             )
@@ -424,7 +424,7 @@ def _get_employment_dates(employment_id: str, field: str) -> str:
         return ""
     try:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 f"SELECT {field} FROM employment_history WHERE id=%s",
                 (employment_id,),
             )

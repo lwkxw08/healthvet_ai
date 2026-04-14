@@ -196,7 +196,7 @@ class EmailRulesService:
     @staticmethod
     def get_all_rules() -> list:
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM email_rules ORDER BY action_trigger, priority"
             )
             rows = db.fetchall()
@@ -205,7 +205,7 @@ class EmailRulesService:
     @staticmethod
     def get_rule(rule_id: str) -> dict:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             )
             row = db.fetchone()
@@ -215,7 +215,7 @@ class EmailRulesService:
     def get_rules_for_trigger(action_trigger: str) -> list:
         """Get all active rules for a given action trigger, ordered by priority."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 """SELECT r.*, t.name as template_name, t.is_active as template_active
                    FROM email_rules r
                    LEFT JOIN email_templates t ON r.template_key = t.template_key
@@ -251,7 +251,7 @@ class EmailRulesService:
                     priority, now, now,
                 ),
             )
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             )
             row = db.fetchone()
@@ -270,7 +270,7 @@ class EmailRulesService:
     ) -> dict:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             )
             row = db.fetchone()
@@ -295,7 +295,7 @@ class EmailRulesService:
                     rule_id,
                 ),
             )
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             )
             row = db.fetchone()
@@ -304,7 +304,7 @@ class EmailRulesService:
     @staticmethod
     def delete_rule(rule_id: str) -> bool:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM email_rules WHERE id=%s", (rule_id,)
             )
             row = db.fetchone()

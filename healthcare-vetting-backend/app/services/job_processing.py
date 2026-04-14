@@ -86,7 +86,7 @@ class JobProcessingService:
     def get_job_status(job_id: str) -> dict:
         """Get the status of a specific job."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM background_jobs WHERE id=%s", (job_id,)
             )
             row = db.fetchone()
@@ -124,7 +124,7 @@ class JobProcessingService:
             )["cnt"]
             total = db.fetchone()
 
-            rows = db.execute(
+            db.execute(
                 f"""SELECT id, task_name, status, priority, attempt, max_retries,
                            timeout_seconds, celery_task_id, started_at, completed_at,
                            error, created_at
@@ -156,7 +156,7 @@ class JobProcessingService:
     def get_dead_letter_queue(limit: int = 50) -> dict:
         """Get jobs in the dead letter queue (permanently failed)."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 """SELECT * FROM background_jobs
                    WHERE status=%s
                    ORDER BY completed_at DESC LIMIT %s""",
@@ -181,7 +181,7 @@ class JobProcessingService:
     def retry_dead_letter(job_id: str) -> dict:
         """Retry a job from the dead letter queue."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM background_jobs WHERE id=%s AND status=%s",
                 (job_id, STATUS_DEAD),
             )
@@ -213,7 +213,7 @@ class JobProcessingService:
     def cancel_job(job_id: str) -> dict:
         """Cancel a queued or running job."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT status, celery_task_id FROM background_jobs WHERE id=%s",
                 (job_id,),
             )
@@ -248,7 +248,7 @@ class JobProcessingService:
         """Clean up completed jobs older than N days."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with get_db() as db:
-            result = db.execute(
+            db.execute(
                 "DELETE FROM background_jobs WHERE status IN (%s, 'cancelled') AND completed_at < %s",
                 (STATUS_COMPLETED, cutoff),
             )
@@ -363,7 +363,7 @@ def _handle_job_failure(job_id: str, task_name: str, args: tuple,
     """Handle a job failure with retry logic."""
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT attempt, max_retries FROM background_jobs WHERE id=%s",
             (job_id,),
         )

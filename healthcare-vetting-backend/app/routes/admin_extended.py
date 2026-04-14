@@ -866,7 +866,7 @@ async def get_candidates_monitoring_status(current_user: dict = Depends(get_curr
     require_admin(current_user)
 
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             """SELECT c.id, c.first_name, c.last_name, c.email, c.compliance_score,
                       c.compliance_status, c.created_at,
                       ac.annual_monitoring, ac.vetting_cost_accepted, ac.monitoring_cost_accepted,
@@ -968,7 +968,7 @@ async def list_all_invoices(current_user: dict = Depends(get_current_user)):
     """List all invoices with agency details for admin invoicing view."""
     require_admin(current_user)
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             """SELECT i.*, a.name as agency_name, a.discount_percent
                FROM invoices i
                LEFT JOIN agencies a ON i.agency_id = a.id

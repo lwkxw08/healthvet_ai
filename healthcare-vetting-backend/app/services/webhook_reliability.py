@@ -36,7 +36,7 @@ class WebhookReliabilityService:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            sub = db.execute(
+            db.execute(
                 "SELECT * FROM webhook_subscriptions WHERE id=%s AND is_active=1",
                 (subscription_id,),
             )
@@ -123,7 +123,7 @@ class WebhookReliabilityService:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            delivery = db.execute(
+            db.execute(
                 "SELECT * FROM webhook_deliveries WHERE id=%s", (delivery_id,)
             )
             delivery = db.fetchone()
@@ -134,7 +134,7 @@ class WebhookReliabilityService:
             if d["status"] == "delivered":
                 return {"status": "already_delivered"}
 
-            sub = db.execute(
+            db.execute(
                 "SELECT * FROM webhook_subscriptions WHERE id=%s",
                 (d["subscription_id"],),
             )
@@ -207,7 +207,7 @@ class WebhookReliabilityService:
                         "UPDATE webhook_subscriptions SET failure_count=failure_count+1 WHERE id=%s",
                         (d["subscription_id"],),
                     )
-                    fc = db.execute(
+                    db.execute(
                         "SELECT failure_count FROM webhook_subscriptions WHERE id=%s",
                         (d["subscription_id"],),
                     )
@@ -237,7 +237,7 @@ class WebhookReliabilityService:
     def replay_event(delivery_id: str) -> dict:
         """Replay a webhook delivery (create a new delivery with same payload)."""
         with get_db() as db:
-            delivery = db.execute(
+            db.execute(
                 "SELECT * FROM webhook_deliveries WHERE id=%s", (delivery_id,)
             )
             delivery = db.fetchone()
@@ -257,7 +257,7 @@ class WebhookReliabilityService:
         """Get webhook delivery status dashboard."""
         with get_db() as db:
             if agency_id:
-                deliveries = db.execute(
+                db.execute(
                     """SELECT wd.*, ws.url, ws.agency_id
                        FROM webhook_deliveries wd
                        JOIN webhook_subscriptions ws ON wd.subscription_id = ws.id
@@ -267,7 +267,7 @@ class WebhookReliabilityService:
                 )
                 deliveries = db.fetchall()
             else:
-                deliveries = db.execute(
+                db.execute(
                     """SELECT wd.*, ws.url, ws.agency_id
                        FROM webhook_deliveries wd
                        JOIN webhook_subscriptions ws ON wd.subscription_id = ws.id
@@ -299,7 +299,7 @@ class WebhookReliabilityService:
     def get_failed_deliveries(limit: int = 50) -> list:
         """Get failed deliveries for alerting."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 """SELECT wd.*, ws.url, ws.agency_id
                    FROM webhook_deliveries wd
                    JOIN webhook_subscriptions ws ON wd.subscription_id = ws.id
@@ -328,10 +328,11 @@ class WebhookReliabilityService:
         """Process all deliveries that are due for retry. Called by scheduler."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            due = db.execute(
+            db.execute(
                 "SELECT id, attempt FROM webhook_deliveries WHERE status='pending_retry' AND next_retry_at <= %s",
                 (now,),
             )
+            due = db.fetchone()
             due = db.fetchall()
 
             results = []

@@ -36,7 +36,7 @@ class TrainingCertificateService:
     def get_certificates(candidate_id: str) -> list:
         """Get all training certificates for a candidate."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM training_certificates WHERE candidate_id=%s ORDER BY certificate_name",
                 (candidate_id,),
             )

@@ -51,7 +51,7 @@ async def register_candidate(request: Request, data: CandidateRegisterWithInvite
         # If invite_code provided, validate it
         invite = None
         if data.invite_code:
-            invite_row = db.execute(
+            db.execute(
                 "SELECT * FROM agency_invites WHERE invite_code=%s AND status='pending'",
                 (data.invite_code,),
             )

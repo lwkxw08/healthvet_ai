@@ -76,7 +76,7 @@ def deliver_webhook(subscription_id: str, event_type: str, payload: dict) -> dic
     delivery_id = generate_id()
 
     with get_db() as db:
-        sub = db.execute(
+        db.execute(
             "SELECT * FROM webhook_subscriptions WHERE id=%s AND is_active=1",
             (subscription_id,),
         )
@@ -145,7 +145,7 @@ def deliver_webhook(subscription_id: str, event_type: str, payload: dict) -> dic
                 "UPDATE webhook_subscriptions SET failure_count=failure_count+1 WHERE id=%s",
                 (subscription_id,),
             )
-            failure_count = db.execute(
+            db.execute(
                 "SELECT failure_count FROM webhook_subscriptions WHERE id=%s",
                 (subscription_id,),
             )
@@ -170,7 +170,7 @@ def apply_retention_policies() -> dict:
     deleted_count = 0
 
     with get_db() as db:
-        policies = db.execute(
+        db.execute(
             "SELECT * FROM gdpr_retention_policies WHERE auto_delete=1",
         )
         policies = db.fetchall()
@@ -190,7 +190,7 @@ def apply_retention_policies() -> dict:
 
             if category in category_map:
                 table, date_col = category_map[category]
-                result = db.execute(
+                db.execute(
                     f"DELETE FROM {table} WHERE {date_col}::timestamp < NOW() - INTERVAL '{days} days'",
                 )
                 deleted_count += result.rowcount

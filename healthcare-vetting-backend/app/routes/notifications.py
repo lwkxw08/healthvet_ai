@@ -38,7 +38,7 @@ async def get_notifications(
         rows = db.fetchall()
 
         # Get unread count
-        unread_count = db.execute(
+        db.execute(
             "SELECT COUNT(*) as cnt FROM in_app_notifications WHERE user_id=%s AND user_type=%s AND is_read=0",
             (user_id, user_type),
         )
@@ -58,7 +58,7 @@ async def get_unread_count(current_user: dict = Depends(get_current_user)):
     user_type = current_user["type"]
 
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT COUNT(*) as cnt FROM in_app_notifications WHERE user_id=%s AND user_type=%s AND is_read=0",
             (user_id, user_type),
         )
@@ -74,7 +74,7 @@ async def mark_notification_read(notification_id: str, current_user: dict = Depe
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM in_app_notifications WHERE id=%s AND user_id=%s AND user_type=%s",
             (notification_id, user_id, user_type),
         )
@@ -111,7 +111,7 @@ async def delete_notification(notification_id: str, current_user: dict = Depends
     user_type = current_user["type"]
 
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM in_app_notifications WHERE id=%s AND user_id=%s AND user_type=%s",
             (notification_id, user_id, user_type),
         )
@@ -164,7 +164,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
     with get_db() as db:
         if user_type == "agency":
             # Check for expiring candidates
-            candidates = db.execute(
+            db.execute(
                 """SELECT c.id, c.first_name, c.last_name
                    FROM candidates c
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
@@ -178,7 +178,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
                 cand_name = f"{cd['first_name']} {cd['last_name']}"
 
                 # Check DBS expiry
-                dbs = db.execute(
+                db.execute(
                     "SELECT next_renewal FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC LIMIT 1",
                     (cd["id"],),
                 )
@@ -201,7 +201,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
                         pass
 
                 # Check compliance status
-                comp = db.execute(
+                db.execute(
                     "SELECT overall_status, score FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
                     (cd["id"],),
                 )
@@ -226,7 +226,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
                         created += 1
 
             # Payment notifications
-            pending_invoices = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt, COALESCE(SUM(COALESCE(adjusted_amount, sell_amount)), 0) as total FROM invoices WHERE agency_id=%s AND status='pending'",
                 (user_id,),
             )
@@ -244,7 +244,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
 
         elif user_type == "candidate":
             # Check own compliance
-            comp = db.execute(
+            db.execute(
                 "SELECT overall_status, score, flags FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
                 (user_id,),
             )
@@ -270,7 +270,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
 
         elif user_type == "admin":
             # System overview notifications
-            pending_inv = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt FROM invoices WHERE status='pending'"
             )
             pending_inv = db.fetchone()
@@ -283,7 +283,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
                 )
                 created += 1
 
-            flagged = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt FROM candidates WHERE compliance_status IN ('flagged', 'incomplete')"
             )
             flagged = db.fetchone()

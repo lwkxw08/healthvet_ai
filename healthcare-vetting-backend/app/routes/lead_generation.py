@@ -52,7 +52,7 @@ def recover_stale_scrape_jobs():
     now = datetime.now(timezone.utc).isoformat()
     try:
         with get_db() as db:
-            stale = db.execute(
+            db.execute(
                 "SELECT id, status FROM scrape_jobs WHERE status IN ('pending', 'running')"
             )
             stale = db.fetchall()
@@ -91,7 +91,7 @@ def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: 
             inserted = 0
             for lead in leads:
                 # Check for duplicates
-                existing = db.execute(
+                db.execute(
                     "SELECT id FROM leads WHERE agency_name=%s AND source=%s",
                     (lead["name"], source),
                 )
@@ -316,7 +316,8 @@ async def list_leads(
 
     with get_db() as db:
         db.execute(count_query, count_params)
-        total = db.fetchone()
+        count_row = db.fetchone()
+        total = count_row["cnt"] if count_row else 0
         db.execute(query, params)
         rows = db.fetchall()
         return {
@@ -335,11 +336,14 @@ async def get_lead_stats(current_user: dict = Depends(get_current_user)):
 
     with get_db() as db:
         db.execute("SELECT COUNT(*) AS cnt FROM leads")
-        total = db.fetchone()
+        row = db.fetchone()
+        total = row["cnt"] if row else 0
         db.execute("SELECT COUNT(*) AS cnt FROM leads WHERE email IS NOT NULL AND email != ''")
-        with_email = db.fetchone()
+        row = db.fetchone()
+        with_email = row["cnt"] if row else 0
         db.execute("SELECT COUNT(*) AS cnt FROM leads WHERE phone IS NOT NULL AND phone != ''")
-        with_phone = db.fetchone()
+        row = db.fetchone()
+        with_phone = row["cnt"] if row else 0
 
         by_source = {}
         db.execute("SELECT source, COUNT(*) as cnt FROM leads GROUP BY source")
@@ -423,7 +427,7 @@ async def bulk_delete_leads(data: BulkDeleteRequest, current_user: dict = Depend
     deleted = 0
     with get_db() as db:
         for lead_id in data.lead_ids:
-            result = db.execute("DELETE FROM leads WHERE id=%s", (lead_id,))
+            db.execute("DELETE FROM leads WHERE id=%s", (lead_id,))
             deleted += result.rowcount
 
     return {"message": f"{deleted} leads deleted", "deleted_count": deleted}
@@ -580,7 +584,7 @@ async def scrape_professional_registration(data: RegistrationScrapeRequest, curr
         # If successful, also update the registration_checks table
         if result.get("success") and result.get("registration_status") != "unknown":
             # Find the latest registration check for this candidate
-            check = db.execute(
+            db.execute(
                 "SELECT id FROM registration_checks WHERE candidate_id=%s AND body=%s ORDER BY last_checked DESC LIMIT 1",
                 (data.candidate_id, data.body),
             )
@@ -609,7 +613,7 @@ async def scrape_professional_registration(data: RegistrationScrapeRequest, curr
 async def get_registration_scrapes(candidate_id: str, current_user: dict = Depends(get_current_user)):
     """Get all registration scrape results for a candidate."""
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM registration_scrape_results WHERE candidate_id=%s ORDER BY scraped_at DESC",
             (candidate_id,),
         )

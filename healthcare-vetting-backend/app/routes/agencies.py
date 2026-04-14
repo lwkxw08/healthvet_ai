@@ -22,7 +22,7 @@ def _get_agency_template_check_keys(db, agency_id: str) -> list[str]:
     template_id = None
 
     # 1. Agency-level template
-    agency = db.execute(
+    db.execute(
         "SELECT industry_template_id FROM agencies WHERE id=%s", (agency_id,)
     )
     agency = db.fetchone()
@@ -31,7 +31,7 @@ def _get_agency_template_check_keys(db, agency_id: str) -> list[str]:
 
     # 2. Fall back to default template
     if not template_id:
-        default_tmpl = db.execute(
+        db.execute(
             "SELECT id FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
         )
         default_tmpl = db.fetchone()
@@ -40,7 +40,7 @@ def _get_agency_template_check_keys(db, agency_id: str) -> list[str]:
 
     # 3. Load check keys from template
     if template_id:
-        checks = db.execute(
+        db.execute(
             "SELECT check_key FROM industry_template_checks WHERE template_id=%s AND is_enabled=1",
             (template_id,),
         )
@@ -68,14 +68,14 @@ async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
     with get_db() as db:
         # Resolve the agency's industry template
         template_id = None
-        agency = db.execute(
+        db.execute(
             "SELECT industry_template_id FROM agencies WHERE id=%s", (agency_id,)
         )
         agency = db.fetchone()
         if agency and dict(agency).get("industry_template_id"):
             template_id = dict(agency)["industry_template_id"]
         if not template_id:
-            default_tmpl = db.execute(
+            db.execute(
                 "SELECT id FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
             )
             default_tmpl = db.fetchone()
@@ -91,7 +91,7 @@ async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
             _sync_industry_pricing(db, template_id)
 
             # Read per-check pricing from industry_check_pricing
-            pricing_rows = db.execute(
+            db.execute(
                 "SELECT check_type, label, sell_price FROM industry_check_pricing WHERE industry_template_id=%s AND is_active=1",
                 (template_id,)
             )
@@ -102,7 +102,7 @@ async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
                 line_items.append({"check_type": p["check_type"], "label": p["label"], "sell_price": p["sell_price"] or 0})
 
         # Get monitoring price separately (always from pricing_settings, not per-industry)
-        monitoring_row = db.execute(
+        db.execute(
             "SELECT sell_price FROM pricing_settings WHERE check_type='monitoring'"
         )
         monitoring_row = db.fetchone()
@@ -134,7 +134,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
 
     with get_db() as db:
         # Get agency details including billing_mode
-        agency_row = db.execute(
+        db.execute(
             "SELECT name, billing_mode, stripe_customer_id, discount_percent FROM agencies WHERE id=%s",
             (agency_id,),
         )
@@ -145,7 +145,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
         discount_pct = float(agency_data.get("discount_percent") or 0)
 
         # Check if there's already a pending invite for this email from this agency
-        existing = db.execute(
+        db.execute(
             "SELECT id FROM agency_invites WHERE agency_id=%s AND candidate_email=%s AND status='pending'",
             (agency_id, data.candidate_email),
         )
@@ -297,7 +297,7 @@ async def list_invites(current_user: dict = Depends(get_current_user)):
         agency_row = db.fetchone()
         agency_name = dict(agency_row)["name"] if agency_row else "Unknown Agency"
 
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM agency_invites WHERE agency_id=%s ORDER BY created_at DESC",
             (agency_id,),
         )
@@ -318,7 +318,7 @@ async def revoke_invite(invite_id: str, current_user: dict = Depends(get_current
         raise HTTPException(status_code=403, detail="Agencies only")
 
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM agency_invites WHERE id=%s AND agency_id=%s",
             (invite_id, current_user["sub"]),
         )
@@ -345,7 +345,7 @@ async def resend_invite(invite_id: str, request: Request, current_user: dict = D
 
     agency_id = current_user["sub"]
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM agency_invites WHERE id=%s AND agency_id=%s",
             (invite_id, agency_id),
         )
@@ -387,7 +387,7 @@ async def resend_invite(invite_id: str, request: Request, current_user: dict = D
 async def get_invite_info(invite_code: str):
     """Public endpoint: get invite details by code (for registration page)."""
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             """SELECT ai.*, a.name as agency_name FROM agency_invites ai
                JOIN agencies a ON ai.agency_id = a.id
                WHERE ai.invite_code=%s AND ai.status='pending'""",
@@ -415,7 +415,7 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM agency_invites WHERE invite_code=%s AND status='pending'",
             (invite_code,),
         )
@@ -426,7 +426,7 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
         invite = dict(row)
 
         # Verify the candidate email matches the invite
-        candidate_row = db.execute(
+        db.execute(
             "SELECT email FROM candidates WHERE id=%s",
             (candidate_id,),
         )
@@ -440,7 +440,7 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
                 )
 
         # Check if already assigned
-        existing = db.execute(
+        db.execute(
             "SELECT 1 FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (invite["agency_id"], candidate_id),
         )
@@ -480,7 +480,7 @@ async def get_my_agencies(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Candidates only")
 
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             """SELECT a.id, a.name, a.email, a.contact_name, ac.assigned_at
                FROM agencies a
                JOIN agency_candidates ac ON a.id = ac.agency_id
@@ -498,7 +498,7 @@ async def get_pending_invites(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Candidates only")
 
     with get_db() as db:
-        candidate_row = db.execute(
+        db.execute(
             "SELECT email FROM candidates WHERE id=%s", (current_user["sub"],)
         )
         candidate_row = db.fetchone()
@@ -506,7 +506,7 @@ async def get_pending_invites(current_user: dict = Depends(get_current_user)):
             return []
 
         candidate_email = dict(candidate_row)["email"]
-        rows = db.execute(
+        db.execute(
             """SELECT ai.*, a.name as agency_name FROM agency_invites ai
                JOIN agencies a ON ai.agency_id = a.id
                WHERE ai.candidate_email=%s AND ai.status='pending'""",
@@ -540,7 +540,7 @@ async def update_candidate_status(
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
         )
@@ -593,14 +593,14 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
             by_type[ct]["total"] += effective_amount(inv)
 
         # Get candidate count
-        cand_count = db.execute(
+        db.execute(
             "SELECT COUNT(*) as cnt FROM agency_candidates WHERE agency_id=%s",
             (agency_id,),
         )
         cand_count = db.fetchone()
 
         # Include re-vet requests in the breakdown
-        revet_rows = db.execute(
+        db.execute(
             "SELECT rr.*, c.first_name, c.last_name FROM revet_requests rr JOIN candidates c ON rr.candidate_id = c.id WHERE rr.agency_id=%s",
             (agency_id,),
         )
@@ -614,7 +614,7 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
             sections = _json.loads(rd["sections"]) if rd["sections"] else []
             cand_name = f"{rd['first_name']} {rd['last_name']}"
             for sec in sections:
-                price_row = db.execute(
+                db.execute(
                     "SELECT sell_price, label FROM pricing_settings WHERE check_type=%s", (sec,)
                 )
                 price_row = db.fetchone()
@@ -680,7 +680,7 @@ async def request_revet(
     import json
     with get_db() as db:
         # Verify agency owns the candidate
-        row = db.execute(
+        db.execute(
             "SELECT * FROM agency_candidates WHERE agency_id=%s AND candidate_id=%s",
             (agency_id, candidate_id),
         )
@@ -702,7 +702,7 @@ async def request_revet(
         total_cost = 0.0
         section_costs = []
         for section in data.sections:
-            price_row = db.execute(
+            db.execute(
                 "SELECT sell_price, label FROM pricing_settings WHERE check_type=%s", (section,)
             )
             price_row = db.fetchone()
@@ -749,7 +749,7 @@ async def list_revet_requests(current_user: dict = Depends(get_current_user)):
     import json
     agency_id = current_user["sub"]
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             """SELECT rr.*, c.first_name, c.last_name, c.email
                FROM revet_requests rr
                JOIN candidates c ON rr.candidate_id = c.id
@@ -775,7 +775,7 @@ async def get_candidates_with_status(current_user: dict = Depends(get_current_us
 
     agency_id = current_user["sub"]
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             """SELECT c.id, c.first_name, c.last_name, c.email, c.compliance_score,
                       c.compliance_status, c.created_at,
                       ac.employment_status, ac.employment_status_updated_at, ac.assigned_at,
@@ -812,7 +812,7 @@ async def pay_invoice(invoice_id: str, current_user: dict = Depends(get_current_
 
     # Verify the invoice belongs to this agency
     with get_db() as db:
-        inv = db.execute(
+        db.execute(
             "SELECT id, agency_id, status FROM invoices WHERE id=%s", (invoice_id,)
         )
         inv = db.fetchone()

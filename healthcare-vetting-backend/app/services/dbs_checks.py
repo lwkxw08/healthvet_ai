@@ -137,7 +137,7 @@ class DBSCheckService:
     @staticmethod
     def get_checks_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC",
                 (candidate_id,),
             )

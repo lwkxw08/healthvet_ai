@@ -47,7 +47,7 @@ async def list_candidates(current_user: dict = Depends(get_current_user)):
 
     with get_db() as db:
         if current_user["type"] == "agency":
-            rows = db.execute(
+            db.execute(
                 """SELECT c.* FROM candidates c
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
                    WHERE ac.agency_id=%s

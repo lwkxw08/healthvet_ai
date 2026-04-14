@@ -31,7 +31,7 @@ class MonitoringService:
         now = datetime.now(timezone.utc)
 
         with get_db() as db:
-            checks = db.execute(
+            db.execute(
                 """SELECT d.*, c.first_name, c.last_name FROM dbs_checks d
                    JOIN candidates c ON d.candidate_id = c.id
                    WHERE d.update_service_registered = 1
@@ -72,7 +72,7 @@ class MonitoringService:
         threshold_90 = now + timedelta(days=90)
 
         with get_db() as db:
-            checks = db.execute(
+            db.execute(
                 """SELECT r.*, c.first_name, c.last_name FROM right_to_work_checks r
                    JOIN candidates c ON r.candidate_id = c.id
                    WHERE r.visa_expiry IS NOT NULL AND r.verified = 1""",
@@ -99,7 +99,7 @@ class MonitoringService:
                     continue
 
                 # Check if alert already exists
-                existing = db.execute(
+                db.execute(
                     """SELECT id FROM monitoring_alerts
                        WHERE candidate_id=%s AND alert_type='visa_expiry'
                        AND is_resolved=0""",
@@ -139,7 +139,7 @@ class MonitoringService:
         now = datetime.now(timezone.utc)
 
         with get_db() as db:
-            checks = db.execute(
+            db.execute(
                 """SELECT r.*, c.first_name, c.last_name FROM registration_checks r
                    JOIN candidates c ON r.candidate_id = c.id
                    WHERE r.next_check IS NOT NULL AND r.is_active = 1""",
@@ -185,7 +185,7 @@ class MonitoringService:
         now = datetime.now(timezone.utc)
 
         with get_db() as db:
-            checks = db.execute(
+            db.execute(
                 """SELECT r.*, c.first_name, c.last_name FROM registration_checks r
                    JOIN candidates c ON r.candidate_id = c.id
                    WHERE r.is_active = 1""",
@@ -274,7 +274,7 @@ class MonitoringService:
     def get_dashboard_stats(agency_id: str = None) -> dict:
         with get_db() as db:
             if agency_id:
-                candidates = db.execute(
+                db.execute(
                     """SELECT c.* FROM candidates c
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
                        WHERE ac.agency_id=%s""",
@@ -290,12 +290,12 @@ class MonitoringService:
             pending = sum(1 for c in candidates if dict(c)["compliance_status"] in ("in_progress", "pending_review"))
             flagged = sum(1 for c in candidates if dict(c)["compliance_status"] == "incomplete")
 
-            alerts = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt FROM monitoring_alerts WHERE is_resolved=0",
             )
             alerts = db.fetchone()
 
-            checks_in_progress = db.execute(
+            db.execute(
                 """SELECT COUNT(*) as cnt FROM (
                     SELECT candidate_id FROM identity_checks WHERE status='processing'
                     UNION ALL

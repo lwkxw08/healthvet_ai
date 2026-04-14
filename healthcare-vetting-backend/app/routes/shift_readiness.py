@@ -14,7 +14,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
     """
     with get_db() as db:
         # Get compliance record
-        comp = db.execute(
+        db.execute(
             "SELECT * FROM compliance_records WHERE candidate_id=%s ORDER BY last_evaluated DESC LIMIT 1",
             (candidate_id,),
         )
@@ -76,7 +76,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
         now = datetime.now(timezone.utc)
 
         # Check DBS expiry
-        dbs = db.execute(
+        db.execute(
             "SELECT next_renewal FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -95,7 +95,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
                 pass
 
         # Check visa expiry
-        rtw = db.execute(
+        db.execute(
             "SELECT visa_expiry FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC LIMIT 1",
             (candidate_id,),
         )
@@ -114,7 +114,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
                 pass
 
         # Check training certificate expiries
-        training_certs = db.execute(
+        db.execute(
             "SELECT certificate_name, expiry_date, status FROM training_certificates WHERE candidate_id=%s",
             (candidate_id,),
         )
@@ -152,7 +152,7 @@ async def get_shift_readiness(candidate_id: str, current_user: dict = Depends(ge
             label = "Not Ready to Work"
 
         # Get candidate employment status from agency
-        emp_status_row = db.execute(
+        db.execute(
             "SELECT employment_status FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
             (candidate_id,),
         )
@@ -184,7 +184,7 @@ async def get_agency_readiness_overview(current_user: dict = Depends(get_current
 
     with get_db() as db:
         # Get all agency candidates
-        candidates = db.execute(
+        db.execute(
             """SELECT c.id, c.first_name, c.last_name, c.email, c.profession,
                       ac.employment_status,
                       cr.score, cr.cqc_ready, cr.overall_status,

@@ -276,7 +276,7 @@ def get_cv_analyses(candidate_id: str) -> list[dict]:
     """Get all AI CV gap analyses for a candidate."""
     with get_db() as db:
         try:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM ai_cv_gap_analyses WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
             )

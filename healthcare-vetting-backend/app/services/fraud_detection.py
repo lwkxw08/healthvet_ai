@@ -37,7 +37,7 @@ class FraudDetectionService:
 
         with get_db() as db:
             # Check DBS certificate numbers used by multiple candidates
-            dbs_dupes = db.execute(
+            db.execute(
                 """SELECT certificate_number, GROUP_CONCAT(candidate_id) as candidates,
                           COUNT(DISTINCT candidate_id) as cnt
                    FROM dbs_checks
@@ -61,7 +61,7 @@ class FraudDetectionService:
                 _create_fraud_alert(db, flag, now)
 
             # Check registration numbers used by multiple candidates
-            reg_dupes = db.execute(
+            db.execute(
                 """SELECT registration_number, body, GROUP_CONCAT(candidate_id) as candidates,
                           COUNT(DISTINCT candidate_id) as cnt
                    FROM registration_checks
@@ -86,7 +86,7 @@ class FraudDetectionService:
                 _create_fraud_alert(db, flag, now)
 
             # Check NI numbers used by multiple candidates
-            ni_dupes = db.execute(
+            db.execute(
                 """SELECT ni_number, GROUP_CONCAT(candidate_id) as candidates,
                           COUNT(DISTINCT candidate_id) as cnt
                    FROM right_to_work_checks
@@ -119,7 +119,7 @@ class FraudDetectionService:
 
         with get_db() as db:
             # Get all references with candidate emails
-            refs = db.execute(
+            db.execute(
                 """SELECT r.candidate_id, r.referee_email, c.email as candidate_email
                    FROM references_ r
                    JOIN candidates c ON r.candidate_id = c.id""",
@@ -158,7 +158,7 @@ class FraudDetectionService:
                                 _create_fraud_alert(db, flag, now)
 
             # Also check employment verifications for rings
-            emp_vers = db.execute(
+            db.execute(
                 """SELECT ev.candidate_id, ev.verifier_email, c.email as candidate_email
                    FROM employment_verifications ev
                    JOIN candidates c ON ev.candidate_id = c.id""",
@@ -212,7 +212,7 @@ class FraudDetectionService:
                     ("dbs_checks", "completed_at"),
                     ("cv_analyses", "analysed_at"),
                 ]:
-                    row = db.execute(
+                    db.execute(
                         f"SELECT {col} FROM {table} WHERE candidate_id=%s AND {col} IS NOT NULL ORDER BY {col} DESC LIMIT 1",
                         (cid,),
                     )
@@ -237,7 +237,7 @@ class FraudDetectionService:
                         flags.append(flag)
 
             # Check for same referee used across many unrelated candidates
-            referee_counts = db.execute(
+            db.execute(
                 """SELECT referee_email, COUNT(DISTINCT candidate_id) as cnt,
                           GROUP_CONCAT(DISTINCT candidate_id) as candidates
                    FROM references_
@@ -269,7 +269,7 @@ class FraudDetectionService:
 
         with get_db() as db:
             # References using free email domains for professional references
-            free_refs = db.execute(
+            db.execute(
                 """SELECT r.*, c.first_name, c.last_name
                    FROM references_ r
                    JOIN candidates c ON r.candidate_id = c.id""",
@@ -307,16 +307,17 @@ class FraudDetectionService:
         """Get stored fraud flags."""
         with get_db() as db:
             if candidate_id:
-                rows = db.execute(
+                db.execute(
                     """SELECT * FROM fraud_flags WHERE candidate_id=%s
                        ORDER BY created_at DESC""",
                     (candidate_id,),
                 )
                 rows = db.fetchall()
             else:
-                rows = db.execute(
+                db.execute(
                     "SELECT * FROM fraud_flags ORDER BY created_at DESC LIMIT 100",
                 )
+                rows = db.fetchone()
                 rows = db.fetchall()
             return [dict(r) for r in rows]
 
@@ -326,13 +327,14 @@ class FraudDetectionService:
         with get_db() as db:
             db.execute("SELECT COUNT(*) as cnt FROM fraud_flags")
             total = db.fetchone()
-            by_type = db.execute(
+            db.execute(
                 """SELECT flag_type, severity, COUNT(*) as cnt
                    FROM fraud_flags GROUP BY flag_type, severity
                    ORDER BY cnt DESC""",
             )
+            by_type = db.fetchone()
             by_type = db.fetchall()
-            unresolved = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt FROM fraud_flags WHERE is_resolved=0",
             )
             unresolved = db.fetchone()
@@ -351,7 +353,7 @@ def _create_fraud_alert(db, flag: dict, timestamp: str):
         return
 
     # Check if similar flag already exists
-    existing = db.execute(
+    db.execute(
         """SELECT id FROM fraud_flags
            WHERE flag_type=%s AND candidate_id=%s AND is_resolved=0""",
         (flag["type"], candidate_id),

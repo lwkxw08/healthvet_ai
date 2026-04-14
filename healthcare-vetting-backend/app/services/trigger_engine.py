@@ -29,7 +29,7 @@ class TriggerEngine:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            sub = db.execute(
+            db.execute(
                 "SELECT * FROM candidate_submissions WHERE id=%s", (submission_id,)
             )
             sub = db.fetchone()
@@ -47,7 +47,7 @@ class TriggerEngine:
             )
 
             # Load all section draft data
-            drafts = db.execute(
+            db.execute(
                 "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (submission_id,)
             )
             drafts = db.fetchall()
@@ -93,7 +93,7 @@ class TriggerEngine:
             try:
                 # Get candidate info for TrustID records
                 with get_db() as db:
-                    cand = db.execute(
+                    db.execute(
                         "SELECT first_name, last_name, email, date_of_birth FROM candidates WHERE id=%s",
                         (candidate_id,),
                     )
@@ -129,8 +129,8 @@ class TriggerEngine:
             except Exception as e:
                 logger.error(f"Failed to create TrustID check records: {e}")
 
-        if "cv" in sections and "cv" in section_data:
-            results["cv"] = TriggerEngine._run_cv(candidate_id, section_data["cv"])
+        if "cv" in sections:
+            results["cv"] = TriggerEngine._run_cv(candidate_id, section_data.get("cv", {}))
 
         if "registration" in sections:
             results["registration"] = TriggerEngine._run_registration(candidate_id, section_data.get("registration", {}))
@@ -156,7 +156,7 @@ class TriggerEngine:
             )
 
             # If this is a re-vet, mark the re-vet request as completed
-            revet = db.execute(
+            db.execute(
                 "SELECT id FROM revet_requests WHERE submission_id=%s", (submission_id,)
             )
             revet = db.fetchone()
@@ -183,7 +183,7 @@ class TriggerEngine:
         try:
             # Get candidate name for the check
             with get_db() as db:
-                cand = db.execute(
+                db.execute(
                     "SELECT first_name, last_name, date_of_birth FROM candidates WHERE id=%s",
                     (candidate_id,),
                 )
@@ -236,11 +236,12 @@ class TriggerEngine:
         try:
             with get_db() as db:
                 # Get candidate details
-                db.execute("SELECT full_name, email FROM candidates WHERE id=%s", (candidate_id,))
+                db.execute("SELECT first_name, last_name, email FROM candidates WHERE id=%s", (candidate_id,))
                 cand = db.fetchone()
                 if not cand:
                     return
-                cand_name = dict(cand).get("full_name", "Unknown")
+                cand_d = dict(cand)
+                cand_name = f"{cand_d.get('first_name', '')} {cand_d.get('last_name', '')}".strip() or "Unknown"
 
                 # Get linked agency
                 db.execute(
@@ -318,10 +319,66 @@ class TriggerEngine:
         try:
             cv_text = data.get("cv_text", "")
             cv_file_name = data.get("cv_file_name")
+            cv_file_bytes = None
             result = "skipped"
-            if cv_text:
-                CVAnalysisService.analyse_cv(candidate_id, cv_text, cv_file_name)
+
+            # If no cv_text in the data dict, also check candidate_draft_data for CV text
+            if not cv_text:
+                try:
+                    with get_db() as db:
+                        db.execute(
+                            "SELECT data FROM candidate_draft_data WHERE candidate_id=%s AND section='cv' ORDER BY updated_at DESC LIMIT 1",
+                            (candidate_id,),
+                        )
+                        draft = db.fetchone()
+                        if draft:
+                            draft_data = json.loads(dict(draft)["data"]) if isinstance(dict(draft)["data"], str) else dict(draft)["data"]
+                            cv_text = draft_data.get("cv_text", "")
+                            if not cv_file_name:
+                                cv_file_name = draft_data.get("cv_file_name")
+                            logger.info("Found CV text in draft data for candidate %s: %d chars", candidate_id, len(cv_text))
+                except Exception as e:
+                    logger.warning("Failed to check draft data for CV text: %s", e)
+
+            # If still no cv_text, try to find an uploaded CV document
+            if not cv_text:
+                try:
+                    with get_db() as db:
+                        db.execute(
+                            "SELECT file_name, file_path FROM candidate_documents WHERE candidate_id=%s AND document_type='cv' ORDER BY uploaded_at DESC LIMIT 1",
+                            (candidate_id,),
+                        )
+                        doc = db.fetchone()
+                        if doc:
+                            doc_data = dict(doc)
+                            cv_file_name = doc_data.get("file_name")
+                            file_path = doc_data.get("file_path")
+                            # Try to read the file from storage
+                            if file_path:
+                                import os
+                                if os.path.exists(file_path):
+                                    with open(file_path, "rb") as f:
+                                        cv_file_bytes = f.read()
+                                    logger.info("Read CV file from local storage: %s", file_path)
+                                else:
+                                    # Try S3/R2 storage
+                                    try:
+                                        from app.services.document_storage import get_storage_backend
+                                        storage = get_storage_backend()
+                                        file_obj, _name, _ct = storage.download(file_path)
+                                        cv_file_bytes = file_obj.read()
+                                        logger.info("Read CV file from cloud storage: %s", file_path)
+                                    except Exception as e2:
+                                        logger.warning("Could not read CV from cloud storage: %s", e2)
+                except Exception as e:
+                    logger.warning("Failed to retrieve uploaded CV document: %s", e)
+
+            if cv_text or cv_file_bytes:
+                CVAnalysisService.analyse_cv(candidate_id, cv_text or "", cv_file_name, cv_file_bytes)
                 result = "completed"
+            else:
+                # If we still have no CV data at all, log it clearly and mark as skipped
+                logger.warning("CV check skipped for candidate %s: no cv_text in submission data, no draft data, and no uploaded file found", candidate_id)
 
             # Create employment history entries (independent of CV text)
             entries = data.get("employment_entries", [])
@@ -368,7 +425,7 @@ class TriggerEngine:
         """Fire professional registration check."""
         try:
             with get_db() as db:
-                cand = db.execute(
+                db.execute(
                     "SELECT registration_body, registration_number FROM candidates WHERE id=%s",
                     (candidate_id,),
                 )
@@ -410,17 +467,18 @@ class TriggerEngine:
         try:
             with get_db() as db:
                 # Get all employment entries with verifier details
-                entries = db.execute(
+                db.execute(
                     "SELECT * FROM employment_history WHERE candidate_id=%s AND verifier_name IS NOT NULL AND verifier_email IS NOT NULL",
                     (candidate_id,),
                 )
                 entries = db.fetchall()
 
                 # Get existing verifications to avoid duplicates
-                existing = db.execute(
+                db.execute(
                     "SELECT employment_id FROM employment_verifications WHERE candidate_id=%s",
                     (candidate_id,),
                 )
+                existing = db.fetchone()
                 existing = db.fetchall()
                 existing_ids = {dict(e)["employment_id"] for e in existing}
 

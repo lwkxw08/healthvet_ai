@@ -91,7 +91,7 @@ class EmailService:
             agencies = db.fetchall()
             for agency in agencies:
                 a = dict(agency)
-                candidates = db.execute(
+                db.execute(
                     "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s",
                     (a["id"],),
                 )

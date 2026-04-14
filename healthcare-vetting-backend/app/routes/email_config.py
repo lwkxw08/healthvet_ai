@@ -69,7 +69,7 @@ class TrustSettingsUpdate(BaseModel):
 
 def _get_setting(db, key: str) -> str:
     """Get a single setting value from the database."""
-    row = db.execute(
+    db.execute(
         "SELECT setting_value FROM system_settings WHERE setting_key = %s", (key,)
     )
     row = db.fetchone()

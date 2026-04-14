@@ -199,13 +199,13 @@ class SMSService:
         """Get SMS notification history."""
         with get_db() as db:
             if user_id:
-                rows = db.execute(
+                db.execute(
                     "SELECT * FROM sms_notifications WHERE user_id=%s ORDER BY created_at DESC LIMIT %s OFFSET %s",
                     (user_id, limit, offset),
                 )
                 rows = db.fetchall()
             else:
-                rows = db.execute(
+                db.execute(
                     "SELECT * FROM sms_notifications ORDER BY created_at DESC LIMIT %s OFFSET %s",
                     (limit, offset),
                 )

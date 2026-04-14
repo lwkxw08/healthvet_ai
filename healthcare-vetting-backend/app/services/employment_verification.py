@@ -24,7 +24,7 @@ class EmploymentVerificationService:
     @staticmethod
     def get_employment_history(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM employment_history WHERE candidate_id=%s ORDER BY start_date DESC",
                 (candidate_id,),
             )
@@ -34,7 +34,7 @@ class EmploymentVerificationService:
     @staticmethod
     def get_employment_entry(entry_id: str) -> dict | None:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             )
             row = db.fetchone()
@@ -55,7 +55,7 @@ class EmploymentVerificationService:
         verifier_job_title: str | None = None,
     ) -> dict | None:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             )
             row = db.fetchone()
@@ -92,7 +92,7 @@ class EmploymentVerificationService:
                 ),
             )
 
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             )
             row = db.fetchone()
@@ -131,7 +131,7 @@ class EmploymentVerificationService:
                 ),
             )
 
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             )
             row = db.fetchone()
@@ -140,7 +140,7 @@ class EmploymentVerificationService:
     @staticmethod
     def delete_employment_entry(entry_id: str) -> bool:
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (entry_id,)
             )
             row = db.fetchone()
@@ -172,7 +172,7 @@ class EmploymentVerificationService:
 
         with get_db() as db:
             # Get employment entry for context
-            emp = db.execute(
+            db.execute(
                 "SELECT * FROM employment_history WHERE id=%s", (employment_id,)
             )
             emp = db.fetchone()
@@ -229,7 +229,7 @@ class EmploymentVerificationService:
             # to enter their code and submit a structured response.
             # _simulate_verification_response() is retained for dev/demo seeding only.
 
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM employment_verifications WHERE id=%s", (ver_id,)
             )
             row = db.fetchone()
@@ -330,7 +330,7 @@ class EmploymentVerificationService:
     def send_reminder(verification_id: str) -> dict | None:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM employment_verifications WHERE id=%s", (verification_id,)
             )
             row = db.fetchone()
@@ -403,26 +403,26 @@ class EmploymentVerificationService:
         from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
 
         with get_db() as db:
-            cand = db.execute(
+            db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
             )
             cand = db.fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
-            emp = db.execute(
+            db.execute(
                 "SELECT employer_name, job_title, start_date, end_date FROM employment_history WHERE id=%s",
                 (employment_id,)
             )
             emp = db.fetchone()
             emp_data = dict(emp) if emp else {}
 
-            agency_link = db.execute(
+            db.execute(
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             )
             agency_link = db.fetchone()
             agency_name = "Viper AI"
             if agency_link:
-                agency = db.execute(
+                db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
                 )
                 agency = db.fetchone()
@@ -467,19 +467,19 @@ class EmploymentVerificationService:
         from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
 
         with get_db() as db:
-            cand = db.execute(
+            db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
             )
             cand = db.fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
-            agency_link = db.execute(
+            db.execute(
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             )
             agency_link = db.fetchone()
             agency_name = "Viper AI"
             if agency_link:
-                agency = db.execute(
+                db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
                 )
                 agency = db.fetchone()
@@ -512,7 +512,7 @@ class EmploymentVerificationService:
     @staticmethod
     def get_verifications_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM employment_verifications WHERE candidate_id=%s ORDER BY sent_at DESC",
                 (candidate_id,),
             )
@@ -522,7 +522,7 @@ class EmploymentVerificationService:
     @staticmethod
     def get_verifications_for_employment(employment_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM employment_verifications WHERE employment_id=%s ORDER BY sent_at DESC",
                 (employment_id,),
             )

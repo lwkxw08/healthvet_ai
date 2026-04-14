@@ -307,7 +307,7 @@ async def submit_imposter_declaration(
         agency_email = dict(agency_row)["email"] if agency_row else "unknown"
 
         # Check if declaration already exists (non-editable - only one allowed)
-        existing = db.execute(
+        db.execute(
             "SELECT id FROM imposter_declarations WHERE candidate_id=%s AND agency_id=%s",
             (data.candidate_id, agency_id),
         )
@@ -362,7 +362,7 @@ async def get_imposter_declarations(candidate_id: str, current_user: dict = Depe
     """Get imposter declarations for a candidate."""
     verify_agency_owns_candidate(current_user, candidate_id)
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM imposter_declarations WHERE candidate_id=%s ORDER BY created_at DESC",
             (candidate_id,),
         )

@@ -75,7 +75,7 @@ async def list_scheduled_reports(user=Depends(get_current_user)):
     """List scheduled reports for the authenticated agency."""
     agency_id = user["sub"]
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM scheduled_reports WHERE agency_id=%s ORDER BY created_at DESC",
             (agency_id,),
         )
@@ -114,7 +114,7 @@ async def update_scheduled_report(report_id: str, data: dict, user=Depends(get_c
     """Update a scheduled report."""
     agency_id = user["sub"]
     with get_db() as db:
-        existing = db.execute(
+        db.execute(
             "SELECT id FROM scheduled_reports WHERE id=%s AND agency_id=%s",
             (report_id, agency_id),
         )
@@ -163,9 +163,11 @@ async def admin_analytics_overview(user=Depends(get_current_admin)):
 
     with get_db() as db:
         db.execute("SELECT COUNT(*) AS cnt FROM agencies")
-        total_agencies = db.fetchone()
+        row = db.fetchone()
+        total_agencies = row["cnt"] if row else 0
         db.execute("SELECT COUNT(*) AS cnt FROM candidates")
-        total_candidates = db.fetchone()
+        row = db.fetchone()
+        total_candidates = row["cnt"] if row else 0
         total_checks = 0
         for table in ["identity_checks", "dbs_checks", "right_to_work_checks", "registration_checks"]:
             try:
@@ -178,7 +180,8 @@ async def admin_analytics_overview(user=Depends(get_current_admin)):
         db.execute(
             "SELECT COUNT(*) AS cnt FROM agency_subscriptions WHERE status='active'"
         )
-        active_subs = db.fetchone()["cnt"]
+        row = db.fetchone()
+        active_subs = row["cnt"] if row else 0
 
     time_to_clear = AnalyticsReportingService.get_time_to_clear()
     response_rates = AnalyticsReportingService.get_verification_response_rates()

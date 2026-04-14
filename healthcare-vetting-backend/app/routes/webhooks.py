@@ -88,7 +88,7 @@ async def dbs_provider_webhook(request: Request):
                 ),
             )
 
-            check = db.execute(
+            db.execute(
                 "SELECT candidate_id FROM dbs_checks WHERE application_ref=%s",
                 (application_ref,),
             )
@@ -192,13 +192,13 @@ async def stripe_webhook(request: Request):
                     logger.error("Failed to allocate credits for agency=%s: %s", agency_id, e)
             elif agency_id and invoice_id:
                 # Check if this invoice is for a credit_pack purchase
-                inv_row = db.execute(
+                db.execute(
                     "SELECT check_type, description FROM invoices WHERE id=%s", (invoice_id,)
                 )
                 inv_row = db.fetchone()
                 if inv_row and dict(inv_row).get("check_type") == "credit_pack":
                     # Invoice is a credit pack — look up agency's pending subscription
-                    pending_sub = db.execute(
+                    db.execute(
                         """SELECT * FROM agency_subscriptions
                            WHERE agency_id=%s AND status='active'
                            ORDER BY created_at DESC LIMIT 1""",
@@ -207,7 +207,7 @@ async def stripe_webhook(request: Request):
                     pending_sub = db.fetchone()
                     if not pending_sub:
                         # No active sub yet — try to find the tier from available tiers
-                        tier_row = db.execute(
+                        db.execute(
                             "SELECT tier_key FROM subscription_tier_config WHERE is_active=1 ORDER BY monthly_price ASC LIMIT 1"
                         )
                         tier_row = db.fetchone()
@@ -256,7 +256,7 @@ async def stripe_webhook(request: Request):
 async def list_webhook_events(limit: int = 50):
     """List recent webhook events for debugging."""
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT * FROM webhook_events ORDER BY created_at DESC LIMIT %s",
             (limit,),
         )

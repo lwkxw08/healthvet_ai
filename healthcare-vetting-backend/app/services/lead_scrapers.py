@@ -143,7 +143,7 @@ def _extract_profile_data(profile_url):
         if resp.status_code != 200:
             return None
         stores_match = re.search(
-            r'window\.stores\s*=\s*(\{.*%s\});\s*</script>',
+            r'window\.stores\s*=\s*(\{.*?\});\s*</script>',
             resp.text, re.DOTALL,
         )
         if not stores_match:

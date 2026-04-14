@@ -288,7 +288,7 @@ class ReportService:
     def _get_compliance_rows(agency_id: str = None) -> list:
         with get_db() as db:
             if agency_id:
-                rows = db.execute(
+                db.execute(
                     """SELECT c.* FROM candidates c
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
                        WHERE ac.agency_id=%s""",
@@ -305,7 +305,7 @@ class ReportService:
         """Generate compliance summary PDF."""
         with get_db() as db:
             if agency_id:
-                candidates = db.execute(
+                db.execute(
                     """SELECT c.* FROM candidates c
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
                        WHERE ac.agency_id=%s""",

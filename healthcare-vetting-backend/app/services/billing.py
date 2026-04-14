@@ -18,7 +18,7 @@ class BillingService:
     def get_tiers() -> dict:
         """Get all credit pack tiers from the database."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM subscription_tier_config WHERE is_active=1 ORDER BY monthly_price ASC"
             )
             rows = db.fetchall()
@@ -56,7 +56,7 @@ class BillingService:
         """Update a subscription tier configuration."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
             )
             row = db.fetchone()
@@ -88,7 +88,7 @@ class BillingService:
                 values = list(updates.values()) + [tier_key]
                 db.execute(f"UPDATE subscription_tier_config SET {set_clause} WHERE tier_key=%s", values)
 
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
             )
             row = db.fetchone()
@@ -109,7 +109,7 @@ class BillingService:
             raise ValueError("tier_key is required")
 
         with get_db() as db:
-            existing = db.execute(
+            db.execute(
                 "SELECT id FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
             )
             existing = db.fetchone()
@@ -143,7 +143,7 @@ class BillingService:
         """Soft-delete a subscription tier (set is_active=0)."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
             )
             row = db.fetchone()
@@ -177,7 +177,7 @@ class BillingService:
         """Update a partial credit rate."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)
             )
             row = db.fetchone()
@@ -208,7 +208,7 @@ class BillingService:
         rate_id = generate_id()
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            existing = db.execute(
+            db.execute(
                 "SELECT id FROM partial_credit_rates WHERE check_type=%s", (data["check_type"],)
             )
             existing = db.fetchone()
@@ -228,7 +228,7 @@ class BillingService:
     def delete_partial_credit_rate(check_type: str) -> dict:
         """Delete a partial credit rate."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)
             )
             row = db.fetchone()
@@ -241,7 +241,7 @@ class BillingService:
     def get_agency_subscription(agency_id: str) -> dict:
         """Get current subscription for an agency."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             )
@@ -261,7 +261,7 @@ class BillingService:
 
         with get_db() as db:
             # Get tier config from DB
-            tier_row = db.execute(
+            db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s AND is_active=1", (tier,)
             )
             tier_row = db.fetchone()
@@ -274,7 +274,7 @@ class BillingService:
             pack_name = tier_info["name"]
 
             # Check if agency has an active credit pack with remaining credits
-            existing = db.execute(
+            db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             )
@@ -353,7 +353,7 @@ class BillingService:
 
         with get_db() as db:
             # Find expired or nearly-expired credit packs
-            expired_subs = db.execute(
+            db.execute(
                 """SELECT s.*, a.name as agency_name, a.email as agency_email
                    FROM agency_subscriptions s
                    JOIN agencies a ON s.agency_id = a.id
@@ -424,7 +424,7 @@ class BillingService:
     def get_billing_history(agency_id: str) -> list:
         """Get billing/invoice history for an agency."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 """SELECT * FROM invoices WHERE agency_id=%s
                    ORDER BY created_at DESC""",
                 (agency_id,),
@@ -449,7 +449,7 @@ class BillingService:
     def get_remaining_checks(agency_id: str) -> dict:
         """Get remaining check credits for an agency's active credit pack."""
         with get_db() as db:
-            sub = db.execute(
+            db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             )
@@ -471,7 +471,7 @@ class BillingService:
             credits_used = float(s.get("credits_used") or 0)
             credits_remaining = max(0, credits_total - credits_used)
 
-            tier_row = db.execute(
+            db.execute(
                 "SELECT * FROM subscription_tier_config WHERE tier_key=%s", (s["tier"],)
             )
             tier_row = db.fetchone()
@@ -523,14 +523,14 @@ class BillingService:
         If no credits or pack expired, creates a PAYG invoice instead."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            sub = db.execute(
+            db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             )
             sub = db.fetchone()
 
             # Look up credit value for this check type
-            pcr = db.execute(
+            db.execute(
                 "SELECT * FROM partial_credit_rates WHERE check_type=%s", (check_type,)
             )
             pcr = db.fetchone()
@@ -628,7 +628,7 @@ class BillingService:
     def get_credit_transactions(agency_id: str, limit: int = 50) -> list:
         """Get credit transaction history for an agency."""
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 """SELECT ct.*, c.first_name, c.last_name
                    FROM credit_transactions ct
                    LEFT JOIN candidates c ON ct.candidate_id = c.id
@@ -651,7 +651,7 @@ class BillingService:
         """Enable or disable auto top-up for an agency's credit pack."""
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
-            sub = db.execute(
+            db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
                 (agency_id,),
             )
@@ -664,7 +664,7 @@ class BillingService:
 
             # Validate the auto-topup tier exists
             if enabled and auto_topup_tier:
-                tier_row = db.execute(
+                db.execute(
                     "SELECT * FROM subscription_tier_config WHERE tier_key=%s AND is_active=1",
                     (auto_topup_tier,),
                 )
@@ -690,7 +690,7 @@ class BillingService:
     def get_agency_billing_mode(agency_id: str) -> dict:
         """Get the billing mode for an agency."""
         with get_db() as db:
-            row = db.execute(
+            db.execute(
                 "SELECT id, name, billing_mode, stripe_customer_id FROM agencies WHERE id=%s",
                 (agency_id,),
             )
@@ -802,7 +802,7 @@ class BillingService:
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
-            inv = db.execute(
+            db.execute(
                 "SELECT * FROM invoices WHERE stripe_session_id=%s", (session_id,)
             )
             inv = db.fetchone()
@@ -901,7 +901,7 @@ class BillingService:
 
         with get_db() as db:
             # Find unpaid invoices older than 7 days
-            unpaid = db.execute(
+            db.execute(
                 """SELECT i.*, a.name as agency_name, a.email as agency_email, a.billing_mode
                    FROM invoices i
                    JOIN agencies a ON i.agency_id = a.id
@@ -909,6 +909,7 @@ class BillingService:
                    ORDER BY i.created_at ASC""",
                 (reminder_threshold,),
             )
+            unpaid = db.fetchone()
             unpaid = db.fetchall()
 
             for row in unpaid:

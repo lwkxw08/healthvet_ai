@@ -307,13 +307,13 @@ def get_reference_analyses(candidate_id: Optional[str] = None, reference_id: Opt
     with get_db() as db:
         try:
             if reference_id:
-                rows = db.execute(
+                db.execute(
                     "SELECT * FROM ai_reference_analyses WHERE reference_id=%s ORDER BY created_at DESC",
                     (reference_id,),
                 )
                 rows = db.fetchall()
             elif candidate_id:
-                rows = db.execute(
+                db.execute(
                     "SELECT * FROM ai_reference_analyses WHERE candidate_id=%s ORDER BY created_at DESC",
                     (candidate_id,),
                 )

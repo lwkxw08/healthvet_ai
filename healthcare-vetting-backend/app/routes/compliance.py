@@ -50,7 +50,7 @@ async def get_alerts(candidate_id: str = None, current_user: dict = Depends(get_
         # Agencies without a candidate_id filter get alerts for their candidates only
         from app.database import get_db
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s",
                 (current_user["sub"],),
             )

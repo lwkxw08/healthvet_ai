@@ -298,19 +298,19 @@ class ReferenceAutomationService:
 
         # Look up candidate and agency names
         with get_db() as db:
-            cand = db.execute(
+            db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
             )
             cand = db.fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
-            agency_link = db.execute(
+            db.execute(
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             )
             agency_link = db.fetchone()
             agency_name = "Viper AI"
             if agency_link:
-                agency = db.execute(
+                db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
                 )
                 agency = db.fetchone()
@@ -351,19 +351,19 @@ class ReferenceAutomationService:
         from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
 
         with get_db() as db:
-            cand = db.execute(
+            db.execute(
                 "SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,)
             )
             cand = db.fetchone()
             candidate_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Candidate"
 
-            agency_link = db.execute(
+            db.execute(
                 "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,)
             )
             agency_link = db.fetchone()
             agency_name = "Viper AI"
             if agency_link:
-                agency = db.execute(
+                db.execute(
                     "SELECT name FROM agencies WHERE id=%s", (dict(agency_link)["agency_id"],)
                 )
                 agency = db.fetchone()
@@ -405,7 +405,7 @@ class ReferenceAutomationService:
     @staticmethod
     def get_references_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
+            db.execute(
                 "SELECT * FROM references_ WHERE candidate_id=%s ORDER BY sent_at DESC",
                 (candidate_id,),
             )

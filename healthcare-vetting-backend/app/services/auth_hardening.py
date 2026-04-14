@@ -86,7 +86,7 @@ def validate_password_reset_token(raw_token: str) -> dict | None:
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT * FROM password_reset_tokens WHERE token_hash=%s AND used_at IS NULL AND expires_at>%s",
             (token_hash, now),
         )
@@ -126,7 +126,7 @@ def cleanup_expired_blacklist() -> int:
     """Remove expired entries from the blacklist. Returns count removed."""
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
-        cursor = db.execute("DELETE FROM token_blacklist WHERE expires_at<%s", (now,))
+        db.execute("DELETE FROM token_blacklist WHERE expires_at<%s", (now,))
         return cursor.rowcount
 
 
