@@ -470,6 +470,25 @@ async def accept_invite(invite_code: str, current_user: dict = Depends(get_curre
             (candidate_id, now, invite["id"]),
         )
 
+        # Link existing full_vetting invoices (created at invite time without candidate_id)
+        # to this candidate so billing guards work correctly
+        candidate_email_lower = invite["candidate_email"].lower()
+        db.execute(
+            """UPDATE invoices SET candidate_id=%s
+               WHERE agency_id=%s AND check_type IN ('full_vetting', 'vetting')
+               AND (candidate_id IS NULL OR candidate_id = '')
+               AND LOWER(description) LIKE %s""",
+            (candidate_id, invite["agency_id"], f"%{candidate_email_lower}%"),
+        )
+        # Also link annual_monitoring invoices
+        db.execute(
+            """UPDATE invoices SET candidate_id=%s
+               WHERE agency_id=%s AND check_type='annual_monitoring'
+               AND (candidate_id IS NULL OR candidate_id = '')
+               AND LOWER(description) LIKE %s""",
+            (candidate_id, invite["agency_id"], f"%{candidate_email_lower}%"),
+        )
+
     return {"status": "accepted", "message": "You have been linked to the agency. Complete your vetting checks to proceed."}
 
 

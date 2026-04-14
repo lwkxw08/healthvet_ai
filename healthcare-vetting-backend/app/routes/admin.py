@@ -511,9 +511,13 @@ async def generate_invoices_for_agency(
 
             # If candidate already has a full_vetting invoice from the invite
             # flow, skip per-check line items (but still generate re-vet invoices)
+            # Check by candidate_id first, then also by candidate email in description
+            cand_email = c.get("email", "")
             db.execute(
-                "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type='full_vetting'",
-                (agency_id, c["id"]),
+                """SELECT id FROM invoices WHERE agency_id=%s
+                   AND check_type IN ('full_vetting', 'vetting')
+                   AND (candidate_id=%s OR (candidate_id IS NULL AND LOWER(description) LIKE %s))""",
+                (agency_id, c["id"], f"%{cand_email.lower()}%" if cand_email else "%%_no_match_%%"),
             )
             has_full_vetting = db.fetchone()
 
@@ -654,9 +658,12 @@ async def generate_grouped_invoice(
 
             # If candidate already has a full_vetting invoice from the invite
             # flow, skip per-check line items (but still generate re-vet invoices)
+            # Check by candidate_id first, then also by candidate email in description
             db.execute(
-                "SELECT id FROM invoices WHERE agency_id=%s AND candidate_id=%s AND check_type='full_vetting'",
-                (data.agency_id, c["id"]),
+                """SELECT id FROM invoices WHERE agency_id=%s
+                   AND check_type IN ('full_vetting', 'vetting')
+                   AND (candidate_id=%s OR (candidate_id IS NULL AND LOWER(description) LIKE %s))""",
+                (data.agency_id, c["id"], f"%{cand_email.lower()}%" if cand_email else "%%_no_match_%%"),
             )
             has_full_vetting = db.fetchone()
 
