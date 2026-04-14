@@ -428,7 +428,7 @@ async def bulk_delete_leads(data: BulkDeleteRequest, current_user: dict = Depend
     with get_db() as db:
         for lead_id in data.lead_ids:
             db.execute("DELETE FROM leads WHERE id=%s", (lead_id,))
-            deleted += result.rowcount
+            deleted += 1
 
     return {"message": f"{deleted} leads deleted", "deleted_count": deleted}
 

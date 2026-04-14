@@ -35,7 +35,7 @@ class AuditTrailService:
         with get_db() as db:
             # Get the hash of the last audit entry for the chain
             db.execute(
-                "SELECT id, chain_hash FROM audit_trail ORDER BY created_at DESC, rowid DESC LIMIT 1"
+                "SELECT id, chain_hash FROM audit_trail ORDER BY created_at DESC, id DESC LIMIT 1"
             )
             prev = db.fetchone()
             prev_hash = dict(prev)["chain_hash"] if prev else "GENESIS"
@@ -80,7 +80,7 @@ class AuditTrailService:
         """Verify the integrity of the audit trail hash chain."""
         with get_db() as db:
             db.execute(
-                "SELECT * FROM audit_trail ORDER BY created_at ASC, rowid ASC LIMIT %s",
+                "SELECT * FROM audit_trail ORDER BY created_at ASC, id ASC LIMIT %s",
                 (limit,),
             )
             rows = db.fetchall()
@@ -420,8 +420,9 @@ class AuditTrailService:
                         try:
                             db.execute(
                                 f"SELECT COUNT(*) AS cnt FROM {table} WHERE {date_col}::timestamp < NOW() - INTERVAL '{days} days'",
-                            )["cnt"]
-                            affected = db.fetchone()
+                            )
+                            _cnt_row = db.fetchone()
+                            affected = (_cnt_row["cnt"] if _cnt_row else 0) or 0
                         except Exception:
                             pass
 
@@ -433,12 +434,15 @@ class AuditTrailService:
                 pass
 
             # Last retention run from audit logs
-            db.execute(
-                """SELECT created_at, details FROM audit_logs
-                   WHERE action='retention_policy_applied'
-                   ORDER BY created_at DESC LIMIT 1""",
-            )
-            last_run = db.fetchone()
+            try:
+                db.execute(
+                    """SELECT created_at, details FROM audit_trail
+                       WHERE action='retention_policy_applied'
+                       ORDER BY created_at DESC LIMIT 1""",
+                )
+                last_run = db.fetchone()
+            except Exception:
+                last_run = None
 
             return {
                 "policies": policies,

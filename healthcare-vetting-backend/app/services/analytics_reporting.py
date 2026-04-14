@@ -52,7 +52,7 @@ class AnalyticsReportingService:
 
             # Average compliance score
             db.execute(
-                """SELECT AVG(cr.overall_score) AS avg_score FROM agency_candidates ac
+                """SELECT AVG(cr.score) AS avg_score FROM agency_candidates ac
                    JOIN compliance_records cr ON ac.candidate_id = cr.candidate_id
                    WHERE ac.agency_id=%s""",
                 (agency_id,),
@@ -64,7 +64,7 @@ class AnalyticsReportingService:
             db.execute(
                 """SELECT COUNT(*) AS cnt FROM monitoring_alerts ma
                    JOIN agency_candidates ac ON ma.candidate_id = ac.candidate_id
-                   WHERE ac.agency_id=%s AND ma.is_resolved=false""",
+                   WHERE ac.agency_id=%s AND ma.is_resolved=0""",
                 (agency_id,),
             )
             _row = db.fetchone()
@@ -325,7 +325,9 @@ class AnalyticsReportingService:
             if agency_id:
                 db.execute(
                     """SELECT c.id, c.first_name, c.last_name, c.email, c.profession,
-                              cr.overall_status, cr.overall_score, cr.details, cr.last_evaluated
+                              cr.overall_status, cr.score, cr.identity_verified, cr.dbs_valid,
+                              cr.right_to_work_valid, cr.registration_active, cr.references_verified,
+                              cr.employment_verified, cr.training_compliant, cr.last_evaluated
                        FROM candidates c
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
                        LEFT JOIN compliance_records cr ON c.id = cr.candidate_id
@@ -337,7 +339,9 @@ class AnalyticsReportingService:
             else:
                 db.execute(
                     """SELECT c.id, c.first_name, c.last_name, c.email, c.profession,
-                              cr.overall_status, cr.overall_score, cr.details, cr.last_evaluated
+                              cr.overall_status, cr.score, cr.identity_verified, cr.dbs_valid,
+                              cr.right_to_work_valid, cr.registration_active, cr.references_verified,
+                              cr.employment_verified, cr.training_compliant, cr.last_evaluated
                        FROM candidates c
                        LEFT JOIN compliance_records cr ON c.id = cr.candidate_id
                        ORDER BY c.last_name""",
@@ -346,28 +350,20 @@ class AnalyticsReportingService:
 
             for row in rows:
                 r = dict(row)
-                details = {}
-                if r.get("details"):
-                    try:
-                        details = json.loads(r["details"]) if isinstance(r["details"], str) else r["details"]
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-                checks = details.get("checks", {})
                 writer.writerow([
                     r.get("id", ""),
                     f"{r.get('first_name', '')} {r.get('last_name', '')}",
                     r.get("email", ""),
                     r.get("profession", ""),
                     r.get("overall_status", "pending"),
-                    r.get("overall_score", 0),
-                    checks.get("identity", {}).get("status", "pending") if isinstance(checks.get("identity"), dict) else "pending",
-                    checks.get("dbs", {}).get("status", "pending") if isinstance(checks.get("dbs"), dict) else "pending",
-                    checks.get("right_to_work", {}).get("status", "pending") if isinstance(checks.get("right_to_work"), dict) else "pending",
-                    checks.get("registration", {}).get("status", "pending") if isinstance(checks.get("registration"), dict) else "pending",
-                    checks.get("references", {}).get("status", "pending") if isinstance(checks.get("references"), dict) else "pending",
-                    checks.get("employment", {}).get("status", "pending") if isinstance(checks.get("employment"), dict) else "pending",
-                    checks.get("training", {}).get("status", "pending") if isinstance(checks.get("training"), dict) else "pending",
+                    r.get("score", 0),
+                    "pass" if r.get("identity_verified") else "pending",
+                    "pass" if r.get("dbs_valid") else "pending",
+                    "pass" if r.get("right_to_work_valid") else "pending",
+                    "pass" if r.get("registration_active") else "pending",
+                    "pass" if r.get("references_verified") else "pending",
+                    "pass" if r.get("employment_verified") else "pending",
+                    "pass" if r.get("training_compliant") else "pending",
                     r.get("last_evaluated", ""),
                 ])
 
