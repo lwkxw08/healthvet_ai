@@ -684,6 +684,23 @@ export default function AdminPanel() {
     finally { setRetriggeringId(""); }
   };
 
+  // Generic re-trigger for stallable checks (CV, Identity, RTW, DBS, Registration, Training, Compliance)
+  const handleRetriggerCheck = async (candidateId: string, checkType: string, label: string) => {
+    if (!token) return;
+    const key = `${checkType}:${candidateId}`;
+    setRetriggeringId(key);
+    try {
+      const res = await adminExtendedApi.retriggerCheck(token, candidateId, checkType);
+      showMessage(`${label} re-triggered: ${res.result}`);
+      await loadCandidateDetail(candidateId);
+      await evaluateCandidate(candidateId);
+    } catch (err) {
+      showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`);
+    } finally {
+      setRetriggeringId("");
+    }
+  };
+
 
   const saveTier = async (tierKey: string) => {
     if (!token) return;
@@ -3197,9 +3214,18 @@ export default function AdminPanel() {
             </div>
 
             {/* ── Identity Verification History ── */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-md font-semibold text-white">Identity Verification History ({idChecks.length})</h3>
+                <button onClick={() => handleRetriggerCheck(selectedCandidate.id as string, "identity", "Identity check")}
+                  disabled={retriggeringId === `identity:${selectedCandidate.id as string}`}
+                  className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 flex items-center gap-1">
+                  <Send size={12} /> {retriggeringId === `identity:${selectedCandidate.id as string}` ? "Re-triggering..." : "Re-trigger"}
+                </button>
+              </div>
+              {idChecks.length === 0 && <p className="text-slate-500 text-sm">No identity checks yet</p>}
             {idChecks.length > 0 && (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-3">Identity Verification History</h3>
+              <>
                 {idChecks.map((check) => {
                   let details: Record<string, unknown> = {};
                   try { details = JSON.parse(check.details as string || "{}"); } catch { /* ignore */ }
@@ -3257,13 +3283,23 @@ export default function AdminPanel() {
                     </div>
                   );
                 })}
-              </div>
+              </>
             )}
+            </div>
 
             {/* ── Right to Work History ── */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-md font-semibold text-white">Right to Work History ({rtwChecks.length})</h3>
+                <button onClick={() => handleRetriggerCheck(selectedCandidate.id as string, "rtw", "Right to Work check")}
+                  disabled={retriggeringId === `rtw:${selectedCandidate.id as string}`}
+                  className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 flex items-center gap-1">
+                  <Send size={12} /> {retriggeringId === `rtw:${selectedCandidate.id as string}` ? "Re-triggering..." : "Re-trigger"}
+                </button>
+              </div>
+              {rtwChecks.length === 0 && <p className="text-slate-500 text-sm">No right to work checks yet</p>}
             {rtwChecks.length > 0 && (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-3">Right to Work History</h3>
+              <>
                 {rtwChecks.map((check) => (
                   <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
                     <div className="flex items-center justify-between mb-2">
@@ -3292,13 +3328,23 @@ export default function AdminPanel() {
                     </div>
                   </div>
                 ))}
-              </div>
+              </>
             )}
+            </div>
 
             {/* ── DBS Check History ── */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-md font-semibold text-white">DBS Check History ({dbsChecks.length})</h3>
+                <button onClick={() => handleRetriggerCheck(selectedCandidate.id as string, "dbs", "DBS check")}
+                  disabled={retriggeringId === `dbs:${selectedCandidate.id as string}`}
+                  className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 flex items-center gap-1">
+                  <Send size={12} /> {retriggeringId === `dbs:${selectedCandidate.id as string}` ? "Re-triggering..." : "Re-trigger"}
+                </button>
+              </div>
+              {dbsChecks.length === 0 && <p className="text-slate-500 text-sm">No DBS checks yet</p>}
             {dbsChecks.length > 0 && (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-3">DBS Check History</h3>
+              <>
                 {dbsChecks.map((check) => (
                   <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
                     <div className="flex items-center justify-between mb-2">
@@ -3313,8 +3359,9 @@ export default function AdminPanel() {
                     </div>
                   </div>
                 ))}
-              </div>
+              </>
             )}
+            </div>
 
             {/* ── Employment Verification History ── */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
@@ -3346,7 +3393,14 @@ export default function AdminPanel() {
 
             {/* ── CV Analysis Results ── */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-              <h3 className="text-md font-semibold text-white mb-3">CV Analysis Results</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-md font-semibold text-white">CV Analysis Results ({cvAnalyses.length})</h3>
+                <button onClick={() => handleRetriggerCheck(selectedCandidate.id as string, "cv", "CV analysis")}
+                  disabled={retriggeringId === `cv:${selectedCandidate.id as string}`}
+                  className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 flex items-center gap-1">
+                  <Send size={12} /> {retriggeringId === `cv:${selectedCandidate.id as string}` ? "Re-triggering..." : "Re-trigger"}
+                </button>
+              </div>
             {cvAnalyses.length > 0 ? (
               <div>
                 {cvAnalyses.map((analysis) => {
@@ -3487,9 +3541,18 @@ export default function AdminPanel() {
             </div>
 
             {/* ── Registration Check History ── */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-md font-semibold text-white">Registration History ({regChecks.length})</h3>
+                <button onClick={() => handleRetriggerCheck(selectedCandidate.id as string, "registration", "Registration check")}
+                  disabled={retriggeringId === `registration:${selectedCandidate.id as string}`}
+                  className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 flex items-center gap-1">
+                  <Send size={12} /> {retriggeringId === `registration:${selectedCandidate.id as string}` ? "Re-triggering..." : "Re-trigger"}
+                </button>
+              </div>
+              {regChecks.length === 0 && <p className="text-slate-500 text-sm">No registration checks yet</p>}
             {regChecks.length > 0 && (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-                <h3 className="text-md font-semibold text-white mb-3">Registration History</h3>
+              <>
                 {regChecks.map((check) => (
                   <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
                     <div className="flex items-center justify-between mb-2">
@@ -3504,8 +3567,9 @@ export default function AdminPanel() {
                     </div>
                   </div>
                 ))}
-              </div>
+              </>
             )}
+            </div>
 
             {/* ── References ── */}
             {detailRefs.length > 0 && (
@@ -3539,7 +3603,14 @@ export default function AdminPanel() {
 
             {/* ── Training Certificates ── */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-              <h3 className="text-md font-semibold text-white mb-3">Training Certificates ({trainingCerts.length})</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-md font-semibold text-white">Training Certificates ({trainingCerts.length})</h3>
+                <button onClick={() => handleRetriggerCheck(selectedCandidate.id as string, "training", "Training check")}
+                  disabled={retriggeringId === `training:${selectedCandidate.id as string}`}
+                  className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30 flex items-center gap-1">
+                  <Send size={12} /> {retriggeringId === `training:${selectedCandidate.id as string}` ? "Re-triggering..." : "Re-trigger"}
+                </button>
+              </div>
               {trainingCerts.length > 0 ? trainingCerts.map((cert) => (
                 <div key={cert.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
                   <div className="flex items-center justify-between mb-2">

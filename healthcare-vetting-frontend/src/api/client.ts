@@ -325,6 +325,8 @@ export const adminExtendedApi = {
     apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/retrigger-reference/${refId}`, { method: "POST", token }),
   retriggerEmployment: (token: string, candidateId: string, verId: string) =>
     apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/retrigger-employment/${verId}`, { method: "POST", token }),
+  retriggerCheck: (token: string, candidateId: string, checkType: string) =>
+    apiRequest<{ candidate_id: string; check_type: string; result: string; triggered_at: string }>(`/api/admin/candidates/${candidateId}/retrigger-check/${checkType}`, { method: "POST", token }),
 
   // Full candidate detail (admin view)
   getCandidateFullDetail: (token: string, candidateId: string) =>

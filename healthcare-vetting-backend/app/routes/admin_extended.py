@@ -738,6 +738,119 @@ async def retrigger_employment_verification(
 
 # ── 9. Get Full Candidate Detail (all checks for admin view) ─────
 
+# ── 8b. Generic re-trigger for stallable checks (CV, Identity, RTW, DBS, Reg, Training, Compliance) ──
+
+_RETRIGGERABLE_CHECKS = {"cv", "identity", "rtw", "dbs", "registration", "training", "references", "compliance"}
+
+
+@router.post("/candidates/{candidate_id}/retrigger-check/{check_type}")
+async def retrigger_candidate_check(
+    candidate_id: str,
+    check_type: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin re-trigger for any candidate check that may have stalled or failed.
+
+    Loads the candidate's latest draft data for the given section (if any),
+    invokes the relevant TriggerEngine._run_* method, then re-evaluates compliance.
+    Returns the check result string and an audit entry.
+    """
+    require_admin(current_user)
+
+    check_type = check_type.lower()
+    if check_type not in _RETRIGGERABLE_CHECKS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported check_type '{check_type}'. Supported: {sorted(_RETRIGGERABLE_CHECKS)}",
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Load candidate to confirm existence + load relevant draft section data
+    section_map = {
+        "cv": "cv",
+        "identity": "identity",
+        "rtw": "rtw",
+        "dbs": "dbs",
+        "registration": "registration",
+        "training": "training",
+        "references": "references",
+    }
+    section_key = section_map.get(check_type)
+    section_data: dict = {}
+    with get_db() as db:
+        db.execute("SELECT id FROM candidates WHERE id=%s", (candidate_id,))
+        if not db.fetchone():
+            raise HTTPException(status_code=404, detail="Candidate not found")
+
+        if section_key:
+            db.execute(
+                "SELECT data FROM candidate_draft_data WHERE candidate_id=%s AND section=%s ORDER BY updated_at DESC LIMIT 1",
+                (candidate_id, section_key),
+            )
+            draft = db.fetchone()
+            if draft:
+                try:
+                    import json as _json
+                    raw = dict(draft).get("data") or "{}"
+                    section_data = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+                except Exception:
+                    section_data = {}
+
+    # Dispatch to the relevant TriggerEngine method (outside DB context — each method manages its own)
+    from app.services.trigger_engine import TriggerEngine
+    from app.services.compliance_engine import ComplianceEngine
+
+    result: str
+    try:
+        if check_type == "cv":
+            result = TriggerEngine._run_cv(candidate_id, section_data)
+        elif check_type == "identity":
+            result = TriggerEngine._run_identity(candidate_id, section_data)
+        elif check_type == "rtw":
+            result = TriggerEngine._run_rtw(candidate_id, section_data)
+        elif check_type == "dbs":
+            result = TriggerEngine._run_dbs(candidate_id, section_data)
+        elif check_type == "registration":
+            result = TriggerEngine._run_registration(candidate_id, section_data)
+        elif check_type == "training":
+            result = TriggerEngine._run_training(candidate_id, section_data)
+        elif check_type == "references":
+            # Also re-send any outstanding employment verification emails
+            ref_result = TriggerEngine._run_references(candidate_id, section_data)
+            emp_result = TriggerEngine._run_employment_verifications(candidate_id)
+            result = f"references: {ref_result}; employment: {emp_result}"
+        elif check_type == "compliance":
+            # Just re-evaluate compliance without re-running any individual check
+            result = "compliance re-evaluation requested"
+        else:
+            result = "unsupported"
+    except Exception as e:
+        result = f"error: {e}"
+
+    # Re-evaluate compliance regardless (safe — idempotent)
+    try:
+        ComplianceEngine.evaluate_candidate(candidate_id)
+    except Exception as e:
+        result = f"{result}; compliance_error: {e}"
+
+    # Audit log
+    import json as _json
+    log_id = generate_id()
+    details = _json.dumps({"check_type": check_type, "result": result, "had_draft": bool(section_data)})
+    try:
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (log_id, "candidate_check", candidate_id, f"admin_retrigger_{check_type}",
+                 current_user["sub"], details, now),
+            )
+    except Exception:
+        pass
+
+    return {"candidate_id": candidate_id, "check_type": check_type, "result": result, "triggered_at": now}
+
+
 @router.get("/candidates/{candidate_id}/full-detail")
 async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depends(get_current_user)):
     """Get all check data for a candidate (admin detail view)."""
