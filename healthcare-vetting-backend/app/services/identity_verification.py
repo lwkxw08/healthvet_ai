@@ -73,7 +73,7 @@ class IdentityVerificationService:
             db.execute(
                 """INSERT INTO identity_checks
                    (id, candidate_id, provider, status, document_type, started_at)
-                   VALUES (?, ?, ?, 'processing', ?, ?)""",
+                   VALUES (%s, %s, %s, 'processing', %s, %s)""",
                 (check_id, candidate_id, provider, document_type, now),
             )
 
@@ -88,9 +88,9 @@ class IdentityVerificationService:
 
             db.execute(
                 """UPDATE identity_checks SET
-                   status=?, document_authenticity=?, facial_match_score=?,
-                   liveness_check=?, address_verified=?, result=?, details=?, completed_at=?
-                   WHERE id=?""",
+                   status=%s, document_authenticity=%s, facial_match_score=%s,
+                   liveness_check=%s, address_verified=%s, result=%s, details=%s, completed_at=%s
+                   WHERE id=%s""",
                 (
                     result["status"],
                     result["document_authenticity"],
@@ -107,18 +107,19 @@ class IdentityVerificationService:
             # Update candidate status if passed
             if result["result"] == "clear":
                 db.execute(
-                    "UPDATE candidates SET status='id_verified', updated_at=? WHERE id=?",
+                    "UPDATE candidates SET status='id_verified', updated_at=%s WHERE id=%s",
                     (now, candidate_id),
                 )
 
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'identity_check', ?, 'completed', 'system', ?, ?)""",
+                   VALUES (%s, 'identity_check', %s, 'completed', 'system', %s, %s)""",
                 (generate_id(), check_id, json.dumps(result), now),
             )
 
-            row = db.execute("SELECT * FROM identity_checks WHERE id=?", (check_id,)).fetchone()
+            db.execute("SELECT * FROM identity_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -204,7 +205,8 @@ class IdentityVerificationService:
     @staticmethod
     def get_check(check_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM identity_checks WHERE id=?", (check_id,)).fetchone()
+            db.execute("SELECT * FROM identity_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -212,8 +214,9 @@ class IdentityVerificationService:
     @staticmethod
     def get_checks_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
-                "SELECT * FROM identity_checks WHERE candidate_id=? ORDER BY started_at DESC",
+            db.execute(
+                "SELECT * FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]

@@ -31,12 +31,13 @@ class MonitoringService:
         now = datetime.now(timezone.utc)
 
         with get_db() as db:
-            checks = db.execute(
+            db.execute(
                 """SELECT d.*, c.first_name, c.last_name FROM dbs_checks d
                    JOIN candidates c ON d.candidate_id = c.id
                    WHERE d.update_service_registered = 1
                    AND d.certificate_number IS NOT NULL""",
-            ).fetchall()
+            )
+            checks = db.fetchall()
 
             for check in checks:
                 check_dict = dict(check)
@@ -47,7 +48,7 @@ class MonitoringService:
                     db.execute(
                         """INSERT INTO monitoring_alerts
                            (id, candidate_id, alert_type, severity, message, details, created_at)
-                           VALUES (?, ?, 'dbs_update_change', 'critical', ?, ?, ?)""",
+                           VALUES (%s, %s, 'dbs_update_change', 'critical', %s, %s, %s)""",
                         (
                             alert_id, check_dict["candidate_id"],
                             f"DBS Update Service reports change for {check_dict['first_name']} {check_dict['last_name']}",
@@ -71,11 +72,12 @@ class MonitoringService:
         threshold_90 = now + timedelta(days=90)
 
         with get_db() as db:
-            checks = db.execute(
+            db.execute(
                 """SELECT r.*, c.first_name, c.last_name FROM right_to_work_checks r
                    JOIN candidates c ON r.candidate_id = c.id
                    WHERE r.visa_expiry IS NOT NULL AND r.verified = 1""",
-            ).fetchall()
+            )
+            checks = db.fetchall()
 
             for check in checks:
                 check_dict = dict(check)
@@ -97,19 +99,20 @@ class MonitoringService:
                     continue
 
                 # Check if alert already exists
-                existing = db.execute(
+                db.execute(
                     """SELECT id FROM monitoring_alerts
-                       WHERE candidate_id=? AND alert_type='visa_expiry'
+                       WHERE candidate_id=%s AND alert_type='visa_expiry'
                        AND is_resolved=0""",
                     (check_dict["candidate_id"],),
-                ).fetchone()
+                )
+                existing = db.fetchone()
 
                 if not existing:
                     alert_id = generate_id()
                     db.execute(
                         """INSERT INTO monitoring_alerts
                            (id, candidate_id, alert_type, severity, message, details, created_at)
-                           VALUES (?, ?, 'visa_expiry', ?, ?, ?, ?)""",
+                           VALUES (%s, %s, 'visa_expiry', %s, %s, %s, %s)""",
                         (
                             alert_id, check_dict["candidate_id"],
                             severity, message,
@@ -136,11 +139,12 @@ class MonitoringService:
         now = datetime.now(timezone.utc)
 
         with get_db() as db:
-            checks = db.execute(
+            db.execute(
                 """SELECT r.*, c.first_name, c.last_name FROM registration_checks r
                    JOIN candidates c ON r.candidate_id = c.id
                    WHERE r.next_check IS NOT NULL AND r.is_active = 1""",
-            ).fetchall()
+            )
+            checks = db.fetchall()
 
             for check in checks:
                 check_dict = dict(check)
@@ -154,7 +158,7 @@ class MonitoringService:
                     db.execute(
                         """INSERT INTO monitoring_alerts
                            (id, candidate_id, alert_type, severity, message, details, created_at)
-                           VALUES (?, ?, 'registration_renewal', 'high', ?, ?, ?)""",
+                           VALUES (%s, %s, 'registration_renewal', 'high', %s, %s, %s)""",
                         (
                             alert_id, check_dict["candidate_id"],
                             f"{check_dict['body']} registration check due for {check_dict['first_name']} {check_dict['last_name']}",
@@ -181,11 +185,12 @@ class MonitoringService:
         now = datetime.now(timezone.utc)
 
         with get_db() as db:
-            checks = db.execute(
+            db.execute(
                 """SELECT r.*, c.first_name, c.last_name FROM registration_checks r
                    JOIN candidates c ON r.candidate_id = c.id
                    WHERE r.is_active = 1""",
-            ).fetchall()
+            )
+            checks = db.fetchall()
 
             for check in checks:
                 check_dict = dict(check)
@@ -195,7 +200,7 @@ class MonitoringService:
                     db.execute(
                         """INSERT INTO monitoring_alerts
                            (id, candidate_id, alert_type, severity, message, details, created_at)
-                           VALUES (?, ?, 'new_sanction', 'critical', ?, ?, ?)""",
+                           VALUES (%s, %s, 'new_sanction', 'critical', %s, %s, %s)""",
                         (
                             alert_id, check_dict["candidate_id"],
                             f"New sanction detected for {check_dict['first_name']} {check_dict['last_name']} on {check_dict['body']} register",
@@ -223,7 +228,7 @@ class MonitoringService:
 
             conditions = []
             if candidate_id:
-                conditions.append("candidate_id=?")
+                conditions.append("candidate_id=%s")
                 params.append(candidate_id)
             if unresolved_only:
                 conditions.append("is_resolved=0")
@@ -232,7 +237,8 @@ class MonitoringService:
                 query += " WHERE " + " AND ".join(conditions)
 
             query += " ORDER BY created_at DESC"
-            rows = db.execute(query, params).fetchall()
+            db.execute(query, params)
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -241,12 +247,13 @@ class MonitoringService:
         if not candidate_ids:
             return []
         with get_db() as db:
-            placeholders = ",".join("?" for _ in candidate_ids)
+            placeholders = ",".join("%s" for _ in candidate_ids)
             query = f"SELECT * FROM monitoring_alerts WHERE candidate_id IN ({placeholders})"
             if unresolved_only:
                 query += " AND is_resolved=0"
             query += " ORDER BY created_at DESC"
-            rows = db.execute(query, candidate_ids).fetchall()
+            db.execute(query, candidate_ids)
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -254,10 +261,11 @@ class MonitoringService:
         now = datetime.now(timezone.utc).isoformat()
         with get_db() as db:
             db.execute(
-                "UPDATE monitoring_alerts SET is_resolved=1, resolved_at=? WHERE id=?",
+                "UPDATE monitoring_alerts SET is_resolved=1, resolved_at=%s WHERE id=%s",
                 (now, alert_id),
             )
-            row = db.execute("SELECT * FROM monitoring_alerts WHERE id=?", (alert_id,)).fetchone()
+            db.execute("SELECT * FROM monitoring_alerts WHERE id=%s", (alert_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -266,25 +274,28 @@ class MonitoringService:
     def get_dashboard_stats(agency_id: str = None) -> dict:
         with get_db() as db:
             if agency_id:
-                candidates = db.execute(
+                db.execute(
                     """SELECT c.* FROM candidates c
                        JOIN agency_candidates ac ON c.id = ac.candidate_id
-                       WHERE ac.agency_id=?""",
+                       WHERE ac.agency_id=%s""",
                     (agency_id,),
-                ).fetchall()
+                )
+                candidates = db.fetchall()
             else:
-                candidates = db.execute("SELECT * FROM candidates").fetchall()
+                db.execute("SELECT * FROM candidates")
+                candidates = db.fetchall()
 
             total = len(candidates)
             compliant = sum(1 for c in candidates if dict(c)["compliance_status"] == "compliant")
             pending = sum(1 for c in candidates if dict(c)["compliance_status"] in ("in_progress", "pending_review"))
             flagged = sum(1 for c in candidates if dict(c)["compliance_status"] == "incomplete")
 
-            alerts = db.execute(
+            db.execute(
                 "SELECT COUNT(*) as cnt FROM monitoring_alerts WHERE is_resolved=0",
-            ).fetchone()
+            )
+            alerts = db.fetchone()
 
-            checks_in_progress = db.execute(
+            db.execute(
                 """SELECT COUNT(*) as cnt FROM (
                     SELECT candidate_id FROM identity_checks WHERE status='processing'
                     UNION ALL
@@ -292,7 +303,8 @@ class MonitoringService:
                     UNION ALL
                     SELECT candidate_id FROM right_to_work_checks WHERE status='processing'
                 )""",
-            ).fetchone()
+            )
+            checks_in_progress = db.fetchone()
 
             return {
                 "total_candidates": total,

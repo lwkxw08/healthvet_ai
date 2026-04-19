@@ -36,10 +36,11 @@ class TrainingCertificateService:
     def get_certificates(candidate_id: str) -> list:
         """Get all training certificates for a candidate."""
         with get_db() as db:
-            rows = db.execute(
-                "SELECT * FROM training_certificates WHERE candidate_id=? ORDER BY certificate_name",
+            db.execute(
+                "SELECT * FROM training_certificates WHERE candidate_id=%s ORDER BY certificate_name",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
@@ -65,14 +66,15 @@ class TrainingCertificateService:
                    (id, candidate_id, certificate_name, category, provider,
                     issue_date, expiry_date, certificate_ref, file_name,
                     status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (cert_id, candidate_id, data["certificate_name"],
                  data.get("category", "mandatory"), data.get("provider", ""),
                  data.get("issue_date", now[:10]), expiry,
                  data.get("certificate_ref", ""), data.get("file_name", ""),
                  status, now),
             )
-            row = db.execute("SELECT * FROM training_certificates WHERE id=?", (cert_id,)).fetchone()
+            db.execute("SELECT * FROM training_certificates WHERE id=%s", (cert_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -85,18 +87,19 @@ class TrainingCertificateService:
             for field in ["certificate_name", "category", "provider", "issue_date",
                           "expiry_date", "certificate_ref", "file_name", "status"]:
                 if field in data:
-                    sets.append(f"{field}=?")
+                    sets.append(f"{field}=%s")
                     params.append(data[field])
 
             if sets:
-                sets.append("updated_at=?")
+                sets.append("updated_at=%s")
                 params.append(now)
                 params.append(cert_id)
                 db.execute(
-                    f"UPDATE training_certificates SET {', '.join(sets)} WHERE id=?",
+                    f"UPDATE training_certificates SET {', '.join(sets)} WHERE id=%s",
                     params,
                 )
-            row = db.execute("SELECT * FROM training_certificates WHERE id=?", (cert_id,)).fetchone()
+            db.execute("SELECT * FROM training_certificates WHERE id=%s", (cert_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -105,7 +108,7 @@ class TrainingCertificateService:
     def delete_certificate(cert_id: str) -> bool:
         """Delete a training certificate."""
         with get_db() as db:
-            db.execute("DELETE FROM training_certificates WHERE id=?", (cert_id,))
+            db.execute("DELETE FROM training_certificates WHERE id=%s", (cert_id,))
             return True
 
     @staticmethod

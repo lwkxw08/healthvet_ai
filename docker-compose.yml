@@ -1,0 +1,61 @@
+# ── HealthVet AI — Local Development Stack ───────────────────────────
+# Usage: docker compose up -d
+# This runs the backend, PostgreSQL, and Redis for local development.
+
+services:
+  # ── Backend API ──────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./healthcare-vetting-backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://healthvet:healthvet_dev@postgres:5432/healthvet
+      - JWT_SECRET=change-this-in-production
+      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+      - RATE_LIMIT_STORAGE=redis://redis:6379/0
+      - RATE_LIMIT_DEFAULT=100/minute
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── PostgreSQL ───────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: healthvet
+      POSTGRES_USER: healthvet
+      POSTGRES_PASSWORD: healthvet_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U healthvet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis (rate limiting & caching) ──────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

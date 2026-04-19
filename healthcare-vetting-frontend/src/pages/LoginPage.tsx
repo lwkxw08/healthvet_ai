@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { authApi, agencyInvitesApi } from "../api/client";
-import { Shield, UserPlus, Building2, Lock, Mail } from "lucide-react";
+import { UserPlus, Building2, Lock, Mail, KeyRound, ArrowLeft, CheckCircle } from "lucide-react";
 
 type LoginTab = "candidate" | "agency" | "admin";
-type Mode = "login" | "register";
+type Mode = "login" | "register" | "forgot_password" | "reset_password";
 
 interface LoginPageProps {
   inviteCode?: string | null;
@@ -44,6 +44,22 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
     }
   }, [inviteCode]);
 
+  // Password reset states
+  const [resetToken, setResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
+
+  // Check URL for reset token
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("reset_token");
+    if (token) {
+      setResetToken(token);
+      setMode("reset_password");
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -54,7 +70,7 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
       if (tab === "candidate") {
         if (mode === "login") {
           result = await authApi.loginCandidate(email, password);
-        } else {
+        } else if (mode === "register") {
           result = await authApi.registerCandidate({
             email, password, first_name: firstName, last_name: lastName,
             phone, profession, registration_number: regNumber, registration_body: regBody,
@@ -64,7 +80,7 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
       } else if (tab === "agency") {
         if (mode === "login") {
           result = await authApi.loginAgency(email, password);
-        } else {
+        } else if (mode === "register") {
           result = await authApi.registerAgency({
             email, password, name: agencyName, contact_name: contactName, phone,
           });
@@ -73,12 +89,51 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
         result = await authApi.loginAdmin(email, password);
       }
 
-      login(result.access_token, result.user_type, result.user_id);
+      if (result) login(result.access_token, result.user_type, result.user_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const userType = tab === "agency" ? "agency" : tab === "admin" ? "admin" : "candidate";
+      const resp = await authApi.requestPasswordReset(email, userType);
+      if (resp._demo_token) {
+        setResetToken(resp._demo_token);
+        setResetSuccess("Reset token generated. Enter your new password below.");
+        setMode("reset_password");
+      } else {
+        setResetSuccess(resp.message || "If that email exists, a reset link has been sent.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to request reset");
+    } finally { setLoading(false); }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword !== confirmPassword) { setError("Passwords do not match"); return; }
+    if (newPassword.length < 8) { setError("Password must be at least 8 characters"); return; }
+    setLoading(true);
+    try {
+      await authApi.confirmPasswordReset(resetToken, newPassword);
+      setResetSuccess("Password reset successfully! You can now sign in.");
+      setMode("login");
+      setResetToken("");
+      setNewPassword("");
+      setConfirmPassword("");
+      // Clear URL params
+      window.history.replaceState({}, "", window.location.pathname);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset password");
+    } finally { setLoading(false); }
   };
 
   const tabs: { key: LoginTab; label: string; icon: React.ReactNode }[] = [
@@ -92,10 +147,9 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-3">
-            <Shield className="text-blue-400" size={40} />
-            <h1 className="text-3xl font-bold text-white">HealthVet AI</h1>
+            <img src="/viper-logo.png" alt="Viper AI" className="h-12" />
           </div>
-          <p className="text-blue-300 text-sm">AI-Powered Compliance Intelligence for Healthcare Staffing</p>
+          <p className="text-blue-300 text-sm">Vetting Intelligence Platform for Enterprise Risk</p>
         </div>
 
         {inviteInfo && (
@@ -135,7 +189,68 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {resetSuccess && (
+            <div className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-lg text-green-200 text-sm flex items-center gap-2">
+              <CheckCircle size={16} />
+              {resetSuccess}
+            </div>
+          )}
+
+          {/* Password Reset - Request */}
+          {mode === "forgot_password" && (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="text-center mb-2">
+                <KeyRound className="text-blue-400 mx-auto mb-2" size={32} />
+                <h3 className="text-white font-semibold">Reset Password</h3>
+                <p className="text-blue-300 text-xs mt-1">Enter your email to receive a reset link</p>
+              </div>
+              <div>
+                <label className="block text-blue-200 text-xs mb-1">Email</label>
+                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2.5 text-white placeholder-blue-300/50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+              </div>
+              <button type="submit" disabled={loading}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-medium py-3 rounded-lg transition-colors shadow-lg">
+                {loading ? "Sending..." : "Send Reset Link"}
+              </button>
+              <button type="button" onClick={() => { setMode("login"); setError(""); setResetSuccess(""); }}
+                className="w-full text-blue-400 hover:text-blue-300 text-sm flex items-center justify-center gap-1">
+                <ArrowLeft size={14} /> Back to Sign In
+              </button>
+            </form>
+          )}
+
+          {/* Password Reset - Confirm */}
+          {mode === "reset_password" && (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="text-center mb-2">
+                <KeyRound className="text-blue-400 mx-auto mb-2" size={32} />
+                <h3 className="text-white font-semibold">Set New Password</h3>
+                <p className="text-blue-300 text-xs mt-1">Must be at least 8 characters with uppercase, lowercase, and a number</p>
+              </div>
+              <div>
+                <label className="block text-blue-200 text-xs mb-1">New Password</label>
+                <input type="password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2.5 text-white placeholder-blue-300/50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+              </div>
+              <div>
+                <label className="block text-blue-200 text-xs mb-1">Confirm Password</label>
+                <input type="password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2.5 text-white placeholder-blue-300/50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+              </div>
+              <button type="submit" disabled={loading}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-medium py-3 rounded-lg transition-colors shadow-lg">
+                {loading ? "Resetting..." : "Reset Password"}
+              </button>
+              <button type="button" onClick={() => { setMode("login"); setError(""); setResetSuccess(""); }}
+                className="w-full text-blue-400 hover:text-blue-300 text-sm flex items-center justify-center gap-1">
+                <ArrowLeft size={14} /> Back to Sign In
+              </button>
+            </form>
+          )}
+
+          {(mode === "login" || mode === "register") && <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "register" && tab === "candidate" && (
               <>
                 <div className="grid grid-cols-2 gap-3">
@@ -213,7 +328,7 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
             <div>
               <label className="block text-blue-200 text-xs mb-1">Email</label>
               <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder={tab === "admin" ? "admin@healthvet.ai" : "you@example.com"}
+                placeholder={tab === "admin" ? "admin@viperai.io" : "you@example.com"}
                 className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2.5 text-white placeholder-blue-300/50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
             </div>
 
@@ -228,10 +343,19 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-medium py-3 rounded-lg transition-colors shadow-lg">
               {loading ? "Processing..." : mode === "login" ? "Sign In" : "Create Account"}
             </button>
-          </form>
+          </form>}
 
-          {tab !== "admin" && (
-            <p className="mt-4 text-center text-blue-300 text-sm">
+          {(mode === "login" || mode === "register") && (
+            <p className="mt-3 text-center">
+              <button onClick={() => { setMode("forgot_password"); setError(""); setResetSuccess(""); }}
+                className="text-blue-400/70 hover:text-blue-300 text-xs">
+                Forgot your password?
+              </button>
+            </p>
+          )}
+
+          {tab !== "admin" && (mode === "login" || mode === "register") && (
+            <p className="mt-2 text-center text-blue-300 text-sm">
               {mode === "login" ? "Don't have an account? " : "Already have an account? "}
               <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
                 className="text-blue-400 hover:text-blue-300 font-medium">
@@ -240,9 +364,9 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
             </p>
           )}
 
-          {tab === "admin" && (
+          {tab === "admin" && (mode === "login" || mode === "register") && (
             <p className="mt-4 text-center text-blue-400/60 text-xs">
-              Demo: admin@healthvet.ai / admin123
+              Demo: admin@viperai.io / admin123
             </p>
           )}
         </div>

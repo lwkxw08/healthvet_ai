@@ -25,64 +25,77 @@ class AuditPackService:
     def generate_candidate_audit(candidate_id: str) -> bytes:
         """Generate a full audit pack PDF for a single candidate."""
         with get_db() as db:
-            candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+            db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+            candidate = db.fetchone()
             if not candidate:
                 raise ValueError("Candidate not found")
             c = dict(candidate)
 
             # Gather all check data
-            identity = db.execute(
-                "SELECT * FROM identity_checks WHERE candidate_id=? ORDER BY started_at DESC",
+            db.execute(
+                "SELECT * FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            rtw = db.execute(
-                "SELECT * FROM right_to_work_checks WHERE candidate_id=? ORDER BY checked_at DESC",
+            )
+            identity = db.fetchall()
+            db.execute(
+                "SELECT * FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            dbs = db.execute(
-                "SELECT * FROM dbs_checks WHERE candidate_id=? ORDER BY submitted_at DESC",
+            )
+            rtw = db.fetchall()
+            db.execute(
+                "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            cv = db.execute(
-                "SELECT * FROM cv_analyses WHERE candidate_id=? ORDER BY analysed_at DESC",
+            )
+            dbs = db.fetchall()
+            db.execute(
+                "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            reg = db.execute(
-                "SELECT * FROM registration_checks WHERE candidate_id=? ORDER BY last_checked DESC",
+            )
+            cv = db.fetchall()
+            db.execute(
+                "SELECT * FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC",
                 (candidate_id,),
-            ).fetchall()
-            refs = db.execute(
-                "SELECT * FROM references_ WHERE candidate_id=?",
+            )
+            reg = db.fetchall()
+            db.execute(
+                "SELECT * FROM references_ WHERE candidate_id=%s",
                 (candidate_id,),
-            ).fetchall()
-            emp_history = db.execute(
-                "SELECT * FROM employment_history WHERE candidate_id=? ORDER BY start_date DESC",
+            )
+            refs = db.fetchall()
+            db.execute(
+                "SELECT * FROM employment_history WHERE candidate_id=%s ORDER BY start_date DESC",
                 (candidate_id,),
-            ).fetchall()
-            emp_verifications = db.execute(
-                "SELECT * FROM employment_verifications WHERE candidate_id=?",
+            )
+            emp_history = db.fetchall()
+            db.execute(
+                "SELECT * FROM employment_verifications WHERE candidate_id=%s",
                 (candidate_id,),
-            ).fetchall()
-            compliance = db.execute(
-                "SELECT * FROM compliance_records WHERE candidate_id=?",
+            )
+            emp_verifications = db.fetchall()
+            db.execute(
+                "SELECT * FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
-            ).fetchone()
-            audit_logs = db.execute(
-                "SELECT * FROM audit_logs WHERE entity_id=? ORDER BY created_at DESC",
+            )
+            compliance = db.fetchone()
+            db.execute(
+                "SELECT * FROM audit_logs WHERE entity_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            alerts = db.execute(
-                "SELECT * FROM monitoring_alerts WHERE candidate_id=? ORDER BY created_at DESC",
+            )
+            audit_logs = db.fetchall()
+            db.execute(
+                "SELECT * FROM monitoring_alerts WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            alerts = db.fetchall()
 
             # Try to get training certificates
             training = []
             try:
-                training = db.execute(
-                    "SELECT * FROM training_certificates WHERE candidate_id=?",
+                db.execute(
+                    "SELECT * FROM training_certificates WHERE candidate_id=%s",
                     (candidate_id,),
-                ).fetchall()
+                )
+                training = db.fetchall()
             except Exception:
                 pass
 
@@ -108,7 +121,7 @@ class AuditPackService:
 
         # Cover page
         elements.append(Spacer(1, 30*mm))
-        elements.append(Paragraph("HealthVet AI", title_style))
+        elements.append(Paragraph("Viper AI", title_style))
         elements.append(Spacer(1, 5*mm))
         elements.append(Paragraph("CQC Compliance Audit Pack", heading_style))
         elements.append(Spacer(1, 10*mm))
@@ -448,7 +461,7 @@ class AuditPackService:
         elements.append(HRFlowable(width="100%", color=colors.HexColor('#1e3a5f')))
         elements.append(Spacer(1, 3*mm))
         elements.append(Paragraph(
-            f"This audit pack was generated by HealthVet AI on "
+            f"This audit pack was generated by Viper AI on "
             f"{datetime.now(timezone.utc).strftime('%d %B %Y at %H:%M UTC')}. "
             f"All data is verified and timestamped for CQC compliance purposes.",
             small_style,
@@ -477,17 +490,19 @@ class AuditPackService:
     def generate_agency_audit(agency_id: str) -> bytes:
         """Generate an agency-wide audit summary PDF."""
         with get_db() as db:
-            agency = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
+            db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+            agency = db.fetchone()
             if not agency:
                 raise ValueError("Agency not found")
             a = dict(agency)
 
-            candidates = db.execute(
+            db.execute(
                 """SELECT c.*, ac.employment_status FROM candidates c
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
-                   WHERE ac.agency_id=?""",
+                   WHERE ac.agency_id=%s""",
                 (agency_id,),
-            ).fetchall()
+            )
+            candidates = db.fetchall()
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4,
@@ -505,7 +520,7 @@ class AuditPackService:
 
         elements = []
         elements.append(Spacer(1, 20*mm))
-        elements.append(Paragraph("HealthVet AI", title_style))
+        elements.append(Paragraph("Viper AI", title_style))
         elements.append(Paragraph("Agency Compliance Summary", heading_style))
         elements.append(Spacer(1, 10*mm))
         elements.append(HRFlowable(width="80%", color=colors.HexColor('#1e3a5f')))
@@ -558,7 +573,7 @@ class AuditPackService:
         elements.append(HRFlowable(width="100%", color=colors.HexColor('#1e3a5f')))
         elements.append(Spacer(1, 3*mm))
         elements.append(Paragraph(
-            f"Generated by HealthVet AI on {datetime.now(timezone.utc).strftime('%d %B %Y at %H:%M UTC')}.",
+            f"Generated by Viper AI on {datetime.now(timezone.utc).strftime('%d %B %Y at %H:%M UTC')}.",
             small_style,
         ))
 

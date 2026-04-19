@@ -48,67 +48,69 @@ async def override_candidate_check(
 
     with get_db() as db:
         # Verify candidate exists
-        cand = db.execute("SELECT id FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        db.execute("SELECT id FROM candidates WHERE id=%s", (candidate_id,))
+        cand = db.fetchone()
         if not cand:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         # Find existing check record(s)
-        rows = db.execute(f"SELECT id FROM {table} WHERE candidate_id=?", (candidate_id,)).fetchall()
+        db.execute(f"SELECT id FROM {table} WHERE candidate_id=%s", (candidate_id,))
+        rows = db.fetchall()
 
         if rows:
             # Update the most recent check
             row_id = dict(rows[-1])["id"]
-            db.execute(f"UPDATE {table} SET {status_col}=?, {date_col}=? WHERE id=?",
+            db.execute(f"UPDATE {table} SET {status_col}=%s, {date_col}=%s WHERE id=%s",
                        (data.status, now, row_id))
             # For identity checks, also set result field
             if data.check_type == "identity":
-                db.execute("UPDATE identity_checks SET result=? WHERE id=?", (data.status, row_id))
+                db.execute("UPDATE identity_checks SET result=%s WHERE id=%s", (data.status, row_id))
             if data.check_type == "dbs":
-                db.execute("UPDATE dbs_checks SET result=? WHERE id=?", (data.status, row_id))
+                db.execute("UPDATE dbs_checks SET result=%s WHERE id=%s", (data.status, row_id))
             if data.check_type == "right_to_work":
-                db.execute("UPDATE right_to_work_checks SET verified=? WHERE id=?",
+                db.execute("UPDATE right_to_work_checks SET verified=%s WHERE id=%s",
                            (1 if data.status in ("verified", "clear", "completed") else 0, row_id))
             if data.check_type == "registration":
-                db.execute("UPDATE registration_checks SET is_active=?, result=? WHERE id=?",
+                db.execute("UPDATE registration_checks SET is_active=%s, result=%s WHERE id=%s",
                            (1 if data.status in ("active", "verified", "clear") else 0, data.status, row_id))
         else:
             # Create a new check record with the overridden status
             new_id = generate_id()
             if data.check_type == "identity":
                 db.execute(
-                    "INSERT INTO identity_checks (id, candidate_id, status, result, completed_at) VALUES (?,?,?,?,?)",
+                    "INSERT INTO identity_checks (id, candidate_id, status, result, completed_at) VALUES (%s,%s,%s,%s,%s)",
                     (new_id, candidate_id, data.status, data.status, now))
             elif data.check_type == "dbs":
                 db.execute(
-                    "INSERT INTO dbs_checks (id, candidate_id, status, result, completed_at) VALUES (?,?,?,?,?)",
+                    "INSERT INTO dbs_checks (id, candidate_id, status, result, completed_at) VALUES (%s,%s,%s,%s,%s)",
                     (new_id, candidate_id, data.status, data.status, now))
             elif data.check_type == "right_to_work":
                 verified = 1 if data.status in ("verified", "clear", "completed") else 0
                 db.execute(
-                    "INSERT INTO right_to_work_checks (id, candidate_id, status, verified, checked_at) VALUES (?,?,?,?,?)",
+                    "INSERT INTO right_to_work_checks (id, candidate_id, status, verified, checked_at) VALUES (%s,%s,%s,%s,%s)",
                     (new_id, candidate_id, data.status, verified, now))
             elif data.check_type == "cv_analysis":
                 db.execute(
-                    "INSERT INTO cv_analyses (id, candidate_id, status, analysed_at) VALUES (?,?,?,?)",
+                    "INSERT INTO cv_analyses (id, candidate_id, status, analysed_at) VALUES (%s,%s,%s,%s)",
                     (new_id, candidate_id, data.status, now))
             elif data.check_type == "registration":
                 is_active = 1 if data.status in ("active", "verified", "clear") else 0
                 db.execute(
-                    "INSERT INTO registration_checks (id, candidate_id, body, status, is_active, result, last_checked) VALUES (?,?,?,?,?,?,?)",
+                    "INSERT INTO registration_checks (id, candidate_id, body, status, is_active, result, last_checked) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                     (new_id, candidate_id, "NMC", data.status, is_active, data.status, now))
             elif data.check_type == "references":
                 db.execute(
-                    "INSERT INTO references_ (id, candidate_id, referee_name, referee_email, status, completed_at) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO references_ (id, candidate_id, referee_name, referee_email, status, completed_at) VALUES (%s,%s,%s,%s,%s,%s)",
                     (new_id, candidate_id, "Admin Override", "admin@override", data.status, now))
             elif data.check_type == "employment":
                 db.execute(
-                    "INSERT INTO employment_verifications (id, candidate_id, employment_id, verifier_name, verifier_email, status, completed_at) VALUES (?,?,?,?,?,?,?)",
+                    "INSERT INTO employment_verifications (id, candidate_id, employment_id, verifier_name, verifier_email, status, completed_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                     (new_id, candidate_id, "admin-override", "Admin Override", "admin@override", data.status, now))
 
         # Log the override action
         log_id = generate_id()
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "check_override", candidate_id, f"override_{data.check_type}",
              current_user["sub"], f"Status set to '{data.status}'. Notes: {data.notes or 'N/A'}", now))
 
@@ -139,20 +141,22 @@ async def update_agency_status(
         raise HTTPException(status_code=400, detail=f"Invalid status. Valid: {valid_statuses}")
 
     with get_db() as db:
-        agency = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+        agency = db.fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
 
-        db.execute("UPDATE agencies SET status=? WHERE id=?", (data.status, agency_id))
+        db.execute("UPDATE agencies SET status=%s WHERE id=%s", (data.status, agency_id))
 
         # Log the action
         log_id = generate_id()
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "agency", agency_id, f"status_changed_to_{data.status}",
              current_user["sub"], data.reason or "", now))
 
-        row = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -161,11 +165,12 @@ async def list_agencies(current_user: dict = Depends(get_current_user)):
     """List all agencies with their status."""
     require_admin(current_user)
     with get_db() as db:
-        rows = db.execute("""
+        db.execute("""
             SELECT a.*,
-                   (SELECT COUNT(*) FROM agency_candidates ac WHERE ac.agency_id = a.id) as candidate_count
+                   (SELECT COUNT(*) AS cnt FROM agency_candidates ac WHERE ac.agency_id = a.id) as candidate_count
             FROM agencies a ORDER BY a.created_at DESC
-        """).fetchall()
+        """)
+        rows = db.fetchall()
         return [dict(r) for r in rows]
 
 
@@ -200,26 +205,28 @@ async def admin_edit_candidate(
         raise HTTPException(status_code=400, detail="No fields to update")
 
     with get_db() as db:
-        cand = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        cand = db.fetchone()
         if not cand:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         old_values = dict(cand)
         updates["updated_at"] = now
-        set_clause = ", ".join(f"{k}=?" for k in updates.keys())
+        set_clause = ", ".join(f"{k}=%s" for k in updates.keys())
         values = list(updates.values()) + [candidate_id]
-        db.execute(f"UPDATE candidates SET {set_clause} WHERE id=?", values)
+        db.execute(f"UPDATE candidates SET {set_clause} WHERE id=%s", values)
 
         # Log the changes
         changes = {k: {"old": old_values.get(k), "new": v} for k, v in updates.items() if k != "updated_at" and old_values.get(k) != v}
         log_id = generate_id()
         import json
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "candidate", candidate_id, "admin_edit_profile",
              current_user["sub"], json.dumps(changes), now))
 
-        row = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -251,21 +258,23 @@ async def admin_create_agency(data: CreateAgencyRequest, current_user: dict = De
     agency_id = generate_id()
 
     with get_db() as db:
-        existing = db.execute("SELECT id FROM agencies WHERE email=?", (data.email,)).fetchone()
+        db.execute("SELECT id FROM agencies WHERE email=%s", (data.email,))
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Agency with this email already exists")
 
         db.execute(
-            "INSERT INTO agencies (id, name, email, password_hash, contact_name, phone, plan, status, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO agencies (id, name, email, password_hash, contact_name, phone, plan, status, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (agency_id, data.name, data.email, hash_password(data.password),
              data.contact_name, data.phone, data.plan, "active", now))
 
         log_id = generate_id()
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "agency", agency_id, "admin_created_agency", current_user["sub"], f"Created agency: {data.name}", now))
 
-        row = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -277,21 +286,23 @@ async def admin_create_candidate(data: CreateCandidateRequest, current_user: dic
     cand_id = generate_id()
 
     with get_db() as db:
-        existing = db.execute("SELECT id FROM candidates WHERE email=?", (data.email,)).fetchone()
+        db.execute("SELECT id FROM candidates WHERE email=%s", (data.email,))
+        existing = db.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Candidate with this email already exists")
 
         db.execute(
-            "INSERT INTO candidates (id, email, password_hash, first_name, last_name, phone, profession, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO candidates (id, email, password_hash, first_name, last_name, phone, profession, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (cand_id, data.email, hash_password(data.password),
              data.first_name, data.last_name, data.phone, data.profession, now, now))
 
         log_id = generate_id()
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "candidate", cand_id, "admin_created_candidate", current_user["sub"], f"Created candidate: {data.first_name} {data.last_name}", now))
 
-        row = db.execute("SELECT * FROM candidates WHERE id=?", (cand_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (cand_id,))
+        row = db.fetchone()
         return dict(row)
 
 
@@ -302,20 +313,21 @@ async def admin_delete_agency(agency_id: str, current_user: dict = Depends(get_c
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        agency = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
+        db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+        agency = db.fetchone()
         if not agency:
             raise HTTPException(status_code=404, detail="Agency not found")
 
         agency_name = dict(agency)["name"]
         # Remove agency-candidate links
-        db.execute("DELETE FROM agency_candidates WHERE agency_id=?", (agency_id,))
-        db.execute("DELETE FROM agency_invites WHERE agency_id=?", (agency_id,))
-        db.execute("DELETE FROM agency_subscriptions WHERE agency_id=?", (agency_id,))
-        db.execute("DELETE FROM agencies WHERE id=?", (agency_id,))
+        db.execute("DELETE FROM agency_candidates WHERE agency_id=%s", (agency_id,))
+        db.execute("DELETE FROM agency_invites WHERE agency_id=%s", (agency_id,))
+        db.execute("DELETE FROM agency_subscriptions WHERE agency_id=%s", (agency_id,))
+        db.execute("DELETE FROM agencies WHERE id=%s", (agency_id,))
 
         log_id = generate_id()
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "agency", agency_id, "admin_deleted_agency", current_user["sub"], f"Deleted agency: {agency_name}", now))
 
         return {"status": "deleted", "agency_id": agency_id, "name": agency_name}
@@ -328,7 +340,8 @@ async def admin_delete_candidate(candidate_id: str, current_user: dict = Depends
     now = datetime.now(timezone.utc).isoformat()
 
     with get_db() as db:
-        cand = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        cand = db.fetchone()
         if not cand:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -337,13 +350,13 @@ async def admin_delete_candidate(candidate_id: str, current_user: dict = Depends
         for tbl in ["identity_checks", "right_to_work_checks", "dbs_checks", "cv_analyses",
                      "registration_checks", "references_", "compliance_records", "monitoring_alerts",
                      "employment_history", "employment_verifications", "training_certificates", "fraud_flags"]:
-            db.execute(f"DELETE FROM {tbl} WHERE candidate_id=?", (candidate_id,))
-        db.execute("DELETE FROM agency_candidates WHERE candidate_id=?", (candidate_id,))
-        db.execute("DELETE FROM candidates WHERE id=?", (candidate_id,))
+            db.execute(f"DELETE FROM {tbl} WHERE candidate_id=%s", (candidate_id,))
+        db.execute("DELETE FROM agency_candidates WHERE candidate_id=%s", (candidate_id,))
+        db.execute("DELETE FROM candidates WHERE id=%s", (candidate_id,))
 
         log_id = generate_id()
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "candidate", candidate_id, "admin_deleted_candidate", current_user["sub"], f"Deleted candidate: {cand_name}", now))
 
         return {"status": "deleted", "candidate_id": candidate_id, "name": cand_name}
@@ -363,7 +376,8 @@ async def get_alert_settings(current_user: dict = Depends(get_current_user)):
     """Get current alert threshold settings."""
     require_admin(current_user)
     with get_db() as db:
-        rows = db.execute("SELECT * FROM alert_settings ORDER BY setting_key").fetchall()
+        db.execute("SELECT * FROM alert_settings ORDER BY setting_key")
+        rows = db.fetchall()
         if not rows:
             # Return defaults
             return {
@@ -387,23 +401,25 @@ async def update_alert_settings(data: AlertSettings, current_user: dict = Depend
 
     with get_db() as db:
         for key, value in updates.items():
-            existing = db.execute("SELECT id FROM alert_settings WHERE setting_key=?", (key,)).fetchone()
+            db.execute("SELECT id FROM alert_settings WHERE setting_key=%s", (key,))
+            existing = db.fetchone()
             if existing:
-                db.execute("UPDATE alert_settings SET setting_value=?, updated_at=? WHERE setting_key=?",
+                db.execute("UPDATE alert_settings SET setting_value=%s, updated_at=%s WHERE setting_key=%s",
                            (value, now, key))
             else:
-                db.execute("INSERT INTO alert_settings (id, setting_key, setting_value, updated_at) VALUES (?,?,?,?)",
+                db.execute("INSERT INTO alert_settings (id, setting_key, setting_value, updated_at) VALUES (%s,%s,%s,%s)",
                            (generate_id(), key, value, now))
 
         log_id = generate_id()
         import json
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "settings", "alert_settings", "update_alert_settings",
              current_user["sub"], json.dumps(updates), now))
 
         # Return updated settings
-        rows = db.execute("SELECT * FROM alert_settings ORDER BY setting_key").fetchall()
+        db.execute("SELECT * FROM alert_settings ORDER BY setting_key")
+        rows = db.fetchall()
         return {dict(r)["setting_key"]: dict(r)["setting_value"] for r in rows}
 
 
@@ -426,23 +442,25 @@ async def get_audit_logs(
         params: list = []
 
         if entity_type:
-            query += " AND entity_type=?"
+            query += " AND entity_type=%s"
             params.append(entity_type)
         if entity_id:
-            query += " AND entity_id=?"
+            query += " AND entity_id=%s"
             params.append(entity_id)
         if action:
-            query += " AND action LIKE ?"
+            query += " AND action LIKE %s"
             params.append(f"%{action}%")
 
         # Get total count
         count_query = query.replace("SELECT *", "SELECT COUNT(*) as cnt")
-        total = dict(db.execute(count_query, params).fetchone())["cnt"]
+        db.execute(count_query, params)
+        total = dict(db.fetchone())["cnt"]
 
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        query += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
-        rows = db.execute(query, params).fetchall()
+        db.execute(query, params)
+        rows = db.fetchall()
         return {
             "total": total,
             "limit": limit,
@@ -486,7 +504,11 @@ async def admin_edit_check_data(
 
     # Prevent SQL injection by validating field names against actual columns
     with get_db() as db:
-        columns = {row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+        db.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = %s AND table_schema = 'public'",
+            (table,)
+        )
+        columns = {row["column_name"] for row in db.fetchall()}
         invalid_fields = set(data.fields.keys()) - columns
         if invalid_fields:
             raise HTTPException(status_code=400, detail=f"Invalid fields: {invalid_fields}. Valid: {columns}")
@@ -496,21 +518,22 @@ async def admin_edit_check_data(
         if set(data.fields.keys()) & protected:
             raise HTTPException(status_code=400, detail="Cannot edit id or candidate_id fields")
 
-        row = db.execute(f"SELECT * FROM {table} WHERE id=? AND candidate_id=?", (check_id, candidate_id)).fetchone()
+        db.execute(f"SELECT * FROM {table} WHERE id=%s AND candidate_id=%s", (check_id, candidate_id))
+        row = db.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Check record not found")
 
         old_values = dict(row)
-        set_clause = ", ".join(f"{k}=?" for k in data.fields.keys())
+        set_clause = ", ".join(f"{k}=%s" for k in data.fields.keys())
         values = list(data.fields.values()) + [check_id]
-        db.execute(f"UPDATE {table} SET {set_clause} WHERE id=?", values)
+        db.execute(f"UPDATE {table} SET {set_clause} WHERE id=%s", values)
 
         # Log the edit
         import json
         changes = {k: {"old": old_values.get(k), "new": v} for k, v in data.fields.items()}
         log_id = generate_id()
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, f"check_{check_type}", check_id, "admin_edit_check_data",
              current_user["sub"], json.dumps(changes), now))
 
@@ -518,7 +541,8 @@ async def admin_edit_check_data(
         from app.services.compliance_engine import ComplianceEngine
         ComplianceEngine.evaluate_candidate(candidate_id)
 
-        updated = db.execute(f"SELECT * FROM {table} WHERE id=?", (check_id,)).fetchone()
+        db.execute(f"SELECT * FROM {table} WHERE id=%s", (check_id,))
+        updated = db.fetchone()
         return dict(updated)
 
 
@@ -532,57 +556,81 @@ async def retrigger_reference_verification(
     require_admin(current_user)
     now = datetime.now(timezone.utc).isoformat()
 
+    # Phase 1: DB reads and status update (close connection before email send)
     with get_db() as db:
-        ref = db.execute("SELECT * FROM references_ WHERE id=? AND candidate_id=?",
-                         (ref_id, candidate_id)).fetchone()
+        db.execute("SELECT * FROM references_ WHERE id=%s AND candidate_id=%s",
+                         (ref_id, candidate_id))
+        ref = db.fetchone()
         if not ref:
             raise HTTPException(status_code=404, detail="Reference not found")
 
         ref_dict = dict(ref)
+        reminder_count = (ref_dict.get("reminder_count") or 0) + 1
 
         # Reset status to pending and increment reminder count
         db.execute(
-            "UPDATE references_ SET status='pending', reminder_count=reminder_count+1, sent_at=? WHERE id=?",
-            (now, ref_id))
+            "UPDATE references_ SET status='pending', reminder_count=%s, sent_at=%s WHERE id=%s",
+            (reminder_count, now, ref_id))
 
-        # Simulate sending the email
-        from app.services.email_service import EmailService
-        cand = db.execute("SELECT first_name, last_name FROM candidates WHERE id=?",
-                          (candidate_id,)).fetchone()
+        # Look up candidate name
+        db.execute("SELECT first_name, last_name FROM candidates WHERE id=%s",
+                          (candidate_id,))
+        cand = db.fetchone()
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Unknown"
 
-        EmailService.send_notification(
-            recipient_email=ref_dict["referee_email"],
-            recipient_name=ref_dict["referee_name"],
-            subject=f"Reference Request Reminder - {cand_name}",
-            body=f"This is a reminder to complete the reference verification for {cand_name}. Token: {ref_dict['token']}",
-            notification_type="reference_reminder",
-            related_id=ref_id,
-        )
-
-        # Now auto-complete the reference (simulated)
-        from app.services.reference_automation import ReferenceAutomationService
-        responses = {
-            "job_title_confirmed": True,
-            "dates_confirmed": True,
-            "performance_rating": 4,
-            "would_rehire": True,
-            "concerns": "None",
-            "additional_comments": "Re-triggered by admin",
-        }
-        ReferenceAutomationService.submit_reference(ref_dict["token"], responses, "127.0.0.1")
-
-        # Re-evaluate compliance
-        from app.services.compliance_engine import ComplianceEngine
-        ComplianceEngine.evaluate_candidate(candidate_id)
-
-        log_id = generate_id()
+        # Look up agency name
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
-            (log_id, "reference", ref_id, "admin_retrigger_reference",
-             current_user["sub"], f"Re-triggered reference for {ref_dict['referee_email']}", now))
+            "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
+            (candidate_id,))
+        agency_link = db.fetchone()
+        agency_name = "Viper AI"
+        if agency_link:
+            db.execute("SELECT name FROM agencies WHERE id=%s",
+                                (dict(agency_link)["agency_id"],))
+            agency = db.fetchone()
+            if agency:
+                agency_name = dict(agency)["name"]
 
-        updated = db.execute("SELECT * FROM references_ WHERE id=?", (ref_id,)).fetchone()
+    # Phase 2: Send email (outside DB context to avoid SQLite lock)
+    from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+
+    from app.config import BASE_URL
+    reference_link = f"{BASE_URL}/verify?token={ref_dict['token']}&type=reference"
+    verification_code = ref_dict.get("verification_code", "")
+
+    email_result = EmailTemplateService.send_email(
+        template_key="reference_request",
+        recipient_email=ref_dict["referee_email"],
+        recipient_name=ref_dict["referee_name"],
+        variables={
+            "candidate_name": cand_name,
+            "referee_name": ref_dict["referee_name"],
+            "agency_name": agency_name,
+            "verification_code": verification_code,
+            "reference_link": reference_link,
+            **get_trust_signal_variables(),
+        },
+    )
+
+    # Phase 3: Audit log (separate DB context)
+    import json as _json
+    log_id = generate_id()
+    details = _json.dumps({
+        "referee_email": ref_dict["referee_email"],
+        "referee_name": ref_dict["referee_name"],
+        "candidate_name": cand_name,
+        "reminder_number": reminder_count,
+        "email_status": email_result.get("status", "unknown") if email_result else "error",
+        "email_provider": email_result.get("provider", "none") if email_result else "none",
+    })
+    with get_db() as db:
+        db.execute(
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (log_id, "reference", ref_id, "admin_retrigger_reference",
+             current_user["sub"], details, now))
+
+        db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,))
+        updated = db.fetchone()
         return dict(updated)
 
 
@@ -594,56 +642,214 @@ async def retrigger_employment_verification(
     require_admin(current_user)
     now = datetime.now(timezone.utc).isoformat()
 
+    # Phase 1: DB reads and status update (close connection before email send)
     with get_db() as db:
-        ver = db.execute("SELECT * FROM employment_verifications WHERE id=? AND candidate_id=?",
-                         (ver_id, candidate_id)).fetchone()
+        db.execute("SELECT * FROM employment_verifications WHERE id=%s AND candidate_id=%s",
+                         (ver_id, candidate_id))
+        ver = db.fetchone()
         if not ver:
             raise HTTPException(status_code=404, detail="Employment verification not found")
 
         ver_dict = dict(ver)
+        reminder_count = (ver_dict.get("reminder_count") or 0) + 1
 
         # Reset status and increment reminder
         db.execute(
-            "UPDATE employment_verifications SET status='pending', reminder_count=reminder_count+1, sent_at=? WHERE id=?",
-            (now, ver_id))
+            "UPDATE employment_verifications SET status='pending', reminder_count=%s, sent_at=%s WHERE id=%s",
+            (reminder_count, now, ver_id))
 
-        # Send reminder email
-        from app.services.email_service import EmailService
-        cand = db.execute("SELECT first_name, last_name FROM candidates WHERE id=?",
-                          (candidate_id,)).fetchone()
+        # Look up candidate name
+        db.execute("SELECT first_name, last_name FROM candidates WHERE id=%s",
+                          (candidate_id,))
+        cand = db.fetchone()
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}" if cand else "Unknown"
 
-        EmailService.send_notification(
-            recipient_email=ver_dict["verifier_email"],
-            recipient_name=ver_dict["verifier_name"],
-            subject=f"Employment Verification Reminder - {cand_name}",
-            body=f"This is a reminder to complete the employment verification for {cand_name} at {ver_dict.get('employer_name', 'your organization')}.",
-            notification_type="employment_verification_reminder",
-            related_id=ver_id,
-        )
-
-        # Auto-complete the verification (simulated)
+        # Look up agency name
         db.execute(
-            """UPDATE employment_verifications SET status='completed', job_title_confirmed=1,
-               dates_confirmed=1, reason_for_leaving_confirmed='Re-triggered by admin',
-               additional_comments='Admin re-triggered verification', completed_at=? WHERE id=?""",
-            (now, ver_id))
+            "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1",
+            (candidate_id,))
+        agency_link = db.fetchone()
+        agency_name = "Viper AI"
+        if agency_link:
+            db.execute("SELECT name FROM agencies WHERE id=%s",
+                                (dict(agency_link)["agency_id"],))
+            agency = db.fetchone()
+            if agency:
+                agency_name = dict(agency)["name"]
 
-        # Re-evaluate compliance
-        from app.services.compliance_engine import ComplianceEngine
-        ComplianceEngine.evaluate_candidate(candidate_id)
+        # Look up employment details
+        employment_id = ver_dict.get("employment_id", "")
+        emp_data = {}
+        if employment_id:
+            db.execute(
+                "SELECT employer_name, job_title, start_date, end_date FROM employment_history WHERE id=%s",
+                (employment_id,))
+            emp = db.fetchone()
+            if emp:
+                emp_data = dict(emp)
 
-        log_id = generate_id()
+    # Phase 2: Send email (outside DB context to avoid SQLite lock)
+    from app.services.email_templates import EmailTemplateService, get_trust_signal_variables
+
+    from app.config import BASE_URL
+    verification_link = f"{BASE_URL}/verify?token={ver_dict['token']}&type=employment"
+    verification_code = ver_dict.get("verification_code", "")
+
+    email_result = EmailTemplateService.send_email(
+        template_key="employment_verification_request",
+        recipient_email=ver_dict["verifier_email"],
+        recipient_name=ver_dict["verifier_name"],
+        variables={
+            "candidate_name": cand_name,
+            "verifier_name": ver_dict["verifier_name"],
+            "agency_name": agency_name,
+            "employer_name": emp_data.get("employer_name", ver_dict.get("employer_name", "")),
+            "job_title": emp_data.get("job_title", ""),
+            "start_date": emp_data.get("start_date", ""),
+            "end_date": emp_data.get("end_date", "Present"),
+            "verification_code": verification_code,
+            "verification_link": verification_link,
+            **get_trust_signal_variables(),
+        },
+    )
+
+    # Phase 3: Audit log (separate DB context)
+    import json as _json
+    log_id = generate_id()
+    details = _json.dumps({
+        "verifier_email": ver_dict["verifier_email"],
+        "verifier_name": ver_dict["verifier_name"],
+        "candidate_name": cand_name,
+        "employer_name": emp_data.get("employer_name", ver_dict.get("employer_name", "")),
+        "reminder_number": reminder_count,
+        "email_status": email_result.get("status", "unknown") if email_result else "error",
+        "email_provider": email_result.get("provider", "none") if email_result else "none",
+    })
+    with get_db() as db:
         db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (log_id, "employment_verification", ver_id, "admin_retrigger_employment",
-             current_user["sub"], f"Re-triggered employment verification for {ver_dict['verifier_email']}", now))
+             current_user["sub"], details, now))
 
-        updated = db.execute("SELECT * FROM employment_verifications WHERE id=?", (ver_id,)).fetchone()
+        db.execute("SELECT * FROM employment_verifications WHERE id=%s", (ver_id,))
+        updated = db.fetchone()
         return dict(updated)
 
 
 # ── 9. Get Full Candidate Detail (all checks for admin view) ─────
+
+# ── 8b. Generic re-trigger for stallable checks (CV, Identity, RTW, DBS, Reg, Training, Compliance) ──
+
+_RETRIGGERABLE_CHECKS = {"cv", "identity", "rtw", "dbs", "registration", "training", "references", "compliance"}
+
+
+@router.post("/candidates/{candidate_id}/retrigger-check/{check_type}")
+async def retrigger_candidate_check(
+    candidate_id: str,
+    check_type: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin re-trigger for any candidate check that may have stalled or failed.
+
+    Loads the candidate's latest draft data for the given section (if any),
+    invokes the relevant TriggerEngine._run_* method, then re-evaluates compliance.
+    Returns the check result string and an audit entry.
+    """
+    require_admin(current_user)
+
+    check_type = check_type.lower()
+    if check_type not in _RETRIGGERABLE_CHECKS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported check_type '{check_type}'. Supported: {sorted(_RETRIGGERABLE_CHECKS)}",
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Load candidate to confirm existence + load relevant draft section data
+    section_map = {
+        "cv": "cv",
+        "identity": "identity",
+        "rtw": "rtw",
+        "dbs": "dbs",
+        "registration": "registration",
+        "training": "training",
+        "references": "references",
+    }
+    section_key = section_map.get(check_type)
+    section_data: dict = {}
+    with get_db() as db:
+        db.execute("SELECT id FROM candidates WHERE id=%s", (candidate_id,))
+        if not db.fetchone():
+            raise HTTPException(status_code=404, detail="Candidate not found")
+
+        if section_key:
+            db.execute(
+                "SELECT data FROM candidate_draft_data WHERE candidate_id=%s AND section=%s ORDER BY updated_at DESC LIMIT 1",
+                (candidate_id, section_key),
+            )
+            draft = db.fetchone()
+            if draft:
+                try:
+                    import json as _json
+                    raw = dict(draft).get("data") or "{}"
+                    section_data = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+                except Exception:
+                    section_data = {}
+
+    # Dispatch to the relevant TriggerEngine method (outside DB context — each method manages its own)
+    from app.services.trigger_engine import TriggerEngine
+    from app.services.compliance_engine import ComplianceEngine
+
+    result: str
+    try:
+        if check_type == "cv":
+            result = TriggerEngine._run_cv(candidate_id, section_data)
+        elif check_type == "identity":
+            result = TriggerEngine._run_identity(candidate_id, section_data)
+        elif check_type == "rtw":
+            result = TriggerEngine._run_rtw(candidate_id, section_data)
+        elif check_type == "dbs":
+            result = TriggerEngine._run_dbs(candidate_id, section_data)
+        elif check_type == "registration":
+            result = TriggerEngine._run_registration(candidate_id, section_data)
+        elif check_type == "training":
+            result = TriggerEngine._run_training(candidate_id, section_data)
+        elif check_type == "references":
+            # Also re-send any outstanding employment verification emails
+            ref_result = TriggerEngine._run_references(candidate_id, section_data)
+            emp_result = TriggerEngine._run_employment_verifications(candidate_id)
+            result = f"references: {ref_result}; employment: {emp_result}"
+        elif check_type == "compliance":
+            # Just re-evaluate compliance without re-running any individual check
+            result = "compliance re-evaluation requested"
+        else:
+            result = "unsupported"
+    except Exception as e:
+        result = f"error: {e}"
+
+    # Re-evaluate compliance regardless (safe — idempotent)
+    try:
+        ComplianceEngine.evaluate_candidate(candidate_id)
+    except Exception as e:
+        result = f"{result}; compliance_error: {e}"
+
+    # Audit log
+    import json as _json
+    log_id = generate_id()
+    details = _json.dumps({"check_type": check_type, "result": result, "had_draft": bool(section_data)})
+    try:
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (log_id, "candidate_check", candidate_id, f"admin_retrigger_{check_type}",
+                 current_user["sub"], details, now),
+            )
+    except Exception:
+        pass
+
+    return {"candidate_id": candidate_id, "check_type": check_type, "result": result, "triggered_at": now}
+
 
 @router.get("/candidates/{candidate_id}/full-detail")
 async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depends(get_current_user)):
@@ -651,28 +857,97 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
     require_admin(current_user)
 
     with get_db() as db:
-        cand = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+        db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        cand = db.fetchone()
         if not cand:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
-        identity = [dict(r) for r in db.execute("SELECT * FROM identity_checks WHERE candidate_id=?", (candidate_id,)).fetchall()]
-        dbs = [dict(r) for r in db.execute("SELECT * FROM dbs_checks WHERE candidate_id=?", (candidate_id,)).fetchall()]
-        rtw = [dict(r) for r in db.execute("SELECT * FROM right_to_work_checks WHERE candidate_id=?", (candidate_id,)).fetchall()]
-        cv = [dict(r) for r in db.execute("SELECT * FROM cv_analyses WHERE candidate_id=?", (candidate_id,)).fetchall()]
-        reg = [dict(r) for r in db.execute("SELECT * FROM registration_checks WHERE candidate_id=?", (candidate_id,)).fetchall()]
-        refs = [dict(r) for r in db.execute("SELECT * FROM references_ WHERE candidate_id=?", (candidate_id,)).fetchall()]
-        emp_history = [dict(r) for r in db.execute("SELECT * FROM employment_history WHERE candidate_id=?", (candidate_id,)).fetchall()]
-        emp_ver = [dict(r) for r in db.execute("SELECT * FROM employment_verifications WHERE candidate_id=?", (candidate_id,)).fetchall()]
-        training = [dict(r) for r in db.execute("SELECT * FROM training_certificates WHERE candidate_id=?", (candidate_id,)).fetchall()]
-        compliance = db.execute("SELECT * FROM compliance_records WHERE candidate_id=?", (candidate_id,)).fetchone()
-        alerts = [dict(r) for r in db.execute("SELECT * FROM monitoring_alerts WHERE candidate_id=? AND is_resolved=0", (candidate_id,)).fetchall()]
-        fraud = [dict(r) for r in db.execute("SELECT * FROM fraud_flags WHERE candidate_id=? AND is_resolved=0", (candidate_id,)).fetchall()]
+        db.execute("SELECT * FROM identity_checks WHERE candidate_id=%s", (candidate_id,))
+        identity = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM dbs_checks WHERE candidate_id=%s", (candidate_id,))
+        dbs = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM right_to_work_checks WHERE candidate_id=%s", (candidate_id,))
+        rtw = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM cv_analyses WHERE candidate_id=%s", (candidate_id,))
+        cv = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM registration_checks WHERE candidate_id=%s", (candidate_id,))
+        reg = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM references_ WHERE candidate_id=%s", (candidate_id,))
+        refs = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM employment_history WHERE candidate_id=%s", (candidate_id,))
+        emp_history = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM employment_verifications WHERE candidate_id=%s", (candidate_id,))
+        emp_ver = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM training_certificates WHERE candidate_id=%s", (candidate_id,))
+        training = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM compliance_records WHERE candidate_id=%s", (candidate_id,))
+        compliance = db.fetchone()
+        db.execute("SELECT * FROM monitoring_alerts WHERE candidate_id=%s AND is_resolved=0", (candidate_id,))
+        alerts = [dict(r) for r in db.fetchall()]
+        db.execute("SELECT * FROM fraud_flags WHERE candidate_id=%s AND is_resolved=0", (candidate_id,))
+        fraud = [dict(r) for r in db.fetchall()]
+
+        # TrustID checks
+        db.execute("SELECT * FROM trustid_checks WHERE candidate_id=%s ORDER BY created_at DESC", (candidate_id,))
+        trustid = [dict(r) for r in db.fetchall()]
 
         # Agency associations
-        agencies_linked = db.execute(
+        db.execute(
             """SELECT a.id, a.name, a.email, ac.employment_status, ac.assigned_at
                FROM agencies a JOIN agency_candidates ac ON a.id = ac.agency_id
-               WHERE ac.candidate_id=?""", (candidate_id,)).fetchall()
+               WHERE ac.candidate_id=%s""", (candidate_id,))
+        agencies_linked = db.fetchall()
+
+        # AI Analysis Results
+        ai_cv_analyses = []
+        ai_ref_analyses = []
+        ai_anomalies = []
+        try:
+            db.execute("SELECT * FROM ai_cv_gap_analyses WHERE candidate_id=%s ORDER BY created_at DESC", (candidate_id,))
+            ai_cv_rows = db.fetchall()
+            for r in ai_cv_rows:
+                d = dict(r)
+                try:
+                    import json as _json
+                    d["result"] = _json.loads(d.pop("result_json", "{}"))
+                except Exception:
+                    d["result"] = {}
+                ai_cv_analyses.append(d)
+        except Exception:
+            pass
+        try:
+            db.execute("SELECT * FROM ai_reference_analyses WHERE candidate_id=%s ORDER BY created_at DESC", (candidate_id,))
+            ai_ref_rows = db.fetchall()
+            for r in ai_ref_rows:
+                d = dict(r)
+                try:
+                    import json as _json
+                    d["result"] = _json.loads(d.pop("result_json", "{}"))
+                except Exception:
+                    d["result"] = {}
+                ai_ref_analyses.append(d)
+        except Exception:
+            pass
+        try:
+            db.execute(
+                """SELECT * FROM ai_anomaly_scans ORDER BY created_at DESC LIMIT 1"""
+            )
+            anomaly_scan = db.fetchone()
+            if anomaly_scan:
+                d = dict(anomaly_scan)
+                try:
+                    import json as _json
+                    scan_data = _json.loads(d.get("result_json", "{}"))
+                    candidate_anomalies = [
+                        a for a in scan_data.get("anomalies", [])
+                        if a.get("candidate_id") == candidate_id
+                    ]
+                    if candidate_anomalies:
+                        ai_anomalies = candidate_anomalies
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         return {
             "candidate": dict(cand),
@@ -685,14 +960,207 @@ async def get_candidate_full_detail(candidate_id: str, current_user: dict = Depe
             "employment_history": emp_history,
             "employment_verifications": emp_ver,
             "training_certificates": training,
+            "trustid_checks": trustid,
             "compliance": dict(compliance) if compliance else None,
             "active_alerts": alerts,
             "fraud_flags": fraud,
             "agencies": [dict(r) for r in agencies_linked],
+            "ai_cv_gap_analyses": ai_cv_analyses,
+            "ai_reference_analyses": ai_ref_analyses,
+            "ai_anomalies": ai_anomalies,
         }
 
 
-# ── 10. Bulk CQC Audit Pack (multi-candidate) ────────────────────
+# ── 10. Candidates with Monitoring Status ────────────────────────
+
+@router.get("/candidates-monitoring")
+async def get_candidates_monitoring_status(current_user: dict = Depends(get_current_user)):
+    """Get all candidates with their annual monitoring subscription status."""
+    require_admin(current_user)
+
+    with get_db() as db:
+        db.execute(
+            """SELECT c.id, c.first_name, c.last_name, c.email, c.compliance_score,
+                      c.compliance_status, c.created_at,
+                      ac.annual_monitoring, ac.vetting_cost_accepted, ac.monitoring_cost_accepted,
+                      ac.employment_status, ac.agency_id,
+                      a.name as agency_name
+               FROM candidates c
+               JOIN agency_candidates ac ON c.id = ac.candidate_id
+               LEFT JOIN agencies a ON ac.agency_id = a.id
+               ORDER BY ac.annual_monitoring DESC, c.last_name ASC"""
+        )
+        rows = db.fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── 11. Agency Discount Management ───────────────────────────────
+
+class AgencyDiscountUpdate(BaseModel):
+    discount_percent: float  # 0-100
+
+
+@router.put("/agencies/{agency_id}/discount")
+async def update_agency_discount(
+    agency_id: str, data: AgencyDiscountUpdate, current_user: dict = Depends(get_current_user)
+):
+    """Set a discount percentage for a specific agency."""
+    require_admin(current_user)
+    if data.discount_percent < 0 or data.discount_percent > 100:
+        raise HTTPException(status_code=400, detail="Discount must be between 0 and 100")
+
+    with get_db() as db:
+        db.execute("SELECT id, name FROM agencies WHERE id=%s", (agency_id,))
+        agency = db.fetchone()
+        if not agency:
+            raise HTTPException(status_code=404, detail="Agency not found")
+        db.execute("UPDATE agencies SET discount_percent=%s WHERE id=%s", (data.discount_percent, agency_id))
+        # Log audit
+        db.execute(
+            "INSERT INTO audit_logs (id, action, entity_type, entity_id, performed_by, details, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (generate_id(), "set_discount", "agency", agency_id, current_user["sub"],
+             f"Set discount to {data.discount_percent}%", datetime.now(timezone.utc).isoformat()),
+        )
+    return {"status": "ok", "agency_id": agency_id, "discount_percent": data.discount_percent}
+
+
+@router.get("/agencies/{agency_id}/discount")
+async def get_agency_discount(agency_id: str, current_user: dict = Depends(get_current_user)):
+    """Get the discount percentage for a specific agency."""
+    require_admin(current_user)
+    with get_db() as db:
+        db.execute("SELECT discount_percent FROM agencies WHERE id=%s", (agency_id,))
+        row = db.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Agency not found")
+        return {"agency_id": agency_id, "discount_percent": dict(row).get("discount_percent", 0) or 0}
+
+
+# ── 12. Partial Invoice Adjustment ──────────────────────────────
+
+class InvoiceAdjustment(BaseModel):
+    adjusted_amount: float
+    adjustment_notes: Optional[str] = None
+
+
+@router.put("/invoices/{invoice_id}/adjust")
+async def adjust_invoice(
+    invoice_id: str, data: InvoiceAdjustment, current_user: dict = Depends(get_current_user)
+):
+    """Adjust an invoice amount (for partial completion — charge only for completed checks)."""
+    require_admin(current_user)
+    now = datetime.now(timezone.utc).isoformat()
+
+    with get_db() as db:
+        db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+        inv = db.fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        inv_dict = dict(inv)
+        if data.adjusted_amount < 0:
+            raise HTTPException(status_code=400, detail="Adjusted amount cannot be negative")
+        if data.adjusted_amount > inv_dict["sell_amount"]:
+            raise HTTPException(status_code=400, detail="Adjusted amount cannot exceed original amount")
+
+        db.execute(
+            "UPDATE invoices SET adjusted_amount=%s, adjustment_notes=%s WHERE id=%s",
+            (data.adjusted_amount, data.adjustment_notes, invoice_id),
+        )
+        # Log audit
+        db.execute(
+            "INSERT INTO audit_logs (id, action, entity_type, entity_id, actor, details, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (generate_id(), "adjust_invoice", "invoice", invoice_id, current_user["sub"],
+             f"Adjusted from £{inv_dict['sell_amount']:.2f} to £{data.adjusted_amount:.2f}: {data.adjustment_notes or 'N/A'}", now),
+        )
+    return {"status": "ok", "invoice_id": invoice_id, "original_amount": inv_dict["sell_amount"],
+            "adjusted_amount": data.adjusted_amount, "notes": data.adjustment_notes}
+
+
+@router.get("/invoices")
+async def list_all_invoices(current_user: dict = Depends(get_current_user)):
+    """List all invoices with agency details for admin invoicing view."""
+    require_admin(current_user)
+    with get_db() as db:
+        db.execute(
+            """SELECT i.*, a.name as agency_name, a.discount_percent
+               FROM invoices i
+               LEFT JOIN agencies a ON i.agency_id = a.id
+               ORDER BY i.created_at DESC"""
+        )
+        rows = db.fetchall()
+        return [dict(r) for r in rows]
+
+
+@router.put("/invoices/{invoice_id}/status")
+async def update_invoice_status(
+    invoice_id: str, current_user: dict = Depends(get_current_user)
+):
+    """Mark an invoice as paid."""
+    require_admin(current_user)
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as db:
+        db.execute("SELECT id FROM invoices WHERE id=%s", (invoice_id,))
+        inv = db.fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        db.execute("UPDATE invoices SET status='paid', paid_at=%s WHERE id=%s", (now, invoice_id))
+    return {"status": "ok", "invoice_id": invoice_id}
+
+
+# ── 13. Agency Billing Mode Toggle ─────────────────────────────────
+
+class BillingModeUpdate(BaseModel):
+    billing_mode: str  # manual_invoicing, online_payment, subscription
+    stripe_customer_id: Optional[str] = None
+
+
+@router.put("/agencies/{agency_id}/billing-mode")
+async def update_agency_billing_mode(
+    agency_id: str, data: BillingModeUpdate, current_user: dict = Depends(get_current_user)
+):
+    """Admin toggles an agency's billing mode between manual_invoicing, online_payment, and subscription."""
+    require_admin(current_user)
+    now = datetime.now(timezone.utc).isoformat()
+
+    from app.services.billing import BillingService
+    try:
+        result = BillingService.set_agency_billing_mode(
+            agency_id, data.billing_mode, data.stripe_customer_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Log the action
+    with get_db() as db:
+        log_id = generate_id()
+        db.execute(
+            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (log_id, "agency", agency_id, "billing_mode_changed",
+             current_user["sub"], f"Billing mode set to '{data.billing_mode}'", now))
+
+    return result
+
+
+@router.get("/agencies/{agency_id}/billing-mode")
+async def get_agency_billing_mode(
+    agency_id: str, current_user: dict = Depends(get_current_user)
+):
+    """Get an agency's billing mode."""
+    require_admin(current_user)
+    from app.services.billing import BillingService
+    return BillingService.get_agency_billing_mode(agency_id)
+
+
+@router.post("/billing/send-reminders")
+async def trigger_payment_reminders(current_user: dict = Depends(get_current_user)):
+    """Admin manually triggers payment reminders for all overdue invoices."""
+    require_admin(current_user)
+    from app.services.billing import BillingService
+    reminders = BillingService.send_payment_reminders()
+    return {"reminders_sent": len(reminders), "details": reminders}
+
+
+# ── 14. Bulk CQC Audit Pack (multi-candidate) ────────────────────
 
 @router.post("/audit/bulk")
 async def generate_bulk_audit_pack(

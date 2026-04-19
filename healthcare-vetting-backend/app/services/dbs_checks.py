@@ -32,7 +32,7 @@ class DBSCheckService:
             db.execute(
                 """INSERT INTO dbs_checks
                    (id, candidate_id, provider, check_type, status, application_ref, submitted_at)
-                   VALUES (?, ?, ?, ?, 'submitted', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, 'submitted', %s, %s)""",
                 (check_id, candidate_id, provider, check_type, app_ref, now),
             )
 
@@ -50,9 +50,9 @@ class DBSCheckService:
 
             db.execute(
                 """UPDATE dbs_checks SET
-                   status=?, certificate_number=?, issue_date=?,
-                   result=?, details=?, next_renewal=?, completed_at=?
-                   WHERE id=?""",
+                   status=%s, certificate_number=%s, issue_date=%s,
+                   result=%s, details=%s, next_renewal=%s, completed_at=%s
+                   WHERE id=%s""",
                 (
                     result["status"],
                     cert_number,
@@ -68,11 +68,12 @@ class DBSCheckService:
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'dbs_check', ?, 'submitted', 'system', ?, ?)""",
+                   VALUES (%s, 'dbs_check', %s, 'submitted', 'system', %s, %s)""",
                 (generate_id(), check_id, json.dumps({"provider": provider, "type": check_type}), now),
             )
 
-            row = db.execute("SELECT * FROM dbs_checks WHERE id=?", (check_id,)).fetchone()
+            db.execute("SELECT * FROM dbs_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -127,7 +128,8 @@ class DBSCheckService:
     @staticmethod
     def get_check(check_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM dbs_checks WHERE id=?", (check_id,)).fetchone()
+            db.execute("SELECT * FROM dbs_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -135,8 +137,9 @@ class DBSCheckService:
     @staticmethod
     def get_checks_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
-                "SELECT * FROM dbs_checks WHERE candidate_id=? ORDER BY submitted_at DESC",
+            db.execute(
+                "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
