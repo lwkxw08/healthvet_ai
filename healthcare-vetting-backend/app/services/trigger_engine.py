@@ -340,8 +340,44 @@ class TriggerEngine:
                 except Exception as e:
                     logger.warning("Failed to check draft data for CV text: %s", e)
 
-            # If still no cv_text, try to find an uploaded CV document
-            if not cv_text:
+            # If still no cv_text, try to find an uploaded CV document.
+            # Check the modern `documents` table (R2-backed) first, then the
+            # legacy `candidate_documents` table (local disk) for backwards
+            # compatibility.
+            if not cv_text and not cv_file_bytes:
+                try:
+                    with get_db() as db:
+                        db.execute(
+                            "SELECT id, file_name, storage_key, content_type FROM documents "
+                            "WHERE candidate_id=%s AND category='cv' "
+                            "ORDER BY created_at DESC LIMIT 1",
+                            (candidate_id,),
+                        )
+                        doc = db.fetchone()
+                        if doc:
+                            doc_data = dict(doc)
+                            if not cv_file_name:
+                                cv_file_name = doc_data.get("file_name")
+                            storage_key = doc_data.get("storage_key")
+                            if storage_key:
+                                try:
+                                    from app.services.document_storage import get_storage_backend
+                                    storage = get_storage_backend()
+                                    file_obj, _name, _ct = storage.download(storage_key)
+                                    cv_file_bytes = file_obj.read()
+                                    logger.info(
+                                        "Read CV file from documents table for candidate %s: key=%s bytes=%d",
+                                        candidate_id, storage_key, len(cv_file_bytes),
+                                    )
+                                except Exception as e_dl:
+                                    logger.warning(
+                                        "Could not download CV from storage key %s: %s",
+                                        storage_key, e_dl,
+                                    )
+                except Exception as e:
+                    logger.warning("Failed to query documents table for CV: %s", e)
+
+            if not cv_text and not cv_file_bytes:
                 try:
                     with get_db() as db:
                         db.execute(
@@ -351,9 +387,9 @@ class TriggerEngine:
                         doc = db.fetchone()
                         if doc:
                             doc_data = dict(doc)
-                            cv_file_name = doc_data.get("file_name")
+                            if not cv_file_name:
+                                cv_file_name = doc_data.get("file_name")
                             file_path = doc_data.get("file_path")
-                            # Try to read the file from storage
                             if file_path:
                                 import os
                                 if os.path.exists(file_path):
@@ -361,7 +397,6 @@ class TriggerEngine:
                                         cv_file_bytes = f.read()
                                     logger.info("Read CV file from local storage: %s", file_path)
                                 else:
-                                    # Try S3/R2 storage
                                     try:
                                         from app.services.document_storage import get_storage_backend
                                         storage = get_storage_backend()
