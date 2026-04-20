@@ -21,6 +21,24 @@ function init(): { base: string; basicAuth: string | null } {
 
 const { base: API_URL, basicAuth: TUNNEL_AUTH } = init();
 
+// Trigger a browser download for a Blob. Must append the anchor to the document
+// and defer URL.revokeObjectURL — Safari / some Chrome versions otherwise
+// cancel the download when the URL is revoked synchronously after click().
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -628,9 +646,7 @@ export const leadGenerationApi = {
     const disposition = response.headers.get("Content-Disposition") || "";
     const match = disposition.match(/filename="?([^"]+)"?/);
     const filename = match ? match[1] : "leads_export.xlsx";
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, filename);
   },
   scrapeRegistration: (token: string, data: { candidate_id: string; body: string; registration_number: string }) =>
     apiRequest<Record<string, unknown>>("/api/lead-generation/registration-scrape", { method: "POST", body: data, token }),
@@ -761,11 +777,12 @@ export const analyticsApi = {
     const headers: Record<string, string> = {};
     if (token) headers["X-Auth-Token"] = token;
     const response = await fetch(`${API_URL}/api/analytics/export/compliance-csv${qs}`, { headers });
-    if (!response.ok) throw new Error("Export failed");
+    if (!response.ok) {
+      const err = await response.text().catch(() => "");
+      throw new Error(err || `Export failed (HTTP ${response.status})`);
+    }
     const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `compliance_report_${new Date().toISOString().split("T")[0]}.csv`; a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, `compliance_report_${new Date().toISOString().split("T")[0]}.csv`);
   },
   getScheduledReports: (token: string) =>
     apiRequest<Record<string, unknown>[]>("/api/analytics/scheduled-reports", { token }),
@@ -814,11 +831,12 @@ export const auditTrailApi = {
     const headers: Record<string, string> = {};
     if (token) headers["X-Auth-Token"] = token;
     const response = await fetch(`${API_URL}/api/audit-trail/export/cqc/download?${qs.toString()}`, { headers });
-    if (!response.ok) throw new Error("Export failed");
+    if (!response.ok) {
+      const err = await response.text().catch(() => "");
+      throw new Error(err || `Export failed (HTTP ${response.status})`);
+    }
     const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "cqc_audit_export.csv"; a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, "cqc_audit_export.csv");
   },
   getSarReport: (token: string, candidateEmail: string) =>
     apiRequest<Record<string, unknown>>(`/api/audit-trail/sar/${encodeURIComponent(candidateEmail)}`, { token }),
