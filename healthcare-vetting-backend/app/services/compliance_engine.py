@@ -307,63 +307,171 @@ class ComplianceEngine:
                 if not cv_pass and cv:
                     flags.append(f"CV fraud risk score: {dict(cv)['fraud_risk_score']}")
 
-            # Training Compliance
+            # Training Compliance — uses the training_courses catalogue for
+            # matching (course_id first, then normalised name + aliases) and
+            # respects the per-industry `training_policy`:
+            #   - "pass_fail"       (default): all mandatory courses must be valid
+            #   - "informational"   : certs recorded but don't block compliance
             if "training_compliant" in rules:
+                from app.services.training_catalogue import build_matcher
+
                 training_config = template_config.get("training_compliant", {})
-                mandatory_names = training_config.get("certificates", [
-                    "Manual Handling", "Infection Prevention & Control",
-                    "Safeguarding Adults", "Safeguarding Children",
-                    "Basic Life Support (BLS)", "Fire Safety", "Health & Safety",
-                ])
+                policy = training_config.get("policy", "pass_fail")
+                if policy not in {"pass_fail", "informational"}:
+                    policy = "pass_fail"
+
+                # Resolve the industry template id for this candidate
+                template_id_for_courses = None
+                try:
+                    db.execute(
+                        "SELECT agency_id, sub_account_id FROM agency_candidates "
+                        "WHERE candidate_id=%s ORDER BY created_at DESC LIMIT 1",
+                        (candidate_id,),
+                    )
+                    ac_row = db.fetchone()
+                    if ac_row:
+                        ac_d = dict(ac_row)
+                        if ac_d.get("sub_account_id"):
+                            db.execute(
+                                "SELECT industry_template_id FROM agency_sub_accounts WHERE id=%s AND is_active=1",
+                                (ac_d["sub_account_id"],),
+                            )
+                            sub_r = db.fetchone()
+                            if sub_r and dict(sub_r).get("industry_template_id"):
+                                template_id_for_courses = dict(sub_r)["industry_template_id"]
+                        if not template_id_for_courses and ac_d.get("agency_id"):
+                            db.execute(
+                                "SELECT industry_template_id FROM agencies WHERE id=%s",
+                                (ac_d["agency_id"],),
+                            )
+                            ag_r = db.fetchone()
+                            if ag_r and dict(ag_r).get("industry_template_id"):
+                                template_id_for_courses = dict(ag_r)["industry_template_id"]
+                    if not template_id_for_courses:
+                        db.execute(
+                            "SELECT id FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
+                        )
+                        dr = db.fetchone()
+                        if dr:
+                            template_id_for_courses = dict(dr)["id"]
+                except Exception:
+                    template_id_for_courses = None
+
+                matcher = build_matcher(template_id_for_courses) if template_id_for_courses else {"courses": [], "by_id": {}, "by_name_norm": {}}
+
+                mandatory_courses = [c for c in matcher["courses"] if c.get("is_mandatory")]
+                # Legacy fallback: if no catalogue entries but template config
+                # still lists certificate names, treat them as mandatory.
+                if not mandatory_courses:
+                    legacy_names = training_config.get("certificates", [])
+                    mandatory_courses = [
+                        {"id": None, "name": n, "aliases": [], "is_mandatory": True}
+                        for n in legacy_names
+                    ]
+
                 try:
                     db.execute(
                         "SELECT * FROM training_certificates WHERE candidate_id=%s",
                         (candidate_id,),
                     )
-                    training_certs = db.fetchall()
-                    cert_map = {dict(c)["certificate_name"]: dict(c) for c in training_certs}
-
-                    # If candidate has NO training certificates at all, show generic warning
-                    if len(training_certs) == 0:
-                        training_pass = False
-                        mandatory_valid = 0
-                        mandatory_expired = 0
-                        mandatory_missing = []  # Don't list specifics when none provided
-                    else:
-                        mandatory_valid = 0
-                        mandatory_expired = 0
-                        mandatory_missing = []
-                        for name in mandatory_names:
-                            cert = cert_map.get(name)
-                            if cert and cert.get("status") == "valid":
-                                mandatory_valid += 1
-                            elif cert and cert.get("status") == "expired":
-                                mandatory_expired += 1
-                            else:
-                                mandatory_missing.append(name)
-                        training_pass = mandatory_valid == len(mandatory_names) if mandatory_names else True
+                    training_certs = [dict(c) for c in db.fetchall()]
                 except Exception:
-                    training_pass = False
-                    mandatory_valid = 0
-                    mandatory_expired = 0
-                    mandatory_missing = []
+                    training_certs = []
 
-                checks["training_compliant"] = training_pass
+                # Index certs by resolved course id AND by normalised name so
+                # we can check every mandatory course against the candidate's
+                # submissions.
+                from app.services.training_catalogue import resolve_cert_to_course, _normalise
+
+                certs_by_course_id: dict[str, dict] = {}
+                certs_by_name_norm: dict[str, dict] = {}
+                for cert in training_certs:
+                    matched = resolve_cert_to_course(cert, matcher) if matcher["by_id"] or matcher["by_name_norm"] else None
+                    if matched and matched.get("id"):
+                        certs_by_course_id[matched["id"]] = cert
+                    n = _normalise(cert.get("certificate_name") or "")
+                    if n:
+                        certs_by_name_norm[n] = cert
+
+                mandatory_valid = 0
+                mandatory_expired = 0
+                mandatory_missing: list[str] = []
+                total_mandatory = len(mandatory_courses)
+
+                for course in mandatory_courses:
+                    cert = None
+                    cid = course.get("id")
+                    if cid and cid in certs_by_course_id:
+                        cert = certs_by_course_id[cid]
+                    else:
+                        n = _normalise(course.get("name") or "")
+                        if n and n in certs_by_name_norm:
+                            cert = certs_by_name_norm[n]
+                        if not cert:
+                            for alias in course.get("aliases", []):
+                                an = _normalise(alias)
+                                if an and an in certs_by_name_norm:
+                                    cert = certs_by_name_norm[an]
+                                    break
+                    if cert and cert.get("status") == "valid":
+                        mandatory_valid += 1
+                    elif cert and cert.get("status") == "expired":
+                        mandatory_expired += 1
+                    else:
+                        mandatory_missing.append(course["name"])
+
+                if total_mandatory == 0:
+                    # No mandatory courses defined: training is automatically passing
+                    training_pass = True
+                elif len(training_certs) == 0:
+                    training_pass = False
+                else:
+                    training_pass = mandatory_valid == total_mandatory
+
+                # Informational policy: record but don't block overall compliance
+                if policy == "informational":
+                    checks["training_compliant"] = True
+                    audit_result = "informational"
+                else:
+                    checks["training_compliant"] = training_pass
+                    audit_result = "passed" if training_pass else "failed"
+
+                if total_mandatory > 0 and len(training_certs) > 0:
+                    detail = f"{mandatory_valid}/{total_mandatory} mandatory certificates valid"
+                elif total_mandatory == 0:
+                    detail = f"No mandatory courses configured — {len(training_certs)} certificate(s) on file"
+                else:
+                    detail = "No training certificates provided"
+
                 audit_entries.append({
                     "check": "training_compliance",
-                    "result": "passed" if training_pass else "failed",
+                    "result": audit_result,
+                    "policy": policy,
                     "timestamp": now,
-                    "details": f"{mandatory_valid}/{len(mandatory_names)} mandatory certificates valid" if len(training_certs) > 0 else "No training certificates provided",
+                    "details": detail,
                 })
-                if not training_pass:
-                    if len(training_certs) == 0:
-                        # Generic warning when no training data provided at all
+                if not training_pass and policy == "pass_fail":
+                    if len(training_certs) == 0 and total_mandatory > 0:
                         flags.append("Training: no training certificates provided by candidate")
                     else:
                         if mandatory_expired > 0:
                             flags.append(f"Training: {mandatory_expired} mandatory certificate(s) expired")
                         if mandatory_missing:
-                            flags.append(f"Training: missing {', '.join(mandatory_missing[:3])}{'...' if len(mandatory_missing) > 3 else ''}")
+                            flags.append(
+                                f"Training: missing {', '.join(mandatory_missing[:3])}"
+                                f"{'...' if len(mandatory_missing) > 3 else ''}"
+                            )
+                elif policy == "informational" and (mandatory_expired > 0 or mandatory_missing):
+                    # Surface as an advisory note but don't fail
+                    advisory_bits = []
+                    if mandatory_valid < total_mandatory:
+                        advisory_bits.append(
+                            f"{mandatory_valid}/{total_mandatory} mandatory courses valid"
+                        )
+                    if mandatory_expired > 0:
+                        advisory_bits.append(f"{mandatory_expired} expired")
+                    if advisory_bits:
+                        flags.append("Training (informational): " + "; ".join(advisory_bits))
 
             # Employment Verification
             if "employment_verified" in rules:

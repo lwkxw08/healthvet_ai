@@ -54,6 +54,7 @@ from app.routes import ai_insights
 from app.routes import documents
 from app.routes import trustid
 from app.routes import sms
+from app.routes import training_catalogue
 from app.routes import websocket as ws_routes
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
@@ -130,6 +131,7 @@ app.include_router(ai_insights.router)
 app.include_router(documents.router)
 app.include_router(trustid.router)
 app.include_router(sms.router)
+app.include_router(training_catalogue.router)
 app.include_router(ws_routes.router)
 
 

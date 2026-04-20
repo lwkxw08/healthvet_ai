@@ -538,28 +538,66 @@ class TriggerEngine:
 
     @staticmethod
     def _run_training(candidate_id: str, data: dict) -> str:
-        """Record training certificates."""
+        """Record training certificates.
+
+        When a certificate references a catalogue course via `course_id` the
+        course is looked up so the stored row gets the canonical name, and a
+        default expiry can be derived from the course's `default_validity_months`
+        when the candidate didn't enter one.
+        """
         try:
+            from app.services.training_catalogue import get_course as _get_course
+
             certs = data.get("certificates", [])
             added = 0
             with get_db() as db:
                 for cert in certs:
-                    if cert.get("certificate_name"):
-                        db.execute(
-                            """INSERT INTO training_certificates
-                               (id, candidate_id, certificate_name, category, provider,
-                                issue_date, expiry_date, certificate_ref, created_at)
-                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                            (generate_id(), candidate_id,
-                             cert["certificate_name"],
-                             cert.get("category", "mandatory"),
-                             cert.get("provider"),
-                             cert.get("issue_date"),
-                             cert.get("expiry_date"),
-                             cert.get("certificate_ref"),
-                             datetime.now(timezone.utc).isoformat()),
-                        )
-                        added += 1
+                    name = (cert.get("certificate_name") or "").strip()
+                    course_id = cert.get("course_id")
+                    course = _get_course(course_id) if course_id else None
+                    if course and not name:
+                        name = course["name"]
+                    if not name:
+                        continue
+
+                    issue_date = cert.get("issue_date")
+                    expiry_date = cert.get("expiry_date")
+                    # Derive expiry from catalogue default_validity_months if
+                    # the candidate didn't provide one explicitly
+                    if course and not expiry_date and issue_date:
+                        try:
+                            from datetime import datetime as _dt
+                            _issue = _dt.fromisoformat(issue_date[:10])
+                            months = int(course.get("default_validity_months") or 0)
+                            if months > 0:
+                                # approximate month addition
+                                year = _issue.year + (months // 12)
+                                month = _issue.month + (months % 12)
+                                if month > 12:
+                                    year += 1
+                                    month -= 12
+                                from calendar import monthrange as _mr
+                                day = min(_issue.day, _mr(year, month)[1])
+                                expiry_date = _issue.replace(year=year, month=month, day=day).isoformat()[:10]
+                        except Exception:
+                            expiry_date = cert.get("expiry_date")
+
+                    db.execute(
+                        """INSERT INTO training_certificates
+                           (id, candidate_id, certificate_name, category, provider,
+                            issue_date, expiry_date, certificate_ref, course_id, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (generate_id(), candidate_id,
+                         course["name"] if course else name,
+                         cert.get("category") or (course.get("category") if course else "mandatory"),
+                         cert.get("provider"),
+                         issue_date,
+                         expiry_date,
+                         cert.get("certificate_ref"),
+                         course["id"] if course else None,
+                         datetime.now(timezone.utc).isoformat()),
+                    )
+                    added += 1
             return f"completed ({added} certificates recorded)"
         except Exception as e:
             return f"error: {str(e)}"

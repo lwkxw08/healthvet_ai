@@ -395,6 +395,86 @@ export const agencyServicesApi = {
     apiRequest<Record<string, unknown>>(`/api/agencies/billing/pay-invoice/${invoiceId}`, { method: "POST", token }),
 };
 
+// Training Catalogue API (catalogue-backed dropdown + per-industry policy)
+export interface TrainingCourse {
+  id: string;
+  industry_template_id: string;
+  name: string;
+  aliases: string[];
+  category: string;
+  description?: string;
+  default_validity_months: number;
+  is_mandatory: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TrainingCourseListForCandidate {
+  industry_template_id: string | null;
+  industry_template_name: string | null;
+  training_policy: "pass_fail" | "informational";
+  courses: TrainingCourse[];
+}
+
+export const trainingCatalogueApi = {
+  list: (token: string, industryTemplateId?: string, includeInactive = false) => {
+    const qs = new URLSearchParams();
+    if (industryTemplateId) qs.set("industry_template_id", industryTemplateId);
+    if (includeInactive) qs.set("include_inactive", "true");
+    return apiRequest<{ courses: TrainingCourse[] }>(
+      `/api/training-courses?${qs.toString()}`,
+      { token },
+    );
+  },
+  forCandidate: (token: string, candidateId: string) =>
+    apiRequest<TrainingCourseListForCandidate>(
+      `/api/training-courses/for-candidate/${candidateId}`,
+      { token },
+    ),
+  forSelf: (token: string) =>
+    apiRequest<TrainingCourseListForCandidate>(`/api/training-courses/self`, { token }),
+  create: (token: string, body: Partial<TrainingCourse> & { industry_template_id: string; name: string }) =>
+    apiRequest<TrainingCourse>("/api/admin/training-courses", {
+      method: "POST", body, token,
+    }),
+  update: (token: string, courseId: string, body: Partial<TrainingCourse>) =>
+    apiRequest<TrainingCourse>(`/api/admin/training-courses/${courseId}`, {
+      method: "PATCH", body, token,
+    }),
+  remove: (token: string, courseId: string) =>
+    apiRequest<{ deleted: boolean; id: string }>(
+      `/api/admin/training-courses/${courseId}`,
+      { method: "DELETE", token },
+    ),
+  importCsv: async (token: string, industryTemplateId: string, file: File) => {
+    const form = new FormData();
+    form.append("industry_template_id", industryTemplateId);
+    form.append("file", file);
+    const resp = await fetch(`${API_URL}/api/admin/training-courses/import`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(txt || `Import failed (${resp.status})`);
+    }
+    return resp.json() as Promise<{ created: number; updated: number; errors: string[] }>;
+  },
+  getPolicy: (token: string, templateId: string) =>
+    apiRequest<{ industry_template_id: string; training_policy: "pass_fail" | "informational" }>(
+      `/api/admin/industry-templates/${templateId}/training-policy`,
+      { token },
+    ),
+  setPolicy: (token: string, templateId: string, policy: "pass_fail" | "informational") =>
+    apiRequest<{ industry_template_id: string; training_policy: string }>(
+      `/api/admin/industry-templates/${templateId}/training-policy`,
+      { method: "PATCH", body: { policy }, token },
+    ),
+};
+
 // Training Certificates API
 export const trainingApi = {
   getStandards: () =>
