@@ -513,6 +513,10 @@ export default function AgencyDashboard() {
       medium: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
       low: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       incomplete: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+      cancelled: "bg-slate-500/20 text-slate-400 border-slate-500/30 line-through",
+      refunded: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+      pending_admin_approval: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+      paid: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
     };
     return (
       <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${colors[status] || colors.incomplete}`}>

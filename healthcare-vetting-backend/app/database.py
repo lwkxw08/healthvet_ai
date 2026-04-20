@@ -530,6 +530,18 @@ def migrate_db():
     # Ensure training_certificates has course_id FK so we can match by id.
     _add_column_if_missing(cursor, "training_certificates", "course_id", "TEXT")
 
+    # Link invoices and credit transactions back to the originating invite so that
+    # revoke-invite can cancel the billing line and refund credits / flag PAYG refunds.
+    _add_column_if_missing(cursor, "invoices", "invite_id", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "cancelled_at", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "refund_status", "TEXT")  # NULL | pending_admin_approval | approved | declined | refunded
+    _add_column_if_missing(cursor, "invoices", "refund_requested_at", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "refund_resolved_at", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "refund_resolved_by", "TEXT")
+    if _table_exists(cursor, "credit_transactions"):
+        _add_column_if_missing(cursor, "credit_transactions", "invite_id", "TEXT")
+        _add_column_if_missing(cursor, "credit_transactions", "reversed_at", "TEXT")
+
     # Seed expanded pricing elements if not present
     existing_pricing_types = set()
     if _table_exists(cursor, "pricing_settings"):

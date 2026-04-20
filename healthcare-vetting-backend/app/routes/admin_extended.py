@@ -1182,3 +1182,68 @@ async def generate_bulk_audit_pack(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate bulk audit pack: {str(e)}")
+
+
+# ── Refund approval (PAYG / online_payment paid invoices) ─────────────
+
+@router.get("/refund-requests")
+async def list_refund_requests(current_user: dict = Depends(get_current_user)):
+    """List invoices awaiting admin approval for refund (from revoked invites)."""
+    require_admin(current_user)
+    with get_db() as db:
+        db.execute(
+            """SELECT i.*, a.name AS agency_name, inv.candidate_email
+               FROM invoices i
+               LEFT JOIN agencies a ON a.id = i.agency_id
+               LEFT JOIN agency_invites inv ON inv.id = i.invite_id
+               WHERE i.refund_status='pending_admin_approval'
+               ORDER BY i.refund_requested_at DESC"""
+        )
+        return [dict(r) for r in db.fetchall()]
+
+
+class RefundDecision(BaseModel):
+    action: str  # "approve" | "decline"
+    notes: Optional[str] = None
+
+
+@router.post("/invoices/{invoice_id}/refund-decision")
+async def decide_refund(
+    invoice_id: str,
+    data: RefundDecision,
+    current_user: dict = Depends(get_current_user),
+):
+    """Approve or decline a pending PAYG refund request."""
+    require_admin(current_user)
+    if data.action not in ("approve", "decline"):
+        raise HTTPException(status_code=400, detail="action must be approve or decline")
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as db:
+        db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+        inv = db.fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        inv_d = dict(inv)
+        if inv_d.get("refund_status") != "pending_admin_approval":
+            raise HTTPException(status_code=400, detail="Invoice is not awaiting refund approval")
+
+        if data.action == "approve":
+            # Note: actual Stripe refund is out of scope for this fix — we mark
+            # the invoice as refunded + cancelled and leave a Stripe refund hook
+            # to be wired in later.
+            db.execute(
+                """UPDATE invoices
+                   SET status='cancelled', refund_status='refunded',
+                       cancelled_at=%s, refund_resolved_at=%s, refund_resolved_by=%s
+                   WHERE id=%s""",
+                (now, now, current_user.get("sub"), invoice_id),
+            )
+            return {"status": "refunded", "invoice_id": invoice_id}
+        else:
+            db.execute(
+                """UPDATE invoices
+                   SET refund_status='declined', refund_resolved_at=%s, refund_resolved_by=%s
+                   WHERE id=%s""",
+                (now, current_user.get("sub"), invoice_id),
+            )
+            return {"status": "declined", "invoice_id": invoice_id}
