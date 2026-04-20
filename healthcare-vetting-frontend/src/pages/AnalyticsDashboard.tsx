@@ -36,6 +36,8 @@ export default function AnalyticsDashboard({ agencyId }: AnalyticsDashboardProps
   const [scheduledReports, setScheduledReports] = useState<Record<string, unknown>[]>([]);
   const [newReport, setNewReport] = useState({ report_type: "compliance_summary", frequency: "weekly", recipients: "" });
   const [creatingReport, setCreatingReport] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const loadKpis = useCallback(async () => {
     if (!token || !agencyId) return;
@@ -106,9 +108,17 @@ export default function AnalyticsDashboard({ agencyId }: AnalyticsDashboardProps
 
   const handleExportCsv = async () => {
     if (!token) return;
+    setExporting(true);
+    setExportMessage(null);
     try {
       await analyticsApi.exportComplianceCsv(token, agencyId);
-    } catch { /* ignore */ }
+      setExportMessage({ kind: "ok", text: "Compliance CSV downloaded" });
+    } catch (err) {
+      setExportMessage({ kind: "err", text: `Export failed: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setExporting(false);
+      setTimeout(() => setExportMessage(null), 4000);
+    }
   };
 
   const handleCreateReport = async () => {
@@ -148,9 +158,18 @@ export default function AnalyticsDashboard({ agencyId }: AnalyticsDashboardProps
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900">Analytics & Reporting</h2>
-        <button onClick={handleExportCsv} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">
-          <Download className="w-4 h-4" /> Export CSV
-        </button>
+        <div className="flex items-center gap-2">
+          {exportMessage && (
+            <span className={`text-xs px-2 py-1 rounded ${exportMessage.kind === "ok" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+              {exportMessage.text}
+            </span>
+          )}
+          <button onClick={handleExportCsv} disabled={exporting}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed">
+            {exporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {exporting ? "Exporting..." : "Export CSV"}
+          </button>
+        </div>
       </div>
 
       {/* Sub-tabs */}

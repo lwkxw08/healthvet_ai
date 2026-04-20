@@ -21,6 +21,24 @@ function init(): { base: string; basicAuth: string | null } {
 
 const { base: API_URL, basicAuth: TUNNEL_AUTH } = init();
 
+// Trigger a browser download for a Blob. Must append the anchor to the document
+// and defer URL.revokeObjectURL — Safari / some Chrome versions otherwise
+// cancel the download when the URL is revoked synchronously after click().
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -377,6 +395,86 @@ export const agencyServicesApi = {
     apiRequest<Record<string, unknown>>(`/api/agencies/billing/pay-invoice/${invoiceId}`, { method: "POST", token }),
 };
 
+// Training Catalogue API (catalogue-backed dropdown + per-industry policy)
+export interface TrainingCourse {
+  id: string;
+  industry_template_id: string;
+  name: string;
+  aliases: string[];
+  category: string;
+  description?: string;
+  default_validity_months: number;
+  is_mandatory: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TrainingCourseListForCandidate {
+  industry_template_id: string | null;
+  industry_template_name: string | null;
+  training_policy: "pass_fail" | "informational";
+  courses: TrainingCourse[];
+}
+
+export const trainingCatalogueApi = {
+  list: (token: string, industryTemplateId?: string, includeInactive = false) => {
+    const qs = new URLSearchParams();
+    if (industryTemplateId) qs.set("industry_template_id", industryTemplateId);
+    if (includeInactive) qs.set("include_inactive", "true");
+    return apiRequest<{ courses: TrainingCourse[] }>(
+      `/api/training-courses?${qs.toString()}`,
+      { token },
+    );
+  },
+  forCandidate: (token: string, candidateId: string) =>
+    apiRequest<TrainingCourseListForCandidate>(
+      `/api/training-courses/for-candidate/${candidateId}`,
+      { token },
+    ),
+  forSelf: (token: string) =>
+    apiRequest<TrainingCourseListForCandidate>(`/api/training-courses/self`, { token }),
+  create: (token: string, body: Partial<TrainingCourse> & { industry_template_id: string; name: string }) =>
+    apiRequest<TrainingCourse>("/api/admin/training-courses", {
+      method: "POST", body, token,
+    }),
+  update: (token: string, courseId: string, body: Partial<TrainingCourse>) =>
+    apiRequest<TrainingCourse>(`/api/admin/training-courses/${courseId}`, {
+      method: "PATCH", body, token,
+    }),
+  remove: (token: string, courseId: string) =>
+    apiRequest<{ deleted: boolean; id: string }>(
+      `/api/admin/training-courses/${courseId}`,
+      { method: "DELETE", token },
+    ),
+  importCsv: async (token: string, industryTemplateId: string, file: File) => {
+    const form = new FormData();
+    form.append("industry_template_id", industryTemplateId);
+    form.append("file", file);
+    const resp = await fetch(`${API_URL}/api/admin/training-courses/import`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(txt || `Import failed (${resp.status})`);
+    }
+    return resp.json() as Promise<{ created: number; updated: number; errors: string[] }>;
+  },
+  getPolicy: (token: string, templateId: string) =>
+    apiRequest<{ industry_template_id: string; training_policy: "pass_fail" | "informational" }>(
+      `/api/admin/industry-templates/${templateId}/training-policy`,
+      { token },
+    ),
+  setPolicy: (token: string, templateId: string, policy: "pass_fail" | "informational") =>
+    apiRequest<{ industry_template_id: string; training_policy: string }>(
+      `/api/admin/industry-templates/${templateId}/training-policy`,
+      { method: "PATCH", body: { policy }, token },
+    ),
+};
+
 // Training Certificates API
 export const trainingApi = {
   getStandards: () =>
@@ -628,9 +726,7 @@ export const leadGenerationApi = {
     const disposition = response.headers.get("Content-Disposition") || "";
     const match = disposition.match(/filename="?([^"]+)"?/);
     const filename = match ? match[1] : "leads_export.xlsx";
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, filename);
   },
   scrapeRegistration: (token: string, data: { candidate_id: string; body: string; registration_number: string }) =>
     apiRequest<Record<string, unknown>>("/api/lead-generation/registration-scrape", { method: "POST", body: data, token }),
@@ -761,11 +857,12 @@ export const analyticsApi = {
     const headers: Record<string, string> = {};
     if (token) headers["X-Auth-Token"] = token;
     const response = await fetch(`${API_URL}/api/analytics/export/compliance-csv${qs}`, { headers });
-    if (!response.ok) throw new Error("Export failed");
+    if (!response.ok) {
+      const err = await response.text().catch(() => "");
+      throw new Error(err || `Export failed (HTTP ${response.status})`);
+    }
     const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `compliance_report_${new Date().toISOString().split("T")[0]}.csv`; a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, `compliance_report_${new Date().toISOString().split("T")[0]}.csv`);
   },
   getScheduledReports: (token: string) =>
     apiRequest<Record<string, unknown>[]>("/api/analytics/scheduled-reports", { token }),
@@ -814,11 +911,12 @@ export const auditTrailApi = {
     const headers: Record<string, string> = {};
     if (token) headers["X-Auth-Token"] = token;
     const response = await fetch(`${API_URL}/api/audit-trail/export/cqc/download?${qs.toString()}`, { headers });
-    if (!response.ok) throw new Error("Export failed");
+    if (!response.ok) {
+      const err = await response.text().catch(() => "");
+      throw new Error(err || `Export failed (HTTP ${response.status})`);
+    }
     const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "cqc_audit_export.csv"; a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, "cqc_audit_export.csv");
   },
   getSarReport: (token: string, candidateEmail: string) =>
     apiRequest<Record<string, unknown>>(`/api/audit-trail/sar/${encodeURIComponent(candidateEmail)}`, { token }),

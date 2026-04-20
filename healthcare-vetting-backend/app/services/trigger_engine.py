@@ -340,8 +340,44 @@ class TriggerEngine:
                 except Exception as e:
                     logger.warning("Failed to check draft data for CV text: %s", e)
 
-            # If still no cv_text, try to find an uploaded CV document
-            if not cv_text:
+            # If still no cv_text, try to find an uploaded CV document.
+            # Check the modern `documents` table (R2-backed) first, then the
+            # legacy `candidate_documents` table (local disk) for backwards
+            # compatibility.
+            if not cv_text and not cv_file_bytes:
+                try:
+                    with get_db() as db:
+                        db.execute(
+                            "SELECT id, file_name, storage_key, content_type FROM documents "
+                            "WHERE candidate_id=%s AND category='cv' "
+                            "ORDER BY created_at DESC LIMIT 1",
+                            (candidate_id,),
+                        )
+                        doc = db.fetchone()
+                        if doc:
+                            doc_data = dict(doc)
+                            if not cv_file_name:
+                                cv_file_name = doc_data.get("file_name")
+                            storage_key = doc_data.get("storage_key")
+                            if storage_key:
+                                try:
+                                    from app.services.document_storage import get_storage_backend
+                                    storage = get_storage_backend()
+                                    file_obj, _name, _ct = storage.download(storage_key)
+                                    cv_file_bytes = file_obj.read()
+                                    logger.info(
+                                        "Read CV file from documents table for candidate %s: key=%s bytes=%d",
+                                        candidate_id, storage_key, len(cv_file_bytes),
+                                    )
+                                except Exception as e_dl:
+                                    logger.warning(
+                                        "Could not download CV from storage key %s: %s",
+                                        storage_key, e_dl,
+                                    )
+                except Exception as e:
+                    logger.warning("Failed to query documents table for CV: %s", e)
+
+            if not cv_text and not cv_file_bytes:
                 try:
                     with get_db() as db:
                         db.execute(
@@ -351,9 +387,9 @@ class TriggerEngine:
                         doc = db.fetchone()
                         if doc:
                             doc_data = dict(doc)
-                            cv_file_name = doc_data.get("file_name")
+                            if not cv_file_name:
+                                cv_file_name = doc_data.get("file_name")
                             file_path = doc_data.get("file_path")
-                            # Try to read the file from storage
                             if file_path:
                                 import os
                                 if os.path.exists(file_path):
@@ -361,7 +397,6 @@ class TriggerEngine:
                                         cv_file_bytes = f.read()
                                     logger.info("Read CV file from local storage: %s", file_path)
                                 else:
-                                    # Try S3/R2 storage
                                     try:
                                         from app.services.document_storage import get_storage_backend
                                         storage = get_storage_backend()
@@ -503,28 +538,66 @@ class TriggerEngine:
 
     @staticmethod
     def _run_training(candidate_id: str, data: dict) -> str:
-        """Record training certificates."""
+        """Record training certificates.
+
+        When a certificate references a catalogue course via `course_id` the
+        course is looked up so the stored row gets the canonical name, and a
+        default expiry can be derived from the course's `default_validity_months`
+        when the candidate didn't enter one.
+        """
         try:
+            from app.services.training_catalogue import get_course as _get_course
+
             certs = data.get("certificates", [])
             added = 0
             with get_db() as db:
                 for cert in certs:
-                    if cert.get("certificate_name"):
-                        db.execute(
-                            """INSERT INTO training_certificates
-                               (id, candidate_id, certificate_name, category, provider,
-                                issue_date, expiry_date, certificate_ref, created_at)
-                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                            (generate_id(), candidate_id,
-                             cert["certificate_name"],
-                             cert.get("category", "mandatory"),
-                             cert.get("provider"),
-                             cert.get("issue_date"),
-                             cert.get("expiry_date"),
-                             cert.get("certificate_ref"),
-                             datetime.now(timezone.utc).isoformat()),
-                        )
-                        added += 1
+                    name = (cert.get("certificate_name") or "").strip()
+                    course_id = cert.get("course_id")
+                    course = _get_course(course_id) if course_id else None
+                    if course and not name:
+                        name = course["name"]
+                    if not name:
+                        continue
+
+                    issue_date = cert.get("issue_date")
+                    expiry_date = cert.get("expiry_date")
+                    # Derive expiry from catalogue default_validity_months if
+                    # the candidate didn't provide one explicitly
+                    if course and not expiry_date and issue_date:
+                        try:
+                            from datetime import datetime as _dt
+                            _issue = _dt.fromisoformat(issue_date[:10])
+                            months = int(course.get("default_validity_months") or 0)
+                            if months > 0:
+                                # approximate month addition
+                                year = _issue.year + (months // 12)
+                                month = _issue.month + (months % 12)
+                                if month > 12:
+                                    year += 1
+                                    month -= 12
+                                from calendar import monthrange as _mr
+                                day = min(_issue.day, _mr(year, month)[1])
+                                expiry_date = _issue.replace(year=year, month=month, day=day).isoformat()[:10]
+                        except Exception:
+                            expiry_date = cert.get("expiry_date")
+
+                    db.execute(
+                        """INSERT INTO training_certificates
+                           (id, candidate_id, certificate_name, category, provider,
+                            issue_date, expiry_date, certificate_ref, course_id, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (generate_id(), candidate_id,
+                         course["name"] if course else name,
+                         cert.get("category") or (course.get("category") if course else "mandatory"),
+                         cert.get("provider"),
+                         issue_date,
+                         expiry_date,
+                         cert.get("certificate_ref"),
+                         course["id"] if course else None,
+                         datetime.now(timezone.utc).isoformat()),
+                    )
+                    added += 1
             return f"completed ({added} certificates recorded)"
         except Exception as e:
             return f"error: {str(e)}"

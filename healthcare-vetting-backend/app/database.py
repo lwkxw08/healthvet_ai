@@ -446,6 +446,90 @@ def migrate_db():
                     (_tid(), tid, ck, cl, creq, cen, cw, ccfg, csort),
                 )
 
+    # ── Training catalogue ────────────────────────────────────────
+    # Courses live per-industry-template. Candidates pick from the catalogue
+    # via a dropdown (with "Other (specify)" fallback). Compliance matches
+    # certificates to courses by course_id or by name/aliases.
+    if not _table_exists(cursor, "training_courses"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS training_courses (
+            id TEXT PRIMARY KEY,
+            industry_template_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            aliases TEXT DEFAULT '[]',
+            category TEXT DEFAULT 'mandatory',
+            description TEXT,
+            default_validity_months INTEGER DEFAULT 12,
+            is_mandatory INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT,
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_training_courses_template ON training_courses(industry_template_id)")
+
+    # Backfill: seed one course row per certificate name listed in each
+    # industry template's training_compliant.certificates config.
+    cursor.execute("SELECT COUNT(*) AS cnt FROM training_courses")
+    courses_cnt = cursor.fetchone()["cnt"]
+    if courses_cnt == 0:
+        import json as _tcj
+        from app.utils.auth import generate_id as _tcid
+        cursor.execute("SELECT id FROM industry_templates WHERE is_active=1")
+        templates = [dict(r) for r in cursor.fetchall()]
+        # Default aliases (case variations) and validity months per known course
+        DEFAULT_VALIDITY_MONTHS = {
+            "Manual Handling": 12, "Infection Prevention & Control": 12,
+            "Safeguarding Adults": 36, "Safeguarding Children": 36,
+            "Basic Life Support (BLS)": 12, "Fire Safety": 12, "Health & Safety": 12,
+            "Medication Administration": 12, "First Aid": 36, "Food Hygiene": 12,
+            "Prevent Duty": 36, "AML Training": 12, "GDPR Training": 12,
+            "CSCS Health & Safety": 60, "Working at Heights": 36,
+        }
+        DEFAULT_ALIASES = {
+            "Basic Life Support (BLS)": ["BLS", "Basic Life Support", "Life Support", "CPR"],
+            "Infection Prevention & Control": ["IPC", "Infection Control", "Infection Prevention and Control"],
+            "Safeguarding Adults": ["Safeguarding Adults Level 2", "Adult Safeguarding"],
+            "Safeguarding Children": ["Safeguarding Children Level 2", "Child Safeguarding", "Child Protection"],
+            "Health & Safety": ["Health and Safety", "H&S", "Workplace Health and Safety"],
+            "Manual Handling": ["Moving and Handling", "Moving & Handling"],
+            "Fire Safety": ["Fire Awareness", "Fire Marshal"],
+            "Medication Administration": ["Medication Awareness", "Medicines Management"],
+            "First Aid": ["First Aid at Work", "Emergency First Aid"],
+            "Food Hygiene": ["Food Safety", "Food Safety & Hygiene"],
+        }
+        for t in templates:
+            cursor.execute(
+                "SELECT config FROM industry_template_checks WHERE template_id=%s AND check_key='training_compliant'",
+                (t["id"],),
+            )
+            row = cursor.fetchone()
+            if not row:
+                continue
+            try:
+                raw = dict(row).get("config") or "{}"
+                cfg = _tcj.loads(raw) if isinstance(raw, str) else (raw or {})
+            except Exception:
+                cfg = {}
+            cert_names = cfg.get("certificates", [])
+            for idx, cert_name in enumerate(cert_names):
+                cursor.execute(
+                    """INSERT INTO training_courses
+                       (id, industry_template_id, name, aliases, category, default_validity_months,
+                        is_mandatory, is_active, sort_order)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        _tcid(), t["id"], cert_name,
+                        _tcj.dumps(DEFAULT_ALIASES.get(cert_name, [])),
+                        "mandatory",
+                        DEFAULT_VALIDITY_MONTHS.get(cert_name, 12),
+                        1, 1, idx,
+                    ),
+                )
+
+    # Ensure training_certificates has course_id FK so we can match by id.
+    _add_column_if_missing(cursor, "training_certificates", "course_id", "TEXT")
+
     # Seed expanded pricing elements if not present
     existing_pricing_types = set()
     if _table_exists(cursor, "pricing_settings"):

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
-import { submissionsApi, candidatesApi, trustidApi, documentsApi } from "../api/client";
+import { submissionsApi, candidatesApi, trustidApi, documentsApi, trainingCatalogueApi, type TrainingCourse } from "../api/client";
 import { LogOut, RefreshCw, ChevronRight, CheckCircle, XCircle, Clock, AlertTriangle, Loader2, Upload } from "lucide-react";
 
 const SECTIONS = [
@@ -874,7 +874,7 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
               </label>
             </div>
             {!data.no_certificates && (
-              <CertificateEntries certificates={(data.certificates as Record<string, unknown>[]) || []} onChange={(certs) => onUpdate("certificates", certs)} />
+              <CertificateEntries certificates={(data.certificates as Record<string, unknown>[]) || []} onChange={(certs) => onUpdate("certificates", certs)} token={token || undefined} />
             )}
           </>
         );
@@ -1069,34 +1069,146 @@ function RefereeEntries({ referees, onChange }: { referees: Record<string, unkno
   );
 }
 
-function CertificateEntries({ certificates, onChange }: { certificates: Record<string, unknown>[]; onChange: (c: Record<string, unknown>[]) => void }) {
+function CertificateEntries({ certificates, onChange, token }: { certificates: Record<string, unknown>[]; onChange: (c: Record<string, unknown>[]) => void; token?: string }) {
   const inputClass = "w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500";
-  const addCert = () => onChange([...certificates, { certificate_name: "", category: "mandatory", provider: "", issue_date: "", expiry_date: "", certificate_ref: "" }]);
-  const updateCert = (i: number, field: string, value: string) => { const c = [...certificates]; c[i] = { ...c[i], [field]: value }; onChange(c); };
+  const [courses, setCourses] = useState<TrainingCourse[]>([]);
+  const [policy, setPolicy] = useState<"pass_fail" | "informational">("pass_fail");
+  const [industryName, setIndustryName] = useState<string | null>(null);
+  const [loadingCatalogue, setLoadingCatalogue] = useState(true);
+
+  useEffect(() => {
+    if (!token) { setLoadingCatalogue(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await trainingCatalogueApi.forSelf(token);
+        if (cancelled) return;
+        setCourses(res.courses || []);
+        setPolicy(res.training_policy || "pass_fail");
+        setIndustryName(res.industry_template_name || null);
+      } catch {
+        // fall back to free-text input — catalogue fetch failure shouldn't block onboarding
+      } finally {
+        if (!cancelled) setLoadingCatalogue(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const addCert = () => onChange([
+    ...certificates,
+    { certificate_name: "", course_id: "", category: "mandatory", provider: "", issue_date: "", expiry_date: "", certificate_ref: "", is_other: false },
+  ]);
+  const updateCert = (i: number, field: string, value: string | boolean) => {
+    const c = [...certificates];
+    c[i] = { ...c[i], [field]: value };
+    onChange(c);
+  };
   const removeCert = (i: number) => onChange(certificates.filter((_, idx) => idx !== i));
+
+  // Derive which courses aren't already picked (so each row gets a clean list)
+  const pickedIds = new Set(certificates.map(c => (c.course_id as string) || "").filter(Boolean));
+
+  const selectCourse = (i: number, courseId: string) => {
+    if (courseId === "__OTHER__") {
+      const c = [...certificates];
+      c[i] = { ...c[i], course_id: "", certificate_name: "", is_other: true, category: "other" };
+      onChange(c);
+      return;
+    }
+    if (!courseId) {
+      const c = [...certificates];
+      c[i] = { ...c[i], course_id: "", certificate_name: "", is_other: false };
+      onChange(c);
+      return;
+    }
+    const course = courses.find(co => co.id === courseId);
+    if (!course) return;
+    const c = [...certificates];
+    c[i] = {
+      ...c[i],
+      course_id: course.id,
+      certificate_name: course.name,
+      category: course.category,
+      is_other: false,
+    };
+    onChange(c);
+  };
 
   return (
     <div>
-      {certificates.map((cert, i) => (
-        <div key={i} className="border border-slate-600 rounded-lg p-4 mb-3 bg-slate-700/30">
-          <div className="flex justify-between items-center mb-3">
-            <strong className="text-white text-sm">Certificate {i + 1}</strong>
-            <button onClick={() => removeCert(i)} className="bg-red-500/20 text-red-400 border border-red-500/30 rounded px-2 py-1 cursor-pointer text-xs hover:bg-red-500/30">Remove</button>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-xs text-slate-400">Certificate Name *</label><input className={inputClass} value={(cert.certificate_name as string) || ""} onChange={e => updateCert(i, "certificate_name", e.target.value)} /></div>
-            <div><label className="text-xs text-slate-400">Category</label>
-              <select className={inputClass} value={(cert.category as string) || "mandatory"} onChange={e => updateCert(i, "category", e.target.value)}>
-                <option value="mandatory">Mandatory Training</option><option value="specialist">Specialist</option><option value="cpd">CPD</option><option value="other">Other</option>
-              </select>
-            </div>
-            <div><label className="text-xs text-slate-400">Provider</label><input className={inputClass} value={(cert.provider as string) || ""} onChange={e => updateCert(i, "provider", e.target.value)} /></div>
-            <div><label className="text-xs text-slate-400">Certificate Ref</label><input className={inputClass} value={(cert.certificate_ref as string) || ""} onChange={e => updateCert(i, "certificate_ref", e.target.value)} /></div>
-            <div><label className="text-xs text-slate-400">Issue Date</label><input type="date" className={inputClass} value={(cert.issue_date as string) || ""} onChange={e => updateCert(i, "issue_date", e.target.value)} /></div>
-            <div><label className="text-xs text-slate-400">Expiry Date</label><input type="date" className={inputClass} value={(cert.expiry_date as string) || ""} onChange={e => updateCert(i, "expiry_date", e.target.value)} /></div>
-          </div>
+      {industryName && (
+        <div className="mb-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300">
+          <strong>Training profile:</strong> {industryName}
+          {policy === "informational" && (
+            <span className="ml-2 px-2 py-0.5 rounded bg-slate-700 text-slate-300 text-[10px] uppercase tracking-wide">informational only</span>
+          )}
+          {policy === "pass_fail" && courses.filter(c => c.is_mandatory).length > 0 && (
+            <span className="ml-2 text-slate-400">
+              — {courses.filter(c => c.is_mandatory).length} mandatory course(s) required
+            </span>
+          )}
         </div>
-      ))}
+      )}
+      {certificates.map((cert, i) => {
+        const isOther = cert.is_other === true || (!!cert.certificate_name && !cert.course_id);
+        const selectedCourseId = (cert.course_id as string) || "";
+        const availableCourses = courses.filter(c => c.id === selectedCourseId || !pickedIds.has(c.id));
+        return (
+          <div key={i} className="border border-slate-600 rounded-lg p-4 mb-3 bg-slate-700/30">
+            <div className="flex justify-between items-center mb-3">
+              <strong className="text-white text-sm">Certificate {i + 1}</strong>
+              <button onClick={() => removeCert(i)} className="bg-red-500/20 text-red-400 border border-red-500/30 rounded px-2 py-1 cursor-pointer text-xs hover:bg-red-500/30">Remove</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="text-xs text-slate-400">Course *</label>
+                {loadingCatalogue ? (
+                  <div className="text-slate-500 text-xs italic py-2">Loading course list…</div>
+                ) : courses.length > 0 ? (
+                  <select
+                    className={inputClass}
+                    value={isOther ? "__OTHER__" : selectedCourseId}
+                    onChange={e => selectCourse(i, e.target.value)}
+                  >
+                    <option value="">Select a course…</option>
+                    {availableCourses.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}{c.is_mandatory ? " (mandatory)" : ""}
+                      </option>
+                    ))}
+                    <option value="__OTHER__">Other (specify)…</option>
+                  </select>
+                ) : (
+                  <input
+                    className={inputClass}
+                    placeholder="Certificate name"
+                    value={(cert.certificate_name as string) || ""}
+                    onChange={e => updateCert(i, "certificate_name", e.target.value)}
+                  />
+                )}
+                {isOther && courses.length > 0 && (
+                  <input
+                    className={`${inputClass} mt-2`}
+                    placeholder="Enter course / training name"
+                    value={(cert.certificate_name as string) || ""}
+                    onChange={e => updateCert(i, "certificate_name", e.target.value)}
+                  />
+                )}
+              </div>
+              <div><label className="text-xs text-slate-400">Category</label>
+                <select className={inputClass} value={(cert.category as string) || "mandatory"} onChange={e => updateCert(i, "category", e.target.value)}>
+                  <option value="mandatory">Mandatory Training</option><option value="specialist">Specialist</option><option value="cpd">CPD</option><option value="other">Other</option>
+                </select>
+              </div>
+              <div><label className="text-xs text-slate-400">Provider</label><input className={inputClass} value={(cert.provider as string) || ""} onChange={e => updateCert(i, "provider", e.target.value)} /></div>
+              <div><label className="text-xs text-slate-400">Certificate Ref</label><input className={inputClass} value={(cert.certificate_ref as string) || ""} onChange={e => updateCert(i, "certificate_ref", e.target.value)} /></div>
+              <div><label className="text-xs text-slate-400">Issue Date</label><input type="date" className={inputClass} value={(cert.issue_date as string) || ""} onChange={e => updateCert(i, "issue_date", e.target.value)} /></div>
+              <div className="col-span-2"><label className="text-xs text-slate-400">Expiry Date {!cert.expiry_date && !!cert.course_id && <span className="text-slate-500 italic">(will auto-fill from course validity if left blank)</span>}</label><input type="date" className={inputClass} value={(cert.expiry_date as string) || ""} onChange={e => updateCert(i, "expiry_date", e.target.value)} /></div>
+            </div>
+          </div>
+        );
+      })}
       <button onClick={addCert} className="w-full p-3 rounded-lg border-2 border-dashed border-slate-600 bg-transparent hover:border-blue-500/50 hover:bg-slate-800 cursor-pointer text-blue-400 font-medium text-sm transition-all">
         + Add Training Certificate
       </button>
