@@ -8,6 +8,7 @@ import TrainingMatrixPanel from "./TrainingMatrixPanel";
 import EmailTemplatesPanel from "./EmailTemplatesPanel";
 import EmailRulesPanel from "./EmailRulesPanel";
 import EmailConfigPanel from "./EmailConfigPanel";
+import ScraperConfigPanel from "./ScraperConfigPanel";
 import AnalyticsDashboard from "./AnalyticsDashboard";
 import WebhookDeliveryDashboard from "./WebhookDeliveryDashboard";
 import AuditReportingPanel from "./AuditReportingPanel";
@@ -1234,7 +1235,7 @@ export default function AdminPanel() {
       {mainTab === "settings" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "training-matrix", label: "Training Matrix" }, { key: "industry-plans", label: "Industry Plans" }, { key: "trustid", label: "TrustID" }, { key: "alerts-config", label: "Alert Settings" }, { key: "invoice-settings", label: "Invoice Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }].map((s) => (
+            {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "training-matrix", label: "Training Matrix" }, { key: "industry-plans", label: "Industry Plans" }, { key: "trustid", label: "TrustID" }, { key: "alerts-config", label: "Alert Settings" }, { key: "invoice-settings", label: "Invoice Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }, { key: "scraper-config", label: "Scraper Config" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -1289,6 +1290,9 @@ export default function AdminPanel() {
 
         {/* Payment Providers Sub-tab under Settings */}
         {mainTab === "settings" && subTab === "payment-providers" && <PaymentProvidersPanel />}
+
+        {/* Scraper Config Sub-tab under Settings */}
+        {mainTab === "settings" && subTab === "scraper-config" && <ScraperConfigPanel />}
 
         {/* TrustID Queue — Top-Level Tab */}
         {mainTab === "trustid-queue" && (

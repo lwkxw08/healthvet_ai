@@ -837,6 +837,16 @@ export const emailConfigApi = {
     apiRequest<Record<string, unknown>>("/api/admin/email-config/ai", { method: "PUT", body: data, token }),
 };
 
+// Scraper Config API (Admin) — lead-generation scraper API keys
+export const scraperConfigApi = {
+  get: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/scraper-config", { token }),
+  update: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/scraper-config", { method: "PUT", body: data, token }),
+  testCqc: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/scraper-config/test-cqc", { method: "POST", token }),
+};
+
 // Analytics & Reporting API (3.2)
 export const analyticsApi = {
   getKpis: (token: string, agencyId: string) =>

@@ -490,10 +490,58 @@ def scrape_indeed(
     return leads
 
 
+def _get_cqc_api_key() -> str:
+    """Return the CQC API subscription key.
+
+    Lookup order: (1) system_settings table (admin-editable), then
+    (2) CQC_API_SUBSCRIPTION_KEY env var as a fallback.
+    Returns an empty string if neither is set.
+    """
+    try:
+        from app.database import get_db
+        with get_db() as db:
+            db.execute(
+                "SELECT setting_value FROM system_settings "
+                "WHERE setting_key = %s",
+                ("cqc_api_subscription_key",),
+            )
+            row = db.fetchone()
+            if row:
+                val = dict(row).get("setting_value") or ""
+                if val:
+                    return val
+    except Exception:
+        pass
+    import os as _os
+    return _os.environ.get("CQC_API_SUBSCRIPTION_KEY", "")
+
+
 def scrape_cqc_api(search_type="care_homes", location="", max_results=100):
-    """Query the CQC public API for healthcare providers."""
+    """Query the CQC public API for healthcare providers.
+
+    As of 2024, CQC's Syndication API requires an ``Ocp-Apim-Subscription-Key``
+    header (free, request at https://www.cqc.org.uk/about-us/transparency/
+    using-cqc-data). The key is stored admin-side via system_settings and
+    falls back to the CQC_API_SUBSCRIPTION_KEY env var.
+    """
     leads = []
     base_url = "https://api.cqc.org.uk/public/v1"
+
+    api_key = _get_cqc_api_key()
+    if not api_key:
+        logger.warning(
+            "CQC scrape attempted without a subscription key. "
+            "Configure one under Admin → Settings → Scraper Config."
+        )
+        return leads
+
+    cqc_ua = "ViperAI/1.0 (compliance platform)"
+    default_headers = {
+        "User-Agent": cqc_ua,
+        "Ocp-Apim-Subscription-Key": api_key,
+        "Accept": "application/json",
+    }
+
     try:
         params = {"perPage": min(max_results, 500), "page": 1}
         if search_type == "care_homes":
@@ -502,11 +550,15 @@ def scrape_cqc_api(search_type="care_homes", location="", max_results=100):
             params["serviceType"] = "Homecare agencies"
         url = f"{base_url}/providers"
         logger.info(f"Querying CQC API: {url} with params {params}")
-        cqc_ua = "ViperAI/1.0 (compliance platform)"
         resp = http_requests.get(
-            url, params=params, timeout=30,
-            headers={"User-Agent": cqc_ua},
+            url, params=params, timeout=30, headers=default_headers,
         )
+        if resp.status_code in (401, 403):
+            logger.error(
+                f"CQC API auth failed ({resp.status_code}). "
+                f"Check subscription key. Body: {resp.text[:200]}"
+            )
+            return leads
         resp.raise_for_status()
         data = resp.json()
         providers = data.get("providers", [])
@@ -520,7 +572,7 @@ def scrape_cqc_api(search_type="care_homes", location="", max_results=100):
             try:
                 detail_resp = http_requests.get(
                     f"{base_url}/providers/{provider_id}",
-                    timeout=15, headers={"User-Agent": cqc_ua},
+                    timeout=15, headers=default_headers,
                 )
                 if detail_resp.status_code == 200:
                     detail = detail_resp.json()
@@ -578,7 +630,27 @@ def scrape_cqc_api(search_type="care_homes", location="", max_results=100):
 
 
 def scrape_nhs_jobs(search_term="recruitment", max_pages=2):
-    """Scrape NHS Jobs for healthcare recruitment agencies. Requests-only."""
+    """Scrape NHS Jobs for healthcare employers (trusts, GP surgeries, care
+    homes, etc.).
+
+    Results page structure (as of 2026) — each vacancy is rendered as:
+
+        <li class="nhsuk-list-panel search-result" data-test="search-result">
+          <h2><a data-test="search-result-job-title" href="/candidate/jobadvert/…">
+                 Job title
+              </a></h2>
+          <div data-test="search-result-location">
+            <h3>
+              Employer Name
+              <div class="location-font-size">Town, Post Code</div>
+            </h3>
+          </div>
+          <li data-test="search-result-salary">Salary: £xx</li>
+          <li data-test="search-result-publicationDate">Date posted: …</li>
+          <li data-test="search-result-jobType">Contract type: …</li>
+          <li data-test="search-result-workingPattern">Working pattern: …</li>
+        </li>
+    """
     leads = []
     try:
         base_url = "https://www.jobs.nhs.uk/candidate/search/results"
@@ -590,7 +662,16 @@ def scrape_nhs_jobs(search_term="recruitment", max_pages=2):
             logger.info(f"Scraping NHS Jobs page {page}: {url}")
             try:
                 resp = http_requests.get(
-                    url, headers={"User-Agent": _AC_UA}, timeout=20,
+                    url,
+                    headers={
+                        "User-Agent": _AC_UA,
+                        "Accept": (
+                            "text/html,application/xhtml+xml,"
+                            "application/xml;q=0.9,*/*;q=0.8"
+                        ),
+                        "Accept-Language": "en-GB,en;q=0.9",
+                    },
+                    timeout=20,
                 )
                 resp.raise_for_status()
                 page_html = resp.text
@@ -598,56 +679,114 @@ def scrape_nhs_jobs(search_term="recruitment", max_pages=2):
                 logger.warning(f"Failed to load NHS Jobs page {page}: {e}")
                 break
             soup = BeautifulSoup(page_html, "html.parser")
-            job_cards = soup.select(
-                '[data-test="search-result"], '
-                ".nhsuk-list-panel, .vacancy-card"
-            )
+            job_cards = soup.select('li[data-test="search-result"]')
             if not job_cards:
-                job_cards = soup.select(".search-result, article, .result-item")
+                # Fallbacks in case the page DOM shifts
+                job_cards = soup.select(
+                    "li.nhsuk-list-panel.search-result, "
+                    "li.nhsuk-list-panel, "
+                    "article.search-result"
+                )
             if not job_cards:
                 logger.info(f"No results on NHS Jobs page {page}")
                 break
+
             seen_employers = set()
             for card in job_cards:
                 try:
-                    employer_el = card.select_one(
-                        '.nhsuk-body-s, .employer, '
-                        '[data-test="search-result-employer"]'
+                    # Employer name + location live inside the location div.
+                    loc_wrap = card.select_one(
+                        '[data-test="search-result-location"]'
                     )
-                    if not employer_el:
-                        employer_el = card.select_one("p, span")
-                    employer = (
-                        employer_el.get_text(strip=True) if employer_el else ""
-                    )
-                    if not employer or employer in seen_employers:
+                    employer = ""
+                    town = ""
+                    if loc_wrap:
+                        loc_inner = loc_wrap.select_one(
+                            ".location-font-size"
+                        )
+                        if loc_inner:
+                            town = loc_inner.get_text(" ", strip=True)
+                        # Employer sits in the h3 before the nested location div.
+                        h3 = loc_wrap.select_one("h3") or loc_wrap
+                        # Strip out the nested location div so we get just the
+                        # employer name.
+                        employer_parts = []
+                        for child in h3.children:
+                            name_attr = getattr(child, "name", None)
+                            if name_attr == "div":
+                                continue
+                            txt = (
+                                child.get_text(" ", strip=True)
+                                if hasattr(child, "get_text")
+                                else str(child).strip()
+                            )
+                            if txt:
+                                employer_parts.append(txt)
+                        employer = " ".join(employer_parts).strip()
+                    # Last-ditch fallback: first non-title bold block
+                    if not employer:
+                        alt = card.select_one(
+                            '[data-test="search-result-employer"], '
+                            'h3, .employer'
+                        )
+                        if alt:
+                            employer = alt.get_text(" ", strip=True)
+                    if not employer:
+                        continue
+                    if employer in seen_employers:
                         continue
                     seen_employers.add(employer)
+
                     title_el = card.select_one(
-                        'a, h2, h3, [data-test="search-result-job-title"]'
+                        '[data-test="search-result-job-title"]'
                     )
-                    title = title_el.get_text(strip=True) if title_el else ""
-                    loc_el = card.select_one(
-                        '[data-test="search-result-location"], .location'
+                    title = (
+                        title_el.get_text(strip=True) if title_el else ""
                     )
-                    loc = loc_el.get_text(strip=True) if loc_el else ""
-                    link_el = card.select_one("a[href]")
-                    job_url = ""
-                    if link_el and link_el.get("href"):
-                        href = link_el["href"]
-                        if not href.startswith("http"):
-                            href = "https://www.jobs.nhs.uk" + href
-                        job_url = href
+                    link_href = ""
+                    if title_el and title_el.get("href"):
+                        href = title_el["href"]
+                        link_href = (
+                            href if href.startswith("http")
+                            else "https://www.jobs.nhs.uk" + href
+                        )
+
+                    def _clean(text: str) -> str:
+                        return " ".join(text.split()).strip()
+
+                    salary_el = card.select_one(
+                        '[data-test="search-result-salary"] strong'
+                    )
+                    salary = _clean(salary_el.get_text(" ", strip=True)) if salary_el else ""
+                    posted_el = card.select_one(
+                        '[data-test="search-result-publicationDate"] strong'
+                    )
+                    posted = _clean(posted_el.get_text(" ", strip=True)) if posted_el else ""
+                    jobtype_el = card.select_one(
+                        '[data-test="search-result-jobType"] strong'
+                    )
+                    jobtype = _clean(jobtype_el.get_text(" ", strip=True)) if jobtype_el else ""
+                    town = _clean(town)
+
                     leads.append({
                         "name": employer,
-                        "description": f"NHS employer posting: {title}"[:500],
+                        "description": (
+                            f"NHS employer posting: {title}" if title
+                            else "NHS employer (from NHS Jobs listing)"
+                        )[:500],
                         "industry": "Health Care (NHS)",
                         "industry_slug": "health",
                         "source": "nhs_jobs",
-                        "source_url": job_url,
-                        "website": "", "email": "", "phone": "",
-                        "location": loc, "coverage": "",
-                        "employment_types": "", "salary_range": "",
-                        "listed_since": "", "verified": True,
+                        "source_url": link_href,
+                        "website": "",
+                        "email": "",
+                        "phone": "",
+                        "location": town,
+                        "coverage": "",
+                        "employment_types": jobtype,
+                        "salary_range": salary,
+                        "listed_since": posted,
+                        "verified": True,
                     })
                 except Exception as e:
                     logger.warning(f"Error parsing NHS Jobs card: {e}")
