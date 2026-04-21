@@ -71,16 +71,35 @@ def recover_stale_scrape_jobs():
 
 def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: str, industry_slug: str):
     """Run a scrape job in a background thread."""
-    from app.services.lead_scrapers import run_scrape_job
-
     now = datetime.now(timezone.utc).isoformat()
 
-    # Mark job as running
-    with get_db() as db:
-        db.execute(
-            "UPDATE scrape_jobs SET status='running', started_at=%s WHERE id=%s",
-            (now, job_id),
-        )
+    # Mark job as running immediately so stuck-in-pending becomes visible.
+    try:
+        with get_db() as db:
+            db.execute(
+                "UPDATE scrape_jobs SET status='running', started_at=%s WHERE id=%s",
+                (now, job_id),
+            )
+    except Exception as e:
+        logger.exception("Failed to mark scrape_job %s as running: %s", job_id, e)
+
+    # Import the scraper here so any ImportError surfaces as a job error
+    # instead of a silent thread death.
+    try:
+        from app.services.lead_scrapers import run_scrape_job
+    except Exception as e:
+        import traceback as _tb
+        err = f"Scraper import failed: {e}\n{_tb.format_exc()}"
+        logger.error(err)
+        try:
+            with get_db() as db:
+                db.execute(
+                    "UPDATE scrape_jobs SET status='failed', error_message=%s, completed_at=%s WHERE id=%s",
+                    (err[:2000], datetime.now(timezone.utc).isoformat(), job_id),
+                )
+        except Exception:
+            pass
+        return
 
     try:
         leads = run_scrape_job(source, config)
@@ -629,7 +648,15 @@ async def get_available_sources(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
 
-    from app.services.lead_scrapers import AGENCY_CENTRAL_INDUSTRIES
+    try:
+        from app.services.lead_scrapers import AGENCY_CENTRAL_INDUSTRIES
+    except Exception as e:
+        import traceback as _tb
+        logger.error("Failed to import lead_scrapers: %s\n%s", e, _tb.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Scraper module failed to import: {type(e).__name__}: {e}",
+        )
 
     return {
         "sources": [
