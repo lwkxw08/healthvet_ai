@@ -1,0 +1,49 @@
+name: Deploy app to Cloudflare Pages
+ 
+on:
+  push:
+    branches:
+      - devin/1774026028-initial-codebase
+    paths:
+      - "healthcare-vetting-frontend/**"
+      - ".github/workflows/deploy-app.yml"
+  workflow_dispatch:
+ 
+concurrency:
+  group: deploy-app-${{ github.ref }}
+  cancel-in-progress: true
+ 
+jobs:
+  deploy:
+    name: Build and deploy viperai-app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: healthcare-vetting-frontend
+    env:
+      VITE_API_URL: https://api.viperai.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+ 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: healthcare-vetting-frontend/package-lock.json
+ 
+      - name: Install dependencies
+        run: npm ci
+ 
+      - name: Build
+        run: npm run build
+ 
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}
+          accountId: afad1cf2d6fb88085f06d97e4b03e944
+          command: pages deploy dist --project-name=viperai-app --branch=devin/1774026028-initial-codebase
+          workingDirectory: healthcare-vetting-frontend
+ 
