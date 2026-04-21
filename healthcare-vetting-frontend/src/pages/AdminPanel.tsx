@@ -44,6 +44,7 @@ export default function AdminPanel() {
     if (mainTab === "agencies") {
       if (subTab === "invoicing") return "invoicing";
       if (subTab === "subscriptions") return "subscriptions";
+      if (subTab === "refunds") return "refunds";
       return "agencies";
     }
     if (mainTab === "compliance") {
@@ -180,6 +181,11 @@ export default function AdminPanel() {
   const [savingAdjust, setSavingAdjust] = useState(false);
   const [invoiceFilter, setInvoiceFilter] = useState("all");
   const [invoiceAgencyFilter, setInvoiceAgencyFilter] = useState("");
+
+  // Refund request queue state (PAYG refunds pending admin approval)
+  const [refundRequests, setRefundRequests] = useState<Record<string, unknown>[]>([]);
+  const [refundLoading, setRefundLoading] = useState(false);
+  const [refundDeciding, setRefundDeciding] = useState<string>("");
   const [invoiceTypeFilter, setInvoiceTypeFilter] = useState("");
   const [invoiceSearch, setInvoiceSearch] = useState("");
 
@@ -452,6 +458,19 @@ export default function AdminPanel() {
   useEffect(() => { if (tab === "agencies" || tab === "user-management" || tab === "invoicing") { loadAgencies(); loadIndustryTemplates(); } }, [tab, loadAgencies, loadIndustryTemplates]);
   useEffect(() => { if (tab === "audit-logs") loadAuditLogs(); }, [tab, loadAuditLogs]);
   useEffect(() => { if (tab === "invoicing") loadAdminInvoices(); }, [tab, loadAdminInvoices]);
+  const loadRefundRequests = useCallback(async () => {
+    if (!token) return;
+    setRefundLoading(true);
+    try {
+      const rows = await adminExtendedApi.listRefundRequests(token);
+      setRefundRequests(rows);
+    } catch (err) {
+      showMessage(`Error loading refund queue: ${err instanceof Error ? err.message : "Failed"}`);
+    } finally {
+      setRefundLoading(false);
+    }
+  }, [token]);
+  useEffect(() => { if (tab === "refunds") loadRefundRequests(); }, [tab, loadRefundRequests]);
   useEffect(() => { if (tab === "subscriptions") { loadSubscriptionTiers(); loadCreditRates(); } }, [tab]);
   useEffect(() => { if (mainTab === "settings" && subTab === "trustid") loadTrustidData(); }, [mainTab, subTab, loadTrustidData]);
   useEffect(() => { if (mainTab === "trustid-queue") loadTrustidData(); }, [mainTab, loadTrustidData]);
@@ -1191,7 +1210,7 @@ export default function AdminPanel() {
       {mainTab === "agencies" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
           <div className="flex gap-1">
-            {[{ key: "list", label: "Agency List" }, { key: "invoicing", label: "Invoicing" }, { key: "subscriptions", label: "Credit Packs" }].map((s) => (
+            {[{ key: "list", label: "Agency List" }, { key: "invoicing", label: "Invoicing" }, { key: "subscriptions", label: "Credit Packs" }, { key: "refunds", label: "Refund Requests" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -2785,6 +2804,101 @@ export default function AdminPanel() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Refund Requests Tab — PAYG refunds pending admin approval */}
+        {tab === "refunds" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <FileText className="text-amber-400" size={22} /> PAYG Refund Requests
+                </h2>
+                <p className="text-slate-400 text-sm mt-1">
+                  Revoked invites on online-payment (PAYG) agencies with paid invoices await your approval before Stripe is refunded.
+                  Manual-billing invoices are auto-cancelled; credit-pack refunds are auto-processed and do not appear here.
+                </p>
+              </div>
+              <button
+                onClick={loadRefundRequests}
+                disabled={refundLoading}
+                className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded border border-slate-600"
+              >
+                {refundLoading ? "Loading..." : "Refresh"}
+              </button>
+            </div>
+
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-900/50">
+                  <tr>
+                    <th className="text-left text-xs text-slate-400 font-medium px-3 py-3">Requested</th>
+                    <th className="text-left text-xs text-slate-400 font-medium px-3 py-3">Agency</th>
+                    <th className="text-left text-xs text-slate-400 font-medium px-3 py-3">Candidate</th>
+                    <th className="text-left text-xs text-slate-400 font-medium px-3 py-3">Description</th>
+                    <th className="text-right text-xs text-slate-400 font-medium px-3 py-3">Amount</th>
+                    <th className="text-left text-xs text-slate-400 font-medium px-3 py-3">Stripe Ref</th>
+                    <th className="text-right text-xs text-slate-400 font-medium px-3 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/50">
+                  {refundRequests.length === 0 && !refundLoading && (
+                    <tr><td colSpan={7} className="text-center text-slate-500 py-8">No refund requests awaiting approval.</td></tr>
+                  )}
+                  {refundRequests.map((row) => {
+                    const id = String(row.id || "");
+                    const amount = row.sell_amount != null ? Number(row.sell_amount) : (Number(row.amount) || 0);
+                    const requestedAt = row.refund_requested_at ? new Date(String(row.refund_requested_at)).toLocaleString() : "-";
+                    const pi = String(row.stripe_payment_intent_id || row.stripe_session_id || "");
+                    const decide = async (action: "approve" | "decline") => {
+                      if (!token) return;
+                      const verb = action === "approve" ? "approve and refund via Stripe" : "decline";
+                      if (!confirm(`${verb[0].toUpperCase() + verb.slice(1)} refund of \u00A3${amount.toFixed(2)}?`)) return;
+                      setRefundDeciding(id);
+                      try {
+                        const res = await adminExtendedApi.decideRefund(token, id, action);
+                        const extra = res.stripe_refund_id ? ` (Stripe: ${res.stripe_refund_id})` : "";
+                        showMessage(`Refund ${res.status}${extra}`);
+                        loadRefundRequests();
+                      } catch (err) {
+                        showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`);
+                      } finally {
+                        setRefundDeciding("");
+                      }
+                    };
+                    return (
+                      <tr key={id} className="hover:bg-slate-700/20">
+                        <td className="px-3 py-3 text-slate-300 text-xs">{requestedAt}</td>
+                        <td className="px-3 py-3 text-slate-200">{String(row.agency_name || "-")}</td>
+                        <td className="px-3 py-3 text-slate-300 text-xs">{String(row.candidate_email || "-")}</td>
+                        <td className="px-3 py-3 text-slate-300 text-xs">{String(row.description || row.check_type || "-")}</td>
+                        <td className="px-3 py-3 text-right text-amber-300 font-medium">{"\u00A3"}{amount.toFixed(2)}</td>
+                        <td className="px-3 py-3 text-slate-500 text-xs font-mono truncate max-w-[160px]" title={pi}>{pi || "(no payment ref)"}</td>
+                        <td className="px-3 py-3 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => decide("approve")}
+                              disabled={refundDeciding === id}
+                              className="bg-emerald-600/20 hover:bg-emerald-600/30 disabled:opacity-50 text-emerald-300 border border-emerald-600/30 text-xs px-3 py-1 rounded"
+                            >
+                              {refundDeciding === id ? "Processing..." : "Approve & Refund"}
+                            </button>
+                            <button
+                              onClick={() => decide("decline")}
+                              disabled={refundDeciding === id}
+                              className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-300 border border-slate-600 text-xs px-3 py-1 rounded"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 

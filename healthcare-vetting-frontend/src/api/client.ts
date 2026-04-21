@@ -377,6 +377,15 @@ export const adminExtendedApi = {
   // Payment reminders
   sendPaymentReminders: (token: string) =>
     apiRequest<Record<string, unknown>>("/api/admin/billing/send-reminders", { method: "POST", token }),
+
+  // PAYG refund approval queue (revoked invites with paid invoices)
+  listRefundRequests: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/refund-requests", { token }),
+  decideRefund: (token: string, invoiceId: string, action: "approve" | "decline", notes?: string) =>
+    apiRequest<{ status: string; invoice_id: string; stripe_refund_id?: string }>(
+      `/api/admin/invoices/${invoiceId}/refund-decision`,
+      { method: "POST", body: { action, notes }, token },
+    ),
 };
 
 // Agency Services & Status API

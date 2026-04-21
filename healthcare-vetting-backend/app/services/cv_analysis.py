@@ -39,14 +39,100 @@ class CVAnalysisService:
             return ""
 
     @staticmethod
+    def extract_text_from_docx(file_bytes: bytes) -> str:
+        """Extract text from a .docx file using python-docx. Returns empty
+        string on any failure so the caller can fall back."""
+        try:
+            import docx  # python-docx
+            from docx import Document
+            _ = docx  # silence unused lint
+        except ImportError:
+            logger.warning("python-docx not installed — cannot extract .docx text")
+            return ""
+        try:
+            document = Document(io.BytesIO(file_bytes))
+            parts: list[str] = [p.text for p in document.paragraphs if p.text]
+            for table in document.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text:
+                            parts.append(cell.text)
+            return "\n".join(parts)
+        except Exception as e:
+            logger.warning("DOCX text extraction failed: %s", e)
+            return ""
+
+    @staticmethod
+    def extract_text_from_doc(file_bytes: bytes) -> str:
+        """Extract text from a legacy .doc file. Best-effort using textract if
+        available; returns empty string if unavailable."""
+        try:
+            import subprocess
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+            try:
+                # antiword is small and common on Debian-based images
+                out = subprocess.check_output(["antiword", tmp_path], stderr=subprocess.DEVNULL, timeout=15)
+                return out.decode("utf-8", errors="ignore")
+            except Exception:
+                return ""
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning("DOC text extraction failed: %s", e)
+            return ""
+
+    @staticmethod
+    def _extract_text_auto(file_bytes: bytes, file_name: str | None) -> str:
+        """Pick the right extractor based on file_name/magic bytes."""
+        if not file_bytes:
+            return ""
+        name = (file_name or "").lower()
+        head = file_bytes[:4]
+        # PDF magic: %PDF
+        if name.endswith(".pdf") or head.startswith(b"%PDF"):
+            return CVAnalysisService.extract_text_from_pdf(file_bytes)
+        # DOCX magic: PK\x03\x04 (zip)
+        if name.endswith(".docx") or head.startswith(b"PK\x03\x04"):
+            return CVAnalysisService.extract_text_from_docx(file_bytes)
+        if name.endswith(".doc"):
+            return CVAnalysisService.extract_text_from_doc(file_bytes)
+        if name.endswith(".txt") or name.endswith(".rtf"):
+            try:
+                return file_bytes.decode("utf-8", errors="ignore")
+            except Exception:
+                return ""
+        # Unknown: try PDF then DOCX heuristically
+        t = CVAnalysisService.extract_text_from_pdf(file_bytes)
+        if t:
+            return t
+        return CVAnalysisService.extract_text_from_docx(file_bytes)
+
+    @staticmethod
     def analyse_cv(candidate_id: str, cv_text: str, cv_file_name: str | None = None,
                    cv_file_bytes: bytes | None = None) -> dict:
-        # If raw PDF bytes were provided, extract text first
+        # If raw bytes were provided, extract text using the appropriate parser
+        # for the file type (PDF, DOCX, DOC, TXT). Previously only PDF was
+        # supported which silently produced empty text for .docx CVs.
         if cv_file_bytes and (not cv_text or not cv_text.strip()):
-            extracted = CVAnalysisService.extract_text_from_pdf(cv_file_bytes)
+            extracted = CVAnalysisService._extract_text_auto(cv_file_bytes, cv_file_name)
             if extracted:
                 cv_text = extracted
-                logger.info("Extracted %d chars from PDF for candidate %s", len(cv_text), candidate_id)
+                logger.info(
+                    "Extracted %d chars from %s for candidate %s",
+                    len(cv_text), cv_file_name or "file", candidate_id,
+                )
+            else:
+                logger.warning(
+                    "No text extracted from CV file '%s' (bytes=%d) for candidate %s",
+                    cv_file_name, len(cv_file_bytes), candidate_id,
+                )
         analysis_id = generate_id()
         now = datetime.now(timezone.utc).isoformat()
 
