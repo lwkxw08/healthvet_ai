@@ -54,7 +54,7 @@ export const brand = {
     imageAlt: "Team reviewing compliance dashboard on laptop",
     stats: [
       { value: "80%", label: "Faster Onboarding" },
-      { value: "15h+", label: "Saved Per Week" },
+      { value: "15h+ (40%)", label: "Time saved Per Week" },
       { value: "99.9%", label: "Uptime SLA" },
     ],
   },
