@@ -1,6 +1,5 @@
 """Routes for candidate submission workflow (data collection, consent, automated processing)."""
 import json
-import secrets
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
@@ -735,7 +734,7 @@ async def get_processing_status(submission_id: str, current_user: dict = Depends
         if emp_done > 0:
             check_statuses["employment"] = {"status": "verified", "label": f"Employment: {emp_done}/{emp_all} Verified"}
         elif emp_all > 0:
-            check_statuses["employment"] = {"status": "processing", "label": f"Employment Verification in Progress"}
+            check_statuses["employment"] = {"status": "processing", "label": "Employment Verification in Progress"}
         else:
             check_statuses["employment"] = {"status": "pending", "label": "Employment Verification Pending"}
 

@@ -5,6 +5,7 @@ No monthly recurring charge. Agencies top up manually or via auto top-up when cr
 """
 import json
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 from app.database import get_db
 from app.utils.auth import generate_id
 
@@ -518,7 +519,8 @@ class BillingService:
     @staticmethod
     def use_subscription_check(agency_id: str, candidate_id: str, check_description: str,
                                 sell_amount: float, cost_amount: float = 0,
-                                check_type: str = "full_vetting") -> dict:
+                                check_type: str = "full_vetting",
+                                invite_id: Optional[str] = None) -> dict:
         """Use credit pack credits for a check. Checks expiry, then deducts credits.
         If no credits or pack expired, creates a PAYG invoice instead."""
         now = datetime.now(timezone.utc).isoformat()
@@ -539,9 +541,9 @@ class BillingService:
             if not sub:
                 inv_id = generate_id()
                 db.execute(
-                    """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                       VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'pending', %s)""",
-                    (inv_id, agency_id, candidate_id, check_description, cost_amount, sell_amount, now),
+                    """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at, invite_id)
+                       VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'pending', %s, %s)""",
+                    (inv_id, agency_id, candidate_id, check_description, cost_amount, sell_amount, now, invite_id),
                 )
                 return {"invoice_id": inv_id, "status": "pending", "within_credit": False,
                         "credits_consumed": 0, "message": "No active credit pack. Invoice created as pending. Purchase a credit pack to get started."}
@@ -557,11 +559,11 @@ class BillingService:
                         # Pack expired — create PAYG invoice
                         inv_id = generate_id()
                         db.execute(
-                            """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                               VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'pending', %s)""",
+                            """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at, invite_id)
+                               VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'pending', %s, %s)""",
                             (inv_id, agency_id, candidate_id,
                              f"{check_description} (credit pack expired)",
-                             cost_amount, sell_amount, now),
+                             cost_amount, sell_amount, now, invite_id),
                         )
                         return {"invoice_id": inv_id, "status": "credits_expired", "within_credit": False,
                                 "credits_consumed": 0, "message": "Credit pack has expired. Please purchase a new pack."}
@@ -570,7 +572,7 @@ class BillingService:
 
             credits_total = float(s.get("credits_total") or 0)
             credits_used = float(s.get("credits_used") or 0)
-            credits_remaining = credits_total - credits_used
+            _credits_remaining = credits_total - credits_used  # noqa: F841
 
             new_credits_used = credits_used + credit_value
             credit_balance_after = max(0, credits_total - new_credits_used)
@@ -579,9 +581,9 @@ class BillingService:
                 # Within credit — auto-mark as paid
                 inv_id = generate_id()
                 db.execute(
-                    """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, paid_at, created_at)
-                       VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'paid', %s, %s)""",
-                    (inv_id, agency_id, candidate_id, check_description, cost_amount, 0, now, now),
+                    """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, paid_at, created_at, invite_id)
+                       VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'paid', %s, %s, %s)""",
+                    (inv_id, agency_id, candidate_id, check_description, cost_amount, 0, now, now, invite_id),
                 )
                 db.execute(
                     "UPDATE agency_subscriptions SET credits_used = credits_used + %s WHERE id=%s",
@@ -592,10 +594,10 @@ class BillingService:
                 db.execute(
                     """INSERT INTO credit_transactions
                        (id, agency_id, candidate_id, check_type, credits_consumed, credit_balance_after,
-                        unit_cost, charge_amount, is_overage, description, created_at)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, 0, 0, %s, %s)""",
+                        unit_cost, charge_amount, is_overage, description, created_at, invite_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, 0, 0, %s, %s, %s)""",
                     (txn_id, agency_id, candidate_id, check_type, credit_value,
-                     credit_balance_after, cost_amount, check_description, now),
+                     credit_balance_after, cost_amount, check_description, now, invite_id),
                 )
                 return {
                     "invoice_id": inv_id,
@@ -609,11 +611,11 @@ class BillingService:
                 # No credits left — create PAYG invoice
                 inv_id = generate_id()
                 db.execute(
-                    """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at)
-                       VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'pending', %s)""",
+                    """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description, cost_amount, sell_amount, status, created_at, invite_id)
+                       VALUES (%s, %s, %s, 'vetting', %s, %s, %s, 'pending', %s, %s)""",
                     (inv_id, agency_id, candidate_id,
                      f"{check_description} (credits exhausted)",
-                     cost_amount, sell_amount, now),
+                     cost_amount, sell_amount, now, invite_id),
                 )
                 return {
                     "invoice_id": inv_id,
@@ -649,7 +651,7 @@ class BillingService:
     @staticmethod
     def update_auto_topup(agency_id: str, enabled: bool, tier: str = None) -> dict:
         """Enable or disable auto top-up for an agency's credit pack."""
-        now = datetime.now(timezone.utc).isoformat()
+        _now = datetime.now(timezone.utc).isoformat()  # noqa: F841
         with get_db() as db:
             db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
@@ -735,7 +737,7 @@ class BillingService:
         """Create a checkout session using the admin-configured payment provider.
         Falls back to simulation if no provider is configured."""
         import secrets as _secrets
-        now = datetime.now(timezone.utc).isoformat()
+        _now = datetime.now(timezone.utc).isoformat()  # noqa: F841
 
         with get_db() as db:
             db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))

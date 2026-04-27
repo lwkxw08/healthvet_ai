@@ -513,6 +513,10 @@ export default function AgencyDashboard() {
       medium: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
       low: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       incomplete: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+      cancelled: "bg-slate-500/20 text-slate-400 border-slate-500/30 line-through",
+      refunded: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+      pending_admin_approval: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+      paid: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
     };
     return (
       <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${colors[status] || colors.incomplete}`}>
@@ -721,24 +725,24 @@ export default function AgencyDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-900">
-      <header className="bg-slate-800/80 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <img src="/viper-logo.png" alt="Viper AI" className="h-12" />
-          <h1 className="text-xl font-bold text-white">Viper AI</h1>
-          <span className="text-xs bg-emerald-600/30 text-emerald-300 px-2 py-0.5 rounded-full">Agency Dashboard</span>
+      <header className="bg-slate-800/80 border-b border-slate-700 px-4 sm:px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <img src="/viper-logo.png" alt="Viper AI" className="h-8 sm:h-12" />
+          <h1 className="text-lg sm:text-xl font-bold text-white truncate">Viper AI</h1>
+          <span className="hidden sm:inline text-xs bg-emerald-600/30 text-emerald-300 px-2 py-0.5 rounded-full">Agency Dashboard</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           <button onClick={loadData} className="text-slate-400 hover:text-white"><RefreshCw size={18} /></button>
           {token && <span className="text-slate-300"><NotificationBell token={token} /></span>}
           <button onClick={logout} className="text-slate-400 hover:text-red-400 flex items-center gap-1 text-sm">
-            <LogOut size={16} /> Sign Out
+            <LogOut size={16} /> <span className="hidden sm:inline">Sign Out</span>
           </button>
         </div>
       </header>
 
       {/* Navigation Tabs */}
-      <div className="bg-slate-800/50 border-b border-slate-700 px-6">
-        <div className="flex gap-1">
+      <div className="bg-slate-800/50 border-b border-slate-700 px-4 sm:px-6">
+        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
           {[
             { key: "dashboard" as Tab, label: "Dashboard", icon: <BarChart3 size={16} /> },
             { key: "candidates" as Tab, label: "Candidates", icon: <Users size={16} /> },
@@ -751,7 +755,7 @@ export default function AgencyDashboard() {
             { key: "billing" as Tab, label: "Billing", icon: <CreditCard size={16} /> },
           ].map((item) => (
             <button key={item.key} onClick={() => setTab(item.key)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                 tab === item.key ? "text-blue-400 border-blue-400" : "text-slate-400 border-transparent hover:text-white"
               }`}>
               {item.icon} {item.label}
@@ -760,14 +764,14 @@ export default function AgencyDashboard() {
         </div>
       </div>
 
-      <main className="p-6">
+      <main className="p-4 sm:p-6">
         {/* Dashboard Tab */}
         {tab === "dashboard" && stats && (
           <div className="space-y-6">
             {/* Risk Flags Panel */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
               <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><AlertTriangle className="text-amber-400" size={18} /> Candidate Risk Overview</h3>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-center">
                   <div className="text-3xl font-bold text-green-400">{stats.compliant as number}</div>
                   <div className="text-xs text-green-300 mt-1 font-medium">COMPLIANT</div>
@@ -798,7 +802,7 @@ export default function AgencyDashboard() {
             {remainingChecks && (remainingChecks.has_subscription as boolean) && (
               <div className="bg-slate-800/80 rounded-xl border border-blue-500/30 p-5">
                 <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2"><CreditCard className="text-blue-400" size={18} /> Monthly Credit Balance</h3>
-                <div className="grid grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg text-center">
                     <div className="text-2xl font-bold text-blue-400">{(remainingChecks.credits_total as number) >= 999999 ? "\u221E" : (remainingChecks.credits_total as number ?? remainingChecks.monthly_checks as number)}</div>
                     <div className="text-xs text-blue-300 mt-1 font-medium">MONTHLY CREDITS</div>
@@ -847,7 +851,7 @@ export default function AgencyDashboard() {
             )}
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: "Total Candidates", value: stats.total_candidates, color: "blue" },
                 { label: "Compliant", value: stats.compliant, color: "green" },
@@ -862,7 +866,7 @@ export default function AgencyDashboard() {
             </div>
 
             {/* Second Row Stats */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5">
                 <p className="text-slate-400 text-xs mb-1">Compliance Rate</p>
                 <p className="text-3xl font-bold text-green-400">{Number(stats.compliance_rate ?? 0).toFixed(1)}%</p>
@@ -878,7 +882,7 @@ export default function AgencyDashboard() {
             </div>
 
             {/* Charts Row */}
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* FIXED Pie Chart - increased height, donut style, Legend */}
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-4">Compliance Distribution</h3>
@@ -1019,7 +1023,7 @@ export default function AgencyDashboard() {
                   </div>
 
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-3 gap-4 mt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
                     <div className="p-4 bg-slate-700/50 rounded-lg text-center">
                       <p className="text-slate-400 text-xs mb-1">Total Services</p>
                       <p className="text-2xl font-bold text-white">
@@ -1108,8 +1112,8 @@ export default function AgencyDashboard() {
                 </p>
               </div>
             ) : (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
-                <table className="w-full">
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+                <table className="w-full min-w-[700px]">
                   <thead>
                     <tr className="border-b border-slate-700">
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Name</th>
@@ -1177,13 +1181,13 @@ export default function AgencyDashboard() {
 
             {/* Re-Vet Requests History */}
             {revetRequests.length > 0 && (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
                 <div className="px-6 py-4 border-b border-slate-700">
                   <h3 className="text-md font-semibold text-white flex items-center gap-2">
                     <RefreshCw className="text-amber-400" size={18} /> Re-Vet Requests ({revetRequests.length})
                   </h3>
                 </div>
-                <table className="w-full">
+                <table className="w-full min-w-[600px]">
                   <thead>
                     <tr className="border-b border-slate-700">
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Candidate</th>
@@ -1278,8 +1282,8 @@ export default function AgencyDashboard() {
                 <p className="text-slate-500 text-sm mt-1">Send an invite above to start onboarding candidates</p>
               </div>
             ) : (
-              <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
-                <table className="w-full">
+              <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+                <table className="w-full min-w-[600px]">
                   <thead>
                     <tr className="border-b border-slate-700">
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Candidate Email</th>
@@ -1355,8 +1359,8 @@ export default function AgencyDashboard() {
               </div>
             </div>
             <p className="text-slate-400 text-sm">Select individual or multiple candidates to generate CQC audit packs. Use the checkboxes to select candidates, then download a combined audit PDF.</p>
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
-              <table className="w-full">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+              <table className="w-full min-w-[700px]">
                 <thead>
                   <tr className="border-b border-slate-700">
                     <th className="text-left px-4 py-3">
@@ -1416,7 +1420,7 @@ export default function AgencyDashboard() {
                   <h3 className="text-md font-semibold text-white">Active Credit Pack</h3>
                   <span className="text-xs px-3 py-1 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">{remainingChecks.pack_name as string || remainingChecks.tier_name as string}</span>
                 </div>
-                <div className="grid grid-cols-5 gap-4 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
                   <div className="p-4 bg-slate-700/50 rounded-lg text-center">
                     <p className="text-slate-400 text-xs mb-1">Credits Remaining</p>
                     <p className="text-2xl font-bold text-green-400">{typeof remainingChecks.credits_remaining === "number" ? (remainingChecks.credits_remaining as number).toFixed(1) : "0"}</p>
@@ -1507,7 +1511,7 @@ export default function AgencyDashboard() {
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-2">{remainingChecks && (remainingChecks.has_credit_pack as boolean) ? "Top Up Credits" : "Purchase a Credit Pack"}</h3>
                 <p className="text-slate-400 text-sm mb-4">Credits are valid for 12 months from purchase. Unused credits from your current pack carry over.</p>
-                <div className="grid grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                   {(creditPackTiers.length > 0 ? creditPackTiers.map((t) => {
                     const credits = Number(t.credits_included || 0);
                     const price = Number(t.monthly_price || 0);
@@ -1549,7 +1553,7 @@ export default function AgencyDashboard() {
             {billingHistory.length > 0 && (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-4">Billing History</h3>
-                <table className="w-full">
+                <div className="overflow-x-auto"><table className="w-full min-w-[600px]">
                   <thead><tr className="border-b border-slate-700">
                     {["Description", "Amount", "Status", "Date", "Actions"].map((h) => (
                       <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>
@@ -1580,7 +1584,7 @@ export default function AgencyDashboard() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               </div>
             )}
           </div>
@@ -1643,7 +1647,7 @@ export default function AgencyDashboard() {
             {/* Candidate Info */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
               <h3 className="text-md font-semibold text-white mb-3">Candidate Details</h3>
-              <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
                 <div><span className="text-slate-400">Email:</span> <span className="text-white">{selectedCandidate.email as string}</span></div>
                 <div><span className="text-slate-400">Phone:</span> <span className="text-white">{(selectedCandidate.phone as string) || "N/A"}</span></div>
                 <div><span className="text-slate-400">Profession:</span> <span className="text-white">{(selectedCandidate.profession as string) || "N/A"}</span></div>
@@ -1744,7 +1748,7 @@ export default function AgencyDashboard() {
 
                 <div className="bg-slate-900/60 rounded-lg p-4 mb-4 border border-slate-700">
                   <p className="text-slate-300 text-sm mb-3 font-medium">Documents verified during imposter check:</p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {["Passport", "BRP/BRC", "Driving Licence", "Birth Certificate", "Visa Document", "Other ID"].map(doc => (
                       <label key={doc} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
                         <input
@@ -1801,7 +1805,7 @@ export default function AgencyDashboard() {
                 <h3 className="text-md font-semibold text-white mb-2 flex items-center gap-2">
                   <CheckCircle className="text-green-400" size={18} /> Imposter Check Declaration Confirmed
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mt-3">
                   <div><span className="text-slate-400">Declared by:</span> <span className="text-white">{imposterDeclaration.declared_by_email as string}</span></div>
                   <div><span className="text-slate-400">Date:</span> <span className="text-white">{(imposterDeclaration.created_at as string)?.replace("T", " ").split(".")[0]} UTC</span></div>
                   <div><span className="text-slate-400">IP Address:</span> <span className="text-white">{imposterDeclaration.ip_address as string}</span></div>
@@ -2072,7 +2076,7 @@ export default function AgencyDashboard() {
               {bulkResult && (
                 <div className="mb-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
                   <div className="text-green-400 font-semibold text-sm mb-2">Import Complete</div>
-                  <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
                     <div className="text-center"><div className="text-2xl font-bold text-green-400">{String(bulkResult.created || 0)}</div><div className="text-slate-400">Created</div></div>
                     <div className="text-center"><div className="text-2xl font-bold text-amber-400">{String(bulkResult.skipped || 0)}</div><div className="text-slate-400">Skipped</div></div>
                     <div className="text-center"><div className="text-2xl font-bold text-red-400">{String(bulkResult.errors_count || 0)}</div><div className="text-slate-400">Errors</div></div>
@@ -2100,7 +2104,7 @@ export default function AgencyDashboard() {
             {shiftOverview && (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><Shield className="text-emerald-400" size={20} /> Shift Readiness Overview</h3>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-center">
                     <div className="text-3xl font-bold text-green-400">{String((shiftOverview.summary as Record<string, unknown>)?.ready || 0)}</div>
                     <div className="text-xs text-green-300 mt-1 font-bold">READY TO WORK</div>
@@ -2129,7 +2133,7 @@ export default function AgencyDashboard() {
               {subAccountError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">{subAccountError}</div>}
               {subAccountSuccess && <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">{subAccountSuccess}</div>}
 
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <input type="text" placeholder="First Name" value={newSubAccount.first_name} onChange={(e) => setNewSubAccount({ ...newSubAccount, first_name: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
                 <input type="text" placeholder="Last Name" value={newSubAccount.last_name} onChange={(e) => setNewSubAccount({ ...newSubAccount, last_name: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
                 <input type="email" placeholder="Email" value={newSubAccount.email} onChange={(e) => setNewSubAccount({ ...newSubAccount, email: e.target.value })} className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />

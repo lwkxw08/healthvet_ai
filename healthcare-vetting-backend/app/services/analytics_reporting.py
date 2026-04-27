@@ -5,11 +5,9 @@ Agency-level compliance KPI dashboard, time-to-clear metrics,
 verification response rate analytics, expiry forecasting,
 and exportable report generation.
 """
-import json
 import logging
 from datetime import datetime, timezone, timedelta
 from app.database import get_db
-from app.utils.auth import generate_id
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +139,7 @@ class AnalyticsReportingService:
             # Employment verifications
             try:
                 db.execute(
-                    f"""SELECT AVG(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as avg_days,
+                    """SELECT AVG(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as avg_days,
                                MIN(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as min_days,
                                MAX(EXTRACT(EPOCH FROM (completed_at::timestamp - sent_at::timestamp)) / 86400.0) as max_days,
                                COUNT(*) AS total

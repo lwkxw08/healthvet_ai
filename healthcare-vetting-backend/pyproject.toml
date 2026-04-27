@@ -33,6 +33,17 @@ sentry-sdk = "^2.57.0"
 alembic = "^1.18.4"
 
 
+[tool.ruff]
+line-length = 200
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/main.py" = ["E402"]
+"alembic/env.py" = ["E402"]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

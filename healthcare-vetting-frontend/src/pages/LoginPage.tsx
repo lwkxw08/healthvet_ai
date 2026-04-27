@@ -253,7 +253,7 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
           {(mode === "login" || mode === "register") && <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "register" && tab === "candidate" && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-blue-200 text-xs mb-1">First Name</label>
                     <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)}
@@ -284,7 +284,7 @@ export default function LoginPage({ inviteCode }: LoginPageProps) {
                     <option value="Other" className="bg-slate-800">Other Healthcare Professional</option>
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-blue-200 text-xs mb-1">Registration Body</label>
                     <select value={regBody} onChange={(e) => setRegBody(e.target.value)}

@@ -320,9 +320,15 @@ class ComplianceEngine:
                 if policy not in {"pass_fail", "informational"}:
                     policy = "pass_fail"
 
-                # Resolve the industry template id for this candidate
+                # Resolve the industry template id for this candidate.
+                # Wrapped in a SAVEPOINT so that if any query raises (e.g.
+                # schema drift, missing column) we can rollback JUST this
+                # sub-block without aborting the rest of the evaluation.
                 template_id_for_courses = None
+                _sp_ok = False
                 try:
+                    db.execute("SAVEPOINT sp_tpl_resolve")
+                    _sp_ok = True
                     db.execute(
                         "SELECT agency_id, sub_account_id FROM agency_candidates "
                         "WHERE candidate_id=%s ORDER BY created_at DESC LIMIT 1",
@@ -354,7 +360,14 @@ class ComplianceEngine:
                         dr = db.fetchone()
                         if dr:
                             template_id_for_courses = dict(dr)["id"]
+                    db.execute("RELEASE SAVEPOINT sp_tpl_resolve")
                 except Exception:
+                    if _sp_ok:
+                        try:
+                            db.execute("ROLLBACK TO SAVEPOINT sp_tpl_resolve")
+                            db.execute("RELEASE SAVEPOINT sp_tpl_resolve")
+                        except Exception:
+                            pass
                     template_id_for_courses = None
 
                 matcher = build_matcher(template_id_for_courses) if template_id_for_courses else {"courses": [], "by_id": {}, "by_name_norm": {}}
@@ -369,13 +382,24 @@ class ComplianceEngine:
                         for n in legacy_names
                     ]
 
+                training_certs = []
+                _sp2_ok = False
                 try:
+                    db.execute("SAVEPOINT sp_training_certs")
+                    _sp2_ok = True
                     db.execute(
                         "SELECT * FROM training_certificates WHERE candidate_id=%s",
                         (candidate_id,),
                     )
                     training_certs = [dict(c) for c in db.fetchall()]
+                    db.execute("RELEASE SAVEPOINT sp_training_certs")
                 except Exception:
+                    if _sp2_ok:
+                        try:
+                            db.execute("ROLLBACK TO SAVEPOINT sp_training_certs")
+                            db.execute("RELEASE SAVEPOINT sp_training_certs")
+                        except Exception:
+                            pass
                     training_certs = []
 
                 # Index certs by resolved course id AND by normalised name so

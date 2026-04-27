@@ -4,8 +4,6 @@ Generate financial reports, compliance summaries, and agency reports in PDF, CSV
 """
 import csv
 import io
-import json
-import logging
 from datetime import datetime, timezone
 
 from openpyxl import Workbook

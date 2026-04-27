@@ -9,7 +9,7 @@ and retention policy enforcement reporting.
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
 

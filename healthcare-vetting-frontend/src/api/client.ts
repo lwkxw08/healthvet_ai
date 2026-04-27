@@ -377,6 +377,15 @@ export const adminExtendedApi = {
   // Payment reminders
   sendPaymentReminders: (token: string) =>
     apiRequest<Record<string, unknown>>("/api/admin/billing/send-reminders", { method: "POST", token }),
+
+  // PAYG refund approval queue (revoked invites with paid invoices)
+  listRefundRequests: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/refund-requests", { token }),
+  decideRefund: (token: string, invoiceId: string, action: "approve" | "decline", notes?: string) =>
+    apiRequest<{ status: string; invoice_id: string; stripe_refund_id?: string }>(
+      `/api/admin/invoices/${invoiceId}/refund-decision`,
+      { method: "POST", body: { action, notes }, token },
+    ),
 };
 
 // Agency Services & Status API
@@ -826,6 +835,16 @@ export const emailConfigApi = {
     apiRequest<Record<string, unknown>>("/api/admin/email-config/ai", { token }),
   updateAI: (token: string, data: Record<string, unknown>) =>
     apiRequest<Record<string, unknown>>("/api/admin/email-config/ai", { method: "PUT", body: data, token }),
+};
+
+// Scraper Config API (Admin) — lead-generation scraper API keys
+export const scraperConfigApi = {
+  get: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/scraper-config", { token }),
+  update: (token: string, data: Record<string, unknown>) =>
+    apiRequest<Record<string, unknown>>("/api/admin/scraper-config", { method: "PUT", body: data, token }),
+  testCqc: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/scraper-config/test-cqc", { method: "POST", token }),
 };
 
 // Analytics & Reporting API (3.2)

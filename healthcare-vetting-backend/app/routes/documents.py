@@ -241,4 +241,4 @@ async def run_retention_cleanup(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin access required")
     from app.services.document_storage import enforce_retention_policy
     count = enforce_retention_policy()
-    return {"message": f"Retention cleanup complete", "documents_deleted": count}
+    return {"message": "Retention cleanup complete", "documents_deleted": count}

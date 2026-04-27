@@ -269,18 +269,18 @@ export default function CandidateOnboarding() {
 
   return (
     <div className="min-h-screen bg-slate-900">
-      <header className="bg-slate-800/80 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <img src="/viper-logo.png" alt="Viper AI" className="h-12" />
-          <div>
-            <h1 className="text-xl font-bold text-white">Viper AI</h1>
-            <p className="text-xs text-slate-400">Candidate Vetting Application</p>
+      <header className="bg-slate-800/80 border-b border-slate-700 px-4 sm:px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <img src="/viper-logo.png" alt="Viper AI" className="h-8 sm:h-12" />
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-white truncate">Viper AI</h1>
+            <p className="text-xs text-slate-400 hidden sm:block">Candidate Vetting Application</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {saving && <span className="text-xs text-yellow-400 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Saving...</span>}
-          <button onClick={logout} className="bg-red-600 hover:bg-red-700 text-white border-none rounded-lg px-4 py-1.5 cursor-pointer text-sm flex items-center gap-1">
-            <LogOut size={14} /> Sign Out
+          <button onClick={logout} className="bg-red-600 hover:bg-red-700 text-white border-none rounded-lg px-3 sm:px-4 py-1.5 cursor-pointer text-sm flex items-center gap-1">
+            <LogOut size={14} /> <span className="hidden sm:inline">Sign Out</span>
           </button>
         </div>
       </header>
@@ -294,7 +294,7 @@ export default function CandidateOnboarding() {
         </div>
       )}
 
-      <div className="bg-slate-800/50 border-b border-slate-700 px-6 py-3">
+      <div className="bg-slate-800/50 border-b border-slate-700 px-4 sm:px-6 py-3">
         <div className="flex gap-1 items-center overflow-x-auto">
           {activeSections.map((s, i) => (
             <div key={s.key} className="flex items-center gap-1">
@@ -337,7 +337,7 @@ export default function CandidateOnboarding() {
         </div>
       )}
 
-      <div className="max-w-3xl mx-auto py-6 px-6">
+      <div className="max-w-3xl mx-auto py-4 sm:py-6 px-4 sm:px-6">
         {currentStep < activeSections.length ? (
           <SectionForm
             section={activeSections[currentStep]}
@@ -630,17 +630,17 @@ function SectionForm({ section, data, candidateInfo, onUpdate, onUpdateBulk, isM
       case "personal":
         return (
           <>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className={labelClass}>First Name *</label><input className={inputClass} value={(data.first_name as string) || ""} onChange={e => onUpdate("first_name", e.target.value)} /></div>
               <div><label className={labelClass}>Last Name *</label><input className={inputClass} value={(data.last_name as string) || ""} onChange={e => onUpdate("last_name", e.target.value)} /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               <div><label className={labelClass}>Phone</label><input className={inputClass} value={(data.phone as string) || ""} onChange={e => onUpdate("phone", e.target.value)} /></div>
               <div><label className={labelClass}>Date of Birth</label><input type="date" className={inputClass} value={(data.date_of_birth as string) || ""} onChange={e => onUpdate("date_of_birth", e.target.value)} /></div>
             </div>
             <div className="mt-4"><label className={labelClass}>Address Line 1</label><input className={inputClass} value={(data.address_line1 as string) || ""} onChange={e => onUpdate("address_line1", e.target.value)} /></div>
             <div className="mt-4"><label className={labelClass}>Address Line 2</label><input className={inputClass} value={(data.address_line2 as string) || ""} onChange={e => onUpdate("address_line2", e.target.value)} /></div>
-            <div className="grid grid-cols-2 gap-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               <div><label className={labelClass}>City</label><input className={inputClass} value={(data.city as string) || ""} onChange={e => onUpdate("city", e.target.value)} /></div>
               <div><label className={labelClass}>Postcode</label><input className={inputClass} value={(data.postcode as string) || ""} onChange={e => onUpdate("postcode", e.target.value)} /></div>
             </div>
@@ -928,7 +928,7 @@ function ConsentStep({ sectionCompleted, consentChecked, onConsentChange, valida
 
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-slate-300 mb-3">Sections Completed: {completedCount}/{SECTIONS.length}</h3>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {SECTIONS.map(s => (
             <div key={s.key} className={`flex items-center gap-2 p-2.5 rounded-lg ${sectionCompleted[s.key] ? "bg-green-500/10 border border-green-500/20" : "bg-red-500/10 border border-red-500/20"}`}>
               {sectionCompleted[s.key] ? <CheckCircle size={16} className="text-green-400" /> : <XCircle size={16} className="text-red-400" />}
@@ -1010,16 +1010,16 @@ function EmploymentEntries({ entries, onChange }: { entries: Record<string, unkn
             <strong className="text-white text-sm">Employment {i + 1}</strong>
             <button onClick={() => removeEntry(i)} className="bg-red-500/20 text-red-400 border border-red-500/30 rounded px-2 py-1 cursor-pointer text-xs hover:bg-red-500/30">Remove</button>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-slate-400">Employer Name</label><input className={inputClass} value={(entry.employer_name as string) || ""} onChange={e => updateEntry(i, "employer_name", e.target.value)} /></div>
             <div><label className="text-xs text-slate-400">Job Title</label><input className={inputClass} value={(entry.job_title as string) || ""} onChange={e => updateEntry(i, "job_title", e.target.value)} /></div>
             <div><label className="text-xs text-slate-400">Start Date</label><input type="date" className={inputClass} value={(entry.start_date as string) || ""} onChange={e => updateEntry(i, "start_date", e.target.value)} /></div>
             <div><label className="text-xs text-slate-400">End Date</label><input type="date" className={inputClass} value={(entry.end_date as string) || ""} onChange={e => updateEntry(i, "end_date", e.target.value)} /></div>
-            <div className="col-span-2"><label className="text-xs text-slate-400">Reason for Leaving</label><input className={inputClass} value={(entry.reason_for_leaving as string) || ""} onChange={e => updateEntry(i, "reason_for_leaving", e.target.value)} /></div>
+            <div className="sm:col-span-2"><label className="text-xs text-slate-400">Reason for Leaving</label><input className={inputClass} value={(entry.reason_for_leaving as string) || ""} onChange={e => updateEntry(i, "reason_for_leaving", e.target.value)} /></div>
           </div>
           <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
             <p className="text-xs font-semibold text-blue-300 mb-2">Employer Verifier Details</p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div><label className="text-xs text-slate-400">Verifier Name</label><input className={inputClass} value={(entry.verifier_name as string) || ""} onChange={e => updateEntry(i, "verifier_name", e.target.value)} /></div>
               <div><label className="text-xs text-slate-400">Verifier Email</label><input className={inputClass} value={(entry.verifier_email as string) || ""} onChange={e => updateEntry(i, "verifier_email", e.target.value)} /></div>
               <div><label className="text-xs text-slate-400">Verifier Job Title</label><input className={inputClass} value={(entry.verifier_job_title as string) || ""} onChange={e => updateEntry(i, "verifier_job_title", e.target.value)} /></div>
@@ -1054,7 +1054,7 @@ function RefereeEntries({ referees, onChange }: { referees: Record<string, unkno
             <strong className="text-white text-sm">Reference {i + 1} {i < 2 ? "*" : ""}</strong>
             {i >= 2 && <button onClick={() => removeRef(i)} className="bg-red-500/20 text-red-400 border border-red-500/30 rounded px-2 py-1 cursor-pointer text-xs hover:bg-red-500/30">Remove</button>}
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-slate-400">Referee Name *</label><input className={inputClass} value={(ref.name as string) || ""} onChange={e => updateRef(i, "name", e.target.value)} /></div>
             <div><label className="text-xs text-slate-400">Referee Email *</label><input type="email" className={inputClass} value={(ref.email as string) || ""} onChange={e => updateRef(i, "email", e.target.value)} /></div>
             <div><label className="text-xs text-slate-400">Organisation</label><input className={inputClass} value={(ref.organisation as string) || ""} onChange={e => updateRef(i, "organisation", e.target.value)} /></div>
@@ -1160,8 +1160,8 @@ function CertificateEntries({ certificates, onChange, token }: { certificates: R
               <strong className="text-white text-sm">Certificate {i + 1}</strong>
               <button onClick={() => removeCert(i)} className="bg-red-500/20 text-red-400 border border-red-500/30 rounded px-2 py-1 cursor-pointer text-xs hover:bg-red-500/30">Remove</button>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
                 <label className="text-xs text-slate-400">Course *</label>
                 {loadingCatalogue ? (
                   <div className="text-slate-500 text-xs italic py-2">Loading course list…</div>
@@ -1204,7 +1204,7 @@ function CertificateEntries({ certificates, onChange, token }: { certificates: R
               <div><label className="text-xs text-slate-400">Provider</label><input className={inputClass} value={(cert.provider as string) || ""} onChange={e => updateCert(i, "provider", e.target.value)} /></div>
               <div><label className="text-xs text-slate-400">Certificate Ref</label><input className={inputClass} value={(cert.certificate_ref as string) || ""} onChange={e => updateCert(i, "certificate_ref", e.target.value)} /></div>
               <div><label className="text-xs text-slate-400">Issue Date</label><input type="date" className={inputClass} value={(cert.issue_date as string) || ""} onChange={e => updateCert(i, "issue_date", e.target.value)} /></div>
-              <div className="col-span-2"><label className="text-xs text-slate-400">Expiry Date {!cert.expiry_date && !!cert.course_id && <span className="text-slate-500 italic">(will auto-fill from course validity if left blank)</span>}</label><input type="date" className={inputClass} value={(cert.expiry_date as string) || ""} onChange={e => updateCert(i, "expiry_date", e.target.value)} /></div>
+              <div className="sm:col-span-2"><label className="text-xs text-slate-400">Expiry Date {!cert.expiry_date && !!cert.course_id && <span className="text-slate-500 italic">(will auto-fill from course validity if left blank)</span>}</label><input type="date" className={inputClass} value={(cert.expiry_date as string) || ""} onChange={e => updateCert(i, "expiry_date", e.target.value)} /></div>
             </div>
           </div>
         );

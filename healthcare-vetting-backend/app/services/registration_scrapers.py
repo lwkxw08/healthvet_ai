@@ -3,14 +3,11 @@ Professional Registration Scrapers (HTTP-based)
 Queries NMC, GMC, HCPC, GPhC public registers using HTTP requests + BeautifulSoup.
 No Selenium/Chrome dependency - works on Railway and other headless servers.
 """
-import json
 import re
 import time
 import logging
 import traceback
 import random
-from datetime import datetime, timezone
-from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
@@ -291,76 +288,168 @@ def scrape_hcpc_register(registration_number: str) -> dict:
 # -- GPhC Register Scraper (HTTP) --
 
 def scrape_gphc_register(registration_number: str) -> dict:
-    """Query the GPhC (General Pharmaceutical Council) register via HTTP."""
+    """Query the GPhC (General Pharmaceutical Council) register via HTTP.
+
+    GPhC register supports both pharmacists and pharmacy technicians.
+    Results page structure (as of 2026):
+      <div class="table-results-grid">
+        <span class="number-results">Displaying results 1 to 1 of 1</span>
+        <table id="pharmacist-table-results">
+          <thead><tr><th>Last name</th><th>First names</th>
+                     <th>GPhC registration number</th><th>Annotations</th>
+                     <th>Status</th><th>Fitness to practise information</th></tr></thead>
+          <tbody><tr><td>Smith See registration details</td>
+                     <td>John</td><td>2012345</td>
+                     <td>Independent Prescriber</td>
+                     <td>Registered</td><td>No</td></tr></tbody>
+        </table>
+      </div>
+    A "no match" page contains an h2 with "There were no results".
+    """
     result = _make_result("GPhC", registration_number, "gphc_http")
+    reg = registration_number.strip()
+    candidate_urls = [
+        "https://www.pharmacyregulation.org/registers/pharmacist/"
+        "registrationnumber/" + reg,
+        "https://www.pharmacyregulation.org/registers/pharmacytechnician/"
+        "registrationnumber/" + reg,
+    ]
     try:
-        search_url = (
-            "https://www.pharmacyregulation.org/registers/pharmacist"
-            "/registrationnumber/" + registration_number
+        logger.info(f"GPhC HTTP scrape for reg: {reg}")
+
+        matched_row = None
+        matched_register = None
+        _matched_html = None  # noqa: F841
+
+        for url in candidate_urls:
+            _random_delay()
+            try:
+                resp = _SESSION.get(url, timeout=15)
+            except requests.RequestException as e:
+                logger.warning(f"GPhC fetch failed for {url}: {e}")
+                continue
+            if resp.status_code != 200:
+                continue
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            # Explicit "no results" banner → skip this register, try the next
+            if any("no results" in h2.get_text(strip=True).lower()
+                   for h2 in soup.select("h2")):
+                continue
+
+            grid = soup.select_one(".table-results-grid")
+            if not grid:
+                continue
+            rows = grid.select("tbody tr")
+            if not rows:
+                continue
+
+            # Match row by registration number (column index 2)
+            for row in rows:
+                cells = row.find_all("td")
+                if len(cells) < 5:
+                    continue
+                # Cell 2 holds the reg number. Strip whitespace only —
+                # GPhC numbers are zero-padded 7-digit.
+                cell_reg = cells[2].get_text(strip=True)
+                if cell_reg == reg or reg in cell_reg:
+                    matched_row = row
+                    matched_register = (
+                        "pharmacist" if "pharmacist/" in url
+                        else "pharmacy_technician"
+                    )
+                    _matched_html = resp.text  # noqa: F841
+                    break
+
+            if matched_row is not None:
+                break
+
+        if matched_row is None:
+            result["error"] = "No results found for GPhC reg: " + reg
+            return result
+
+        cells = matched_row.find_all("td")
+        # Cell 0 contains last name + " See registration details" link.
+        first_cell_span = cells[0].select_one("span")
+        last_name = (
+            first_cell_span.get_text(strip=True) if first_cell_span
+            else cells[0].get_text(strip=True).replace(
+                "See registration details", "").strip()
         )
-        logger.info(f"GPhC HTTP scrape for reg: {registration_number}")
-        _random_delay()
-        resp = _SESSION.get(search_url, timeout=15)
-        resp.raise_for_status()
+        first_names = cells[1].get_text(strip=True)
+        reg_from_row = cells[2].get_text(strip=True)
+        annotations = cells[3].get_text(strip=True)
+        status_text = cells[4].get_text(strip=True)
+        ftp_text = cells[5].get_text(strip=True) if len(cells) > 5 else ""
 
-        soup = BeautifulSoup(resp.text, "html.parser")
-        page_text = soup.get_text()
+        full_name = (first_names + " " + last_name).strip()
+        result["registrant_name"] = full_name
 
-        name_el = soup.select_one(
-            "h1.page-title, .registrant-name, h2, .views-field-title"
-        )
-        if name_el:
-            name_text = name_el.get_text(strip=True)
-            if (name_text
-                    and "register" not in name_text.lower()
-                    and "search" not in name_text.lower()):
-                result["registrant_name"] = name_text
-
-        fields = soup.select(
-            ".field, .views-field, dl dt, dl dd, .detail, tr td, .field-item"
-        )
-        for i, field in enumerate(fields):
-            text = field.get_text(strip=True).lower()
-            if "name" in text and i + 1 < len(fields):
-                next_text = fields[i + 1].get_text(strip=True)
-                if next_text and not result["registrant_name"]:
-                    result["registrant_name"] = next_text
-            elif "status" in text and i + 1 < len(fields):
-                status_text = fields[i + 1].get_text(strip=True).lower()
-                if "registered" in status_text:
-                    result["registration_status"] = "active"
-                elif "removed" in status_text:
-                    result["registration_status"] = "removed"
-                elif "suspended" in status_text:
-                    result["registration_status"] = "suspended"
-
-        page_lower = page_text.lower()
-        ftp_keywords = [
-            "conditions", "suspension order", "removal",
-            "warning", "undertaking",
-        ]
-        for kw in ftp_keywords:
-            if kw in page_lower:
-                idx = page_lower.index(kw)
-                context = page_text[max(0, idx - 50):idx + 100].strip()
-                result["sanctions"].append({
-                    "type": kw.replace(" ", "_"),
-                    "detail": context[:300],
-                })
-
-        if result["registrant_name"] or result["registration_status"] != "unknown":
-            result["success"] = True
-        elif registration_number in page_text:
-            result["success"] = True
-            result["raw_data"]["page_contains_number"] = True
+        status_lower = status_text.lower()
+        status_map = {
+            "registered": "active",
+            "removed": "removed",
+            "suspended": "suspended",
+            "lapsed": "lapsed",
+            "restriction": "conditions",
+        }
+        for keyword, mapped in status_map.items():
+            if keyword in status_lower:
+                result["registration_status"] = mapped
+                break
         else:
-            result["error"] = "No results found for GPhC reg: " + registration_number
+            # Fall back to the raw status text if it's non-empty.
+            result["registration_status"] = status_lower or "unknown"
+
+        if ftp_text and ftp_text.lower() not in ("no", "none", ""):
+            result["sanctions"].append({
+                "type": "fitness_to_practise",
+                "detail": ftp_text[:300],
+            })
+
+        result["raw_data"] = {
+            "register": matched_register,
+            "last_name": last_name,
+            "first_names": first_names,
+            "registration_number": reg_from_row,
+            "annotations": annotations,
+            "status": status_text,
+            "fitness_to_practise": ftp_text,
+        }
+
+        # Try to pull the registrant detail page for richer data (expiry, town,
+        # etc.). Best-effort only — failures here don't fail the scrape.
+        try:
+            detail_url = (
+                f"https://www.pharmacyregulation.org/registers/"
+                f"{'pharmacist' if matched_register == 'pharmacist' else 'pharmacytechnician'}/"
+                f"{reg}"
+            )
+            _random_delay(0.3, 0.8)
+            detail_resp = _SESSION.get(detail_url, timeout=15)
+            if detail_resp.status_code == 200:
+                dsoup = BeautifulSoup(detail_resp.text, "html.parser")
+                dtext = dsoup.get_text(" ", strip=True)
+                # Look for expiry date pattern
+                m = re.search(
+                    r"(?:expiry|expires?|renewal|valid until)[^\d]*"
+                    r"(\d{1,2}[\s/\-]\w+[\s/\-]\d{2,4}|\d{1,2}/\d{1,2}/\d{2,4})",
+                    dtext, re.IGNORECASE,
+                )
+                if m:
+                    result["expiry_date"] = m.group(1).strip()
+                result["raw_data"]["detail_page_fetched"] = True
+        except Exception as e:
+            logger.debug(f"GPhC detail page fetch failed: {e}")
+
+        result["success"] = True
     except requests.RequestException as e:
         result["error"] = "HTTP error: " + str(e)
         logger.error(f"GPhC HTTP scrape error: {e}")
     except Exception as e:
         result["error"] = str(e)
-        logger.error(f"GPhC scrape error: {e}")
+        logger.error(f"GPhC scrape error: {e}\n{traceback.format_exc()}")
     return result
 
 

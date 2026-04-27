@@ -114,7 +114,7 @@ function Hero() {
           </div>
 
           {/* Quick stats */}
-          <div className="mt-12 grid grid-cols-3 gap-6">
+          <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-6">
             {brand.hero.stats.map(s => (
               <div key={s.label}>
                 <p className="text-2xl font-bold text-blue-600">{s.value}</p>
@@ -134,7 +134,7 @@ function Hero() {
             onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/e2e8f0/475569?text=Compliance+Platform' }}
           />
           {/* Floating card */}
-          <div className="absolute -bottom-6 -left-6 bg-white rounded-xl shadow-xl p-4 flex items-center gap-3 border border-slate-100">
+          <div className="hidden sm:flex absolute -bottom-6 -left-6 bg-white rounded-xl shadow-xl p-4 items-center gap-3 border border-slate-100">
             <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
               <Check size={20} className="text-emerald-600" />
             </div>
@@ -362,7 +362,7 @@ function Pricing() {
               key={i}
               className={`relative rounded-2xl p-8 transition-all ${
                 plan.highlighted
-                  ? 'bg-white ring-2 ring-blue-500 shadow-2xl shadow-blue-500/10 scale-105'
+                  ? 'bg-white ring-2 ring-blue-500 shadow-2xl shadow-blue-500/10 md:scale-105'
                   : 'bg-slate-800/50 border border-slate-700 hover:border-slate-600'
               }`}
             >

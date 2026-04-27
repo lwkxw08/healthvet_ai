@@ -158,7 +158,7 @@ async def seed_notifications(current_user: dict = Depends(get_current_user)):
     """Generate sample notifications for the current user based on actual system state."""
     user_id = current_user["sub"]
     user_type = current_user["type"]
-    now = datetime.now(timezone.utc).isoformat()
+    _now = datetime.now(timezone.utc).isoformat()  # noqa: F841
     created = 0
 
     with get_db() as db:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
@@ -43,6 +43,7 @@ from app.routes import subscription_plans
 from app.routes import email_templates
 from app.routes import email_rules
 from app.routes import email_config
+from app.routes import scraper_config
 from app.routes import verification_portal
 from app.routes import candidate_portal
 from app.routes import analytics
@@ -120,6 +121,7 @@ app.include_router(subscription_plans.router)
 app.include_router(email_templates.router)
 app.include_router(email_rules.router)
 app.include_router(email_config.router)
+app.include_router(scraper_config.router)
 app.include_router(verification_portal.router)
 app.include_router(candidate_portal.router)
 app.include_router(analytics.router)

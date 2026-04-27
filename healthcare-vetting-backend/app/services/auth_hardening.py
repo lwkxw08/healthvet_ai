@@ -6,7 +6,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from app.database import get_db
-from app.utils.auth import generate_id, hash_password
+from app.utils.auth import generate_id
 
 
 # ── Constants ───────────────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ def cleanup_expired_blacklist() -> int:
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
         db.execute("DELETE FROM token_blacklist WHERE expires_at<%s", (now,))
-        return cursor.rowcount
+        return db.rowcount
 
 
 # ── Input Sanitisation ──────────────────────────────────────────────────────

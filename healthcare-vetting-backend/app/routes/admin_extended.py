@@ -1182,3 +1182,129 @@ async def generate_bulk_audit_pack(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate bulk audit pack: {str(e)}")
+
+
+# ── Refund approval (PAYG / online_payment paid invoices) ─────────────
+
+@router.get("/refund-requests")
+async def list_refund_requests(current_user: dict = Depends(get_current_user)):
+    """List invoices awaiting admin approval for refund (from revoked invites)."""
+    require_admin(current_user)
+    with get_db() as db:
+        db.execute(
+            """SELECT i.*, a.name AS agency_name, inv.candidate_email
+               FROM invoices i
+               LEFT JOIN agencies a ON a.id = i.agency_id
+               LEFT JOIN agency_invites inv ON inv.id = i.invite_id
+               WHERE i.refund_status='pending_admin_approval'
+               ORDER BY i.refund_requested_at DESC"""
+        )
+        return [dict(r) for r in db.fetchall()]
+
+
+class RefundDecision(BaseModel):
+    action: str  # "approve" | "decline"
+    notes: Optional[str] = None
+
+
+@router.post("/invoices/{invoice_id}/refund-decision")
+async def decide_refund(
+    invoice_id: str,
+    data: RefundDecision,
+    current_user: dict = Depends(get_current_user),
+):
+    """Approve or decline a pending PAYG refund request.
+
+    On approval we attempt a real Stripe refund via the configured provider using
+    the invoice's stored `stripe_payment_intent_id` (or `stripe_session_id` as a
+    fallback). The refund outcome is persisted to the invoice and a
+    payment_transactions row is written for audit.
+    """
+    require_admin(current_user)
+    if data.action not in ("approve", "decline"):
+        raise HTTPException(status_code=400, detail="action must be approve or decline")
+    now = datetime.now(timezone.utc).isoformat()
+
+    with get_db() as db:
+        db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+        inv = db.fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        inv_d = dict(inv)
+        if inv_d.get("refund_status") != "pending_admin_approval":
+            raise HTTPException(status_code=400, detail="Invoice is not awaiting refund approval")
+
+    if data.action == "decline":
+        with get_db() as db:
+            db.execute(
+                """UPDATE invoices
+                   SET refund_status='declined', refund_resolved_at=%s, refund_resolved_by=%s
+                   WHERE id=%s""",
+                (now, current_user.get("sub"), invoice_id),
+            )
+        return {"status": "declined", "invoice_id": invoice_id}
+
+    # ── Approve: call Stripe Refund ──
+    from app.services.payment_providers import PaymentProviderService
+
+    payment_ref = inv_d.get("stripe_payment_intent_id") or inv_d.get("stripe_session_id")
+    amount = float(inv_d.get("sell_amount") or inv_d.get("amount") or 0)
+    currency = (inv_d.get("currency") or "GBP").upper()
+
+    refund_result: dict = {"success": False, "error": "no_payment_reference"}
+    if payment_ref:
+        provider_config = PaymentProviderService.get_provider("stripe")
+        if provider_config and provider_config.get("api_key_encrypted"):
+            refund_result = PaymentProviderService._stripe_refund(
+                provider_config["api_key_encrypted"],
+                payment_ref,
+                amount,
+                currency,
+            )
+        else:
+            refund_result = {"success": False, "error": "stripe_provider_not_configured"}
+
+    with get_db() as db:
+        if refund_result.get("success"):
+            db.execute(
+                """UPDATE invoices
+                   SET status='cancelled', refund_status='refunded',
+                       cancelled_at=%s, refund_resolved_at=%s, refund_resolved_by=%s
+                   WHERE id=%s""",
+                (now, now, current_user.get("sub"), invoice_id),
+            )
+            # Audit row in payment_transactions so the refund is traceable.
+            try:
+                import json as _json
+                db.execute(
+                    """INSERT INTO payment_transactions
+                       (id, agency_id, invoice_id, provider, payment_type, amount, currency,
+                        status, provider_payment_id, metadata_json, created_at, completed_at)
+                       VALUES (%s, %s, %s, 'stripe', 'refund', %s, %s, 'completed', %s, %s, %s, %s)""",
+                    (generate_id(), inv_d.get("agency_id"), invoice_id,
+                     amount, currency,
+                     refund_result.get("refund_id", ""),
+                     _json.dumps({"invoice_id": invoice_id, "approved_by": current_user.get("sub")}),
+                     now, now),
+                )
+            except Exception:
+                pass
+            return {
+                "status": "refunded",
+                "invoice_id": invoice_id,
+                "stripe_refund_id": refund_result.get("refund_id"),
+            }
+        else:
+            # Mark the attempt but leave the invoice in pending_admin_approval so
+            # the admin can retry after fixing config / payment reference.
+            db.execute(
+                """UPDATE invoices
+                   SET refund_status='pending_admin_approval',
+                       refund_resolved_at=%s
+                   WHERE id=%s""",
+                (now, invoice_id),
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Stripe refund failed: {refund_result.get('error', 'unknown error')}",
+            )

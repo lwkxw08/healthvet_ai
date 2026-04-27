@@ -12,9 +12,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    PageBreak, HRFlowable, Image
+    PageBreak, HRFlowable
 )
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from app.database import get_db
 
 
@@ -111,8 +110,8 @@ class AuditPackService:
         heading_style = ParagraphStyle('Heading2a', parent=styles['Heading2'],
                                         textColor=colors.HexColor('#1e3a5f'),
                                         spaceAfter=6)
-        subheading_style = ParagraphStyle('Heading3a', parent=styles['Heading3'],
-                                           textColor=colors.HexColor('#2d5f8a'))
+        _subheading_style = ParagraphStyle('Heading3a', parent=styles['Heading3'],  # noqa: F841
+                                            textColor=colors.HexColor('#2d5f8a'))
         normal_style = styles['Normal']
         small_style = ParagraphStyle('Small', parent=normal_style, fontSize=8,
                                       textColor=colors.grey)

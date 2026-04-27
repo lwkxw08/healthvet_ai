@@ -16,6 +16,54 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agencies", tags=["Agencies"])
 
 
+def _resolve_agency_template_id(db, agency_id: str) -> Optional[str]:
+    """Return the agency's industry_template_id, or the default template id."""
+    db.execute("SELECT industry_template_id FROM agencies WHERE id=%s", (agency_id,))
+    agency = db.fetchone()
+    if agency and dict(agency).get("industry_template_id"):
+        return dict(agency)["industry_template_id"]
+    db.execute(
+        "SELECT id FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
+    )
+    default_tmpl = db.fetchone()
+    if default_tmpl:
+        return dict(default_tmpl)["id"]
+    return None
+
+
+def _calculate_agency_vetting_cost(
+    db, agency_id: str, include_monitoring: bool = False
+) -> tuple[float, float, Optional[str]]:
+    """Single source of truth for vetting + monitoring cost.
+
+    Uses industry_check_pricing for the agency's industry template (same source
+    as the Confirm Vetting Cost popup). Monitoring comes from pricing_settings.
+    Returns (vetting_total, monitoring_cost, template_id). Discount is NOT
+    applied here — caller applies any agency-level discount after.
+    """
+    template_id = _resolve_agency_template_id(db, agency_id)
+    vetting_total = 0.0
+    if template_id:
+        from app.routes.subscription_plans import _sync_industry_pricing
+        _sync_industry_pricing(db, template_id)
+        db.execute(
+            "SELECT sell_price FROM industry_check_pricing "
+            "WHERE industry_template_id=%s AND is_active=1",
+            (template_id,),
+        )
+        for row in db.fetchall():
+            vetting_total += float(dict(row).get("sell_price") or 0)
+
+    monitoring_cost = 0.0
+    if include_monitoring:
+        db.execute("SELECT sell_price FROM pricing_settings WHERE check_type='monitoring'")
+        mrow = db.fetchone()
+        if mrow:
+            monitoring_cost = float(dict(mrow).get("sell_price") or 0)
+
+    return round(vetting_total, 2), round(monitoring_cost, 2), template_id
+
+
 def _get_agency_template_check_keys(db, agency_id: str) -> list[str]:
     """Get the list of enabled check_keys from the agency's industry template.
     Falls back to the default template, then to hardcoded defaults."""
@@ -66,51 +114,26 @@ async def get_vetting_pricing(current_user: dict = Depends(get_current_user)):
 
     agency_id = current_user["sub"]
     with get_db() as db:
-        # Resolve the agency's industry template
-        template_id = None
-        db.execute(
-            "SELECT industry_template_id FROM agencies WHERE id=%s", (agency_id,)
+        vetting_total, monitoring_price, template_id = _calculate_agency_vetting_cost(
+            db, agency_id, include_monitoring=True
         )
-        agency = db.fetchone()
-        if agency and dict(agency).get("industry_template_id"):
-            template_id = dict(agency)["industry_template_id"]
-        if not template_id:
-            db.execute(
-                "SELECT id FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
-            )
-            default_tmpl = db.fetchone()
-            if default_tmpl:
-                template_id = dict(default_tmpl)["id"]
-
-        vetting_total = 0.0
-        line_items = []
-
+        line_items: list[dict] = []
         if template_id:
-            # Trigger auto-sync so pricing rows exist for all enabled template checks
-            from app.routes.subscription_plans import _sync_industry_pricing
-            _sync_industry_pricing(db, template_id)
-
-            # Read per-check pricing from industry_check_pricing
             db.execute(
-                "SELECT check_type, label, sell_price FROM industry_check_pricing WHERE industry_template_id=%s AND is_active=1",
-                (template_id,)
+                "SELECT check_type, label, sell_price FROM industry_check_pricing "
+                "WHERE industry_template_id=%s AND is_active=1",
+                (template_id,),
             )
-            pricing_rows = db.fetchall()
-            for row in pricing_rows:
+            for row in db.fetchall():
                 p = dict(row)
-                vetting_total += p["sell_price"] or 0
-                line_items.append({"check_type": p["check_type"], "label": p["label"], "sell_price": p["sell_price"] or 0})
-
-        # Get monitoring price separately (always from pricing_settings, not per-industry)
-        db.execute(
-            "SELECT sell_price FROM pricing_settings WHERE check_type='monitoring'"
-        )
-        monitoring_row = db.fetchone()
-        monitoring_price = dict(monitoring_row)["sell_price"] if monitoring_row else 0.0
-
+                line_items.append({
+                    "check_type": p["check_type"],
+                    "label": p["label"],
+                    "sell_price": p.get("sell_price") or 0,
+                })
         return {
-            "vetting_total": round(vetting_total, 2),
-            "monitoring_annual_price": round(monitoring_price, 2),
+            "vetting_total": vetting_total,
+            "monitoring_annual_price": monitoring_price,
             "line_items": line_items,
         }
 
@@ -156,26 +179,12 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
                 detail="A pending invite already exists for this email",
             )
 
-        # Calculate vetting cost based on agency's industry template (not all pricing items)
-        db.execute("SELECT check_type, sell_price FROM pricing_settings")
-        rows = db.fetchall()
-        pricing_map = {dict(r)["check_type"]: dict(r) for r in rows}
-        template_checks = _get_agency_template_check_keys(db, agency_id)
-        check_key_to_pricing = {
-            "identity_verified": "identity", "dbs_valid": "dbs",
-            "right_to_work_valid": "right_to_work", "cv_validated": "cv_analysis",
-            "registration_active": "registration", "references_verified": "references",
-            "employment_verified": "employment", "training_compliant": None,
-        }
-        vetting_cost = 0.0
-        for ck in template_checks:
-            pk = check_key_to_pricing.get(ck)
-            if pk and pk in pricing_map:
-                vetting_cost += pricing_map[pk]["sell_price"]
-        checks = [dict(r) for r in rows]  # keep for cost_amount calc below
-        monitoring_cost = 0.0
-        if data.include_monitoring and "monitoring" in pricing_map:
-            monitoring_cost = pricing_map["monitoring"]["sell_price"]
+        # Calculate vetting cost from the SAME source the cost-confirmation popup
+        # reads (industry_check_pricing). This keeps the quoted price and the
+        # billed amount in sync.
+        vetting_cost, monitoring_cost, _template_id = _calculate_agency_vetting_cost(
+            db, agency_id, include_monitoring=bool(data.include_monitoring)
+        )
 
         # Apply agency discount if set
         if discount_pct > 0:
@@ -200,6 +209,7 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
             result = BillingService.use_subscription_check(
                 agency_id, "", f"Full Automated Vetting - {data.candidate_email}",
                 round(vetting_cost, 2), cost_amount, "full_vetting",
+                invite_id=invite_id,
             )
             payment_info["subscription_result"] = result
             if result.get("within_credit"):
@@ -217,18 +227,18 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
             # PAYG — create invoice and flag for Stripe payment
             inv_id = generate_id()
             db.execute(
-                """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
-                   VALUES (%s, %s, 'full_vetting', 'Full Automated Vetting - ' || %s, %s, %s, 'pending', 'stripe', %s, %s)""",
+                """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at, invite_id)
+                   VALUES (%s, %s, 'full_vetting', 'Full Automated Vetting - ' || %s, %s, %s, 'pending', 'stripe', %s, %s, %s)""",
                 (inv_id, agency_id, data.candidate_email, cost_amount,
-                 round(vetting_cost, 2), due_date, now),
+                 round(vetting_cost, 2), due_date, now, invite_id),
             )
             if data.include_monitoring and monitoring_cost > 0:
                 mon_inv_id = generate_id()
                 db.execute(
-                    """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
-                       VALUES (%s, %s, 'annual_monitoring', 'Annual Monitoring Service - ' || %s, %s, %s, 'pending', 'stripe', %s, %s)""",
+                    """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at, invite_id)
+                       VALUES (%s, %s, 'annual_monitoring', 'Annual Monitoring Service - ' || %s, %s, %s, 'pending', 'stripe', %s, %s, %s)""",
                     (mon_inv_id, agency_id, data.candidate_email,
-                     round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), due_date, now),
+                     round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), due_date, now, invite_id),
                 )
             payment_info["payment_required"] = True
             payment_info["status"] = "awaiting_payment"
@@ -239,17 +249,17 @@ async def create_invite(data: InviteCreate, request: Request, current_user: dict
             # manual_invoicing — create pending invoice, no Stripe redirect
             inv_id = generate_id()
             db.execute(
-                """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
-                   VALUES (%s, %s, 'full_vetting', 'Full Automated Vetting - ' || %s, %s, %s, 'pending', 'manual', %s, %s)""",
+                """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at, invite_id)
+                   VALUES (%s, %s, 'full_vetting', 'Full Automated Vetting - ' || %s, %s, %s, 'pending', 'manual', %s, %s, %s)""",
                 (inv_id, agency_id, data.candidate_email, cost_amount,
-                 round(vetting_cost, 2), due_date, now),
+                 round(vetting_cost, 2), due_date, now, invite_id),
             )
             if data.include_monitoring and monitoring_cost > 0:
                 db.execute(
-                    """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at)
-                       VALUES (%s, %s, 'annual_monitoring', 'Annual Monitoring Service - ' || %s, %s, %s, 'pending', 'manual', %s, %s)""",
+                    """INSERT INTO invoices (id, agency_id, check_type, description, cost_amount, sell_amount, status, payment_method, due_date, created_at, invite_id)
+                       VALUES (%s, %s, 'annual_monitoring', 'Annual Monitoring Service - ' || %s, %s, %s, 'pending', 'manual', %s, %s, %s)""",
                     (generate_id(), agency_id, data.candidate_email,
-                     round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), due_date, now),
+                     round(monitoring_cost * 0.3, 2), round(monitoring_cost, 2), due_date, now, invite_id),
                 )
             payment_info["status"] = "invoice_created"
             payment_info["invoice_id"] = inv_id
@@ -313,14 +323,30 @@ async def list_invites(current_user: dict = Depends(get_current_user)):
 
 @router.delete("/invites/{invite_id}")
 async def revoke_invite(invite_id: str, current_user: dict = Depends(get_current_user)):
-    """Revoke a pending invite."""
+    """Revoke a pending invite and cancel/refund the associated billing line.
+
+    Billing lifecycle on revoke:
+    - manual_invoicing: any pending invoice for this invite is marked cancelled
+      so it isn't included in the next manual bill.
+    - credit_pack / subscription: credits consumed by the invite are refunded
+      (credits_used decremented, paid invoice marked cancelled, reverse credit
+      transaction recorded). Takes effect immediately.
+    - online_payment (PAYG):
+        * unpaid invoice → cancelled immediately, no charge.
+        * paid invoice → flagged refund_status='pending_admin_approval' for an
+          admin to approve before Stripe refund is issued.
+    """
     if current_user["type"] != "agency":
         raise HTTPException(status_code=403, detail="Agencies only")
+
+    agency_id = current_user["sub"]
+    now = datetime.now(timezone.utc).isoformat()
+    refund_summary: list[dict] = []
 
     with get_db() as db:
         db.execute(
             "SELECT * FROM agency_invites WHERE id=%s AND agency_id=%s",
-            (invite_id, current_user["sub"]),
+            (invite_id, agency_id),
         )
         row = db.fetchone()
         if not row:
@@ -330,11 +356,123 @@ async def revoke_invite(invite_id: str, current_user: dict = Depends(get_current
             raise HTTPException(status_code=400, detail="Can only revoke pending invites")
 
         db.execute(
+            "SELECT billing_mode FROM agencies WHERE id=%s", (agency_id,)
+        )
+        arow = db.fetchone()
+        billing_mode = (dict(arow).get("billing_mode") if arow else None) or "manual_invoicing"
+
+        # Cancel / refund associated invoices
+        db.execute(
+            "SELECT * FROM invoices WHERE invite_id=%s AND agency_id=%s",
+            (invite_id, agency_id),
+        )
+        invoices = [dict(r) for r in db.fetchall()]
+
+        for inv in invoices:
+            status = (inv.get("status") or "").lower()
+            if status in ("cancelled", "void", "refunded"):
+                continue
+
+            if status == "paid":
+                # Already paid — refund flow depends on how it was paid.
+                if billing_mode in ("subscription", "credit_pack"):
+                    # Credit-pack paid: refund credits and cancel the invoice now.
+                    db.execute(
+                        """UPDATE invoices
+                           SET status='cancelled', cancelled_at=%s,
+                               refund_status='refunded', refund_resolved_at=%s
+                           WHERE id=%s""",
+                        (now, now, inv["id"]),
+                    )
+                    refund_summary.append({
+                        "invoice_id": inv["id"],
+                        "action": "credit_refunded",
+                        "sell_amount": inv.get("sell_amount") or 0,
+                    })
+                else:
+                    # PAYG paid: requires admin approval before a real refund is issued.
+                    db.execute(
+                        """UPDATE invoices
+                           SET refund_status='pending_admin_approval',
+                               refund_requested_at=%s
+                           WHERE id=%s""",
+                        (now, inv["id"]),
+                    )
+                    refund_summary.append({
+                        "invoice_id": inv["id"],
+                        "action": "payg_refund_pending_admin_approval",
+                        "sell_amount": inv.get("sell_amount") or 0,
+                    })
+            else:
+                # Pending / unpaid invoice — cancel outright.
+                db.execute(
+                    "UPDATE invoices SET status='cancelled', cancelled_at=%s WHERE id=%s",
+                    (now, inv["id"]),
+                )
+                refund_summary.append({
+                    "invoice_id": inv["id"],
+                    "action": "cancelled",
+                    "sell_amount": inv.get("sell_amount") or 0,
+                })
+
+        # Reverse any credit consumption for this invite
+        db.execute(
+            "SELECT * FROM credit_transactions WHERE invite_id=%s AND agency_id=%s "
+            "AND (reversed_at IS NULL) AND (is_overage IS NULL OR is_overage=0)",
+            (invite_id, agency_id),
+        )
+        txns = [dict(r) for r in db.fetchall()]
+        credits_refunded = 0.0
+        for txn in txns:
+            consumed = float(txn.get("credits_consumed") or 0)
+            if consumed <= 0:
+                continue
+            db.execute(
+                "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (agency_id,),
+            )
+            sub_row = db.fetchone()
+            if sub_row:
+                sub = dict(sub_row)
+                new_used = max(0.0, float(sub.get("credits_used") or 0) - consumed)
+                db.execute(
+                    "UPDATE agency_subscriptions SET credits_used=%s WHERE id=%s",
+                    (new_used, sub["id"]),
+                )
+                balance_after = max(0.0, float(sub.get("credits_total") or 0) - new_used)
+            else:
+                balance_after = 0.0
+
+            db.execute(
+                "UPDATE credit_transactions SET reversed_at=%s WHERE id=%s",
+                (now, txn["id"]),
+            )
+            # Record the reversal as its own transaction for audit.
+            db.execute(
+                """INSERT INTO credit_transactions
+                   (id, agency_id, candidate_id, check_type, credits_consumed, credit_balance_after,
+                    unit_cost, charge_amount, is_overage, description, created_at, invite_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, 0, 0, 0, %s, %s, %s)""",
+                (generate_id(), agency_id, txn.get("candidate_id"),
+                 txn.get("check_type") or "full_vetting",
+                 -consumed, balance_after,
+                 f"Refund (invite revoked) — {invite.get('candidate_email','')}",
+                 now, invite_id),
+            )
+            credits_refunded += consumed
+
+        db.execute(
             "UPDATE agency_invites SET status='revoked' WHERE id=%s",
             (invite_id,),
         )
 
-    return {"status": "revoked"}
+    return {
+        "status": "revoked",
+        "billing_mode": billing_mode,
+        "invoices_updated": refund_summary,
+        "credits_refunded": round(credits_refunded, 2),
+    }
 
 
 @router.post("/invites/{invite_id}/resend")
@@ -600,7 +738,7 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
 
         total_billed = sum(effective_amount(i) for i in invoices)
         total_paid = sum(effective_amount(i) for i in invoices if i["status"] == "paid")
-        total_outstanding = total_billed - total_paid
+        _total_outstanding = total_billed - total_paid  # noqa: F841
 
         # Breakdown by check type
         by_type = {}

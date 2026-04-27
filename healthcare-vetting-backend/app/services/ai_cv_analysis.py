@@ -1,6 +1,5 @@
 """4.3.1 AI-Powered CV Gap Analysis with LLM (OpenAI + rule-based fallback)."""
 import json
-import os
 import re
 from datetime import datetime, timezone
 from typing import Optional

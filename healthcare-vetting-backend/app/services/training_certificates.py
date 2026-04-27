@@ -3,7 +3,6 @@ Training Certificates Module
 Upload, track, and manage mandatory training certificates with expiry monitoring.
 Healthcare-specific: manual handling, infection control, safeguarding, BLS, etc.
 """
-import json
 from datetime import datetime, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
