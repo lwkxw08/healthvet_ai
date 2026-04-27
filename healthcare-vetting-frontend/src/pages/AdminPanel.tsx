@@ -1197,11 +1197,11 @@ export default function AdminPanel() {
 
       {/* Sub-tab navigation — contextual per main tab */}
       {mainTab === "overview" && (
-        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
-          <div className="flex gap-1">
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-4 sm:px-6">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
             {[{ key: "dashboard", label: "Dashboard" }, { key: "analytics", label: "Analytics" }, { key: "benchmarking", label: "Benchmarking" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
-                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
               </button>
             ))}
@@ -1209,11 +1209,11 @@ export default function AdminPanel() {
         </div>
       )}
       {mainTab === "agencies" && (
-        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
-          <div className="flex gap-1">
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-4 sm:px-6">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
             {[{ key: "list", label: "Agency List" }, { key: "invoicing", label: "Invoicing" }, { key: "subscriptions", label: "Credit Packs" }, { key: "refunds", label: "Refund Requests" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
-                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
               </button>
             ))}
@@ -1221,11 +1221,11 @@ export default function AdminPanel() {
         </div>
       )}
       {mainTab === "compliance" && (
-        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
-          <div className="flex gap-1">
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-4 sm:px-6">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
             {[{ key: "alerts", label: `Alerts (${alerts.length})` }, { key: "monitoring", label: "Monitoring" }, { key: "fraud", label: "Fraud Detection" }, { key: "scheduler", label: "Scheduler" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
-                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
               </button>
             ))}
@@ -1233,11 +1233,11 @@ export default function AdminPanel() {
         </div>
       )}
       {mainTab === "settings" && (
-        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
-          <div className="flex gap-1">
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-4 sm:px-6">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
             {[{ key: "pricing", label: "Pricing" }, { key: "templates", label: "Industry Templates" }, { key: "training-matrix", label: "Training Matrix" }, { key: "industry-plans", label: "Industry Plans" }, { key: "trustid", label: "TrustID" }, { key: "alerts-config", label: "Alert Settings" }, { key: "invoice-settings", label: "Invoice Settings" }, { key: "email-templates", label: "Email Templates" }, { key: "email-rules", label: "Email Rules" }, { key: "email-config", label: "Email Provider" }, { key: "payment-providers", label: "Payment Providers" }, { key: "scraper-config", label: "Scraper Config" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
-                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
               </button>
             ))}
@@ -1245,11 +1245,11 @@ export default function AdminPanel() {
         </div>
       )}
       {mainTab === "user-management" && (
-        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
-          <div className="flex gap-1">
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-4 sm:px-6">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
             {[{ key: "users", label: "Users" }, { key: "overrides", label: "Overrides" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
-                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
               </button>
             ))}
@@ -1257,11 +1257,11 @@ export default function AdminPanel() {
         </div>
       )}
       {mainTab === "operations" && (
-        <div className="bg-slate-800/30 border-b border-slate-700/50 px-6">
-          <div className="flex gap-1">
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-4 sm:px-6">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
             {[{ key: "analytics-dashboard", label: "Analytics & Reporting" }, { key: "webhook-dashboard", label: "Webhook Delivery" }, { key: "audit-reporting", label: "Audit Trail & Compliance" }, { key: "jobs-monitor", label: "Background Jobs" }, { key: "ai-insights", label: "AI Insights" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
-                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
               </button>
             ))}
