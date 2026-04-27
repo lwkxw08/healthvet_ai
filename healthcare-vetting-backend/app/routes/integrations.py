@@ -7,11 +7,9 @@ Provides:
 - Webhook event dispatching with HMAC signatures
 """
 import hashlib
-import hmac
 import json
 import secrets
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -19,9 +17,7 @@ from pydantic import BaseModel, Field
 from app.database import get_db
 from app.utils.auth import (
     generate_id,
-    get_current_admin,
     get_current_user,
-    hash_password,
 )
 
 router = APIRouter(prefix="/api/integrations", tags=["Integrations"])

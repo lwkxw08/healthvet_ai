@@ -1,6 +1,6 @@
 """4.3.3 Anomaly Detection in Verification Patterns (no LLM needed)."""
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Optional
 

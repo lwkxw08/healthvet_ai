@@ -3,14 +3,11 @@ Professional Registration Scrapers (HTTP-based)
 Queries NMC, GMC, HCPC, GPhC public registers using HTTP requests + BeautifulSoup.
 No Selenium/Chrome dependency - works on Railway and other headless servers.
 """
-import json
 import re
 import time
 import logging
 import traceback
 import random
-from datetime import datetime, timezone
-from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
@@ -322,7 +319,7 @@ def scrape_gphc_register(registration_number: str) -> dict:
 
         matched_row = None
         matched_register = None
-        matched_html = None
+        _matched_html = None  # noqa: F841
 
         for url in candidate_urls:
             _random_delay()
@@ -362,7 +359,7 @@ def scrape_gphc_register(registration_number: str) -> dict:
                         "pharmacist" if "pharmacist/" in url
                         else "pharmacy_technician"
                     )
-                    matched_html = resp.text
+                    _matched_html = resp.text  # noqa: F841
                     break
 
             if matched_row is not None:

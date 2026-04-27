@@ -1,7 +1,7 @@
 """Webhook handlers for external service callbacks."""
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from fastapi import APIRouter, Request, HTTPException
 from app.database import get_db
 from app.utils.auth import generate_id

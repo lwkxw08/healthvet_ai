@@ -6,7 +6,7 @@ worker status, job submission, and cleanup.
 """
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.utils.auth import get_current_user, get_current_admin
+from app.utils.auth import get_current_admin
 
 router = APIRouter(prefix="/api/jobs", tags=["Background Jobs"])
 

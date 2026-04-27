@@ -4,7 +4,6 @@ Handles sending email notifications for monitoring alerts, expiry warnings, and 
 Now uses the template system for rendering and SendGrid for delivery when configured.
 Falls back to DB-only storage when no SendGrid API key is set.
 """
-import json
 import logging
 from datetime import datetime, timezone
 from app.config import DASHBOARD_URL

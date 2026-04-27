@@ -572,7 +572,7 @@ class BillingService:
 
             credits_total = float(s.get("credits_total") or 0)
             credits_used = float(s.get("credits_used") or 0)
-            credits_remaining = credits_total - credits_used
+            _credits_remaining = credits_total - credits_used  # noqa: F841
 
             new_credits_used = credits_used + credit_value
             credit_balance_after = max(0, credits_total - new_credits_used)
@@ -651,7 +651,7 @@ class BillingService:
     @staticmethod
     def update_auto_topup(agency_id: str, enabled: bool, tier: str = None) -> dict:
         """Enable or disable auto top-up for an agency's credit pack."""
-        now = datetime.now(timezone.utc).isoformat()
+        _now = datetime.now(timezone.utc).isoformat()  # noqa: F841
         with get_db() as db:
             db.execute(
                 "SELECT * FROM agency_subscriptions WHERE agency_id=%s AND status='active' ORDER BY created_at DESC LIMIT 1",
@@ -737,7 +737,7 @@ class BillingService:
         """Create a checkout session using the admin-configured payment provider.
         Falls back to simulation if no provider is configured."""
         import secrets as _secrets
-        now = datetime.now(timezone.utc).isoformat()
+        _now = datetime.now(timezone.utc).isoformat()  # noqa: F841
 
         with get_db() as db:
             db.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))

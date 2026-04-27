@@ -2,7 +2,6 @@
 Industry-Specific Subscription Plans (Option A) + Per-Element Industry Pricing (Option C)
 Routes for managing subscription plans tied to industries with per-check pricing.
 """
-import json
 from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends

@@ -248,7 +248,7 @@ class JobProcessingService:
         """Clean up completed jobs older than N days."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with get_db() as db:
-            db.execute(
+            result = db.execute(
                 "DELETE FROM background_jobs WHERE status IN (%s, 'cancelled') AND completed_at < %s",
                 (STATUS_COMPLETED, cutoff),
             )

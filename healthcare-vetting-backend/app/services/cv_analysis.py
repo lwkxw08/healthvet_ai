@@ -430,7 +430,7 @@ Return an empty array [] if no employment entries can be extracted."""
             filtered = []
             for e in llm_entries:
                 try:
-                    start_yr = int(str(e.get("start_date", "0"))[:4]) if e.get("start_date") else 0
+                    _start_yr = int(str(e.get("start_date", "0"))[:4]) if e.get("start_date") else 0  # noqa: F841
                     end_yr = datetime.now().year if e.get("is_current") else int(str(e.get("end_date", "0"))[:4]) if e.get("end_date") else 0
                     if end_yr >= cutoff_year or e.get("is_current"):
                         filtered.append(e)
@@ -478,7 +478,7 @@ Return an empty array [] if no employment entries can be extracted."""
         filtered = []
         for e in entries:
             try:
-                start_yr = int(e["start_date"][:4]) if e.get("start_date") else 0
+                _start_yr = int(e["start_date"][:4]) if e.get("start_date") else 0  # noqa: F841
                 end_yr = datetime.now().year if e.get("is_current") else int(e["end_date"][:4]) if e.get("end_date") else 0
                 if end_yr >= cutoff_year or e.get("is_current"):
                     filtered.append(e)

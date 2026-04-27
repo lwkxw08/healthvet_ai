@@ -1,6 +1,5 @@
 """4.3.2 AI-Powered Reference Sentiment Analysis (OpenAI + rule-based fallback)."""
 import json
-import os
 import re
 from datetime import datetime, timezone
 from typing import Optional

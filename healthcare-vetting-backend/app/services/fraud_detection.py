@@ -3,7 +3,6 @@ Cross-Candidate Fraud Detection Service
 Detects document reuse, reference rings, suspicious patterns across candidates.
 """
 import json
-import hashlib
 import logging
 from datetime import datetime, timezone
 from collections import defaultdict
@@ -193,7 +192,7 @@ class FraudDetectionService:
     def detect_suspicious_patterns() -> list:
         """Detect suspicious behavioral patterns across candidates."""
         flags = []
-        now = datetime.now(timezone.utc).isoformat()
+        _now = datetime.now(timezone.utc).isoformat()  # noqa: F841
 
         with get_db() as db:
             # Candidates with all checks completed within 5 minutes (too fast)

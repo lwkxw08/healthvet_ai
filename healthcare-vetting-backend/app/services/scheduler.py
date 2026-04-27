@@ -106,7 +106,6 @@ def run_expiry_warnings():
     """Check for upcoming expiries and send warning emails."""
     from app.services.email_service import EmailService
     from app.database import get_db
-    from datetime import timedelta
 
     logger.info("Running expiry warning checks...")
     now = datetime.now(timezone.utc)

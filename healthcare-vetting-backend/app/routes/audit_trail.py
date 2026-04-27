@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 import io
 import json
 
-from app.utils.auth import get_current_user, get_current_admin
+from app.utils.auth import get_current_admin
 
 router = APIRouter(prefix="/api/audit-trail", tags=["Audit Trail"])
 

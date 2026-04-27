@@ -6,9 +6,7 @@ Supports multiple email providers: SendGrid, Mailgun, and Resend.
 import json
 import logging
 import os
-import re
 import secrets
-import string
 from datetime import datetime, timezone
 from app.database import get_db
 from app.utils.auth import generate_id

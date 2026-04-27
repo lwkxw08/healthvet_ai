@@ -88,7 +88,7 @@ async def push_pricing_to_industries(check_type: str, current_user: dict = Depen
 
         # Update all matching industry_check_pricing rows
         placeholders = ",".join("?" for _ in matching_check_keys)
-        db.execute(
+        result = db.execute(
             f"""UPDATE industry_check_pricing
                 SET third_party_cost=%s, sell_price=%s, updated_at=%s
                 WHERE check_type IN ({placeholders})""",
@@ -802,7 +802,6 @@ async def migrate_trustid_to_legacy(current_user: dict = Depends(get_current_use
     right_to_work_checks, dbs_checks) so the compliance engine recognises them.
     Then re-evaluate compliance for all affected candidates."""
     require_admin(current_user)
-    import json as _json
     from app.services.trustid_checks import TrustIDService
 
     now = datetime.now(timezone.utc).isoformat()
@@ -1033,8 +1032,8 @@ async def send_invoice_email(
         "bank_account_number": settings.get("bank_account_number", ""),
     }
 
-    fallback_subject = f"Invoice #{invoice_ref} - \u00a3{total_due:.2f}"
-    fallback_body = f"Dear {variables['agency_name']},\n\nPlease find attached invoice #{invoice_ref} for \u00a3{total_due:.2f}.\n\nBest regards,\n{settings.get('company_name', 'Viper AI')}"
+    _fallback_subject = f"Invoice #{invoice_ref} - \u00a3{total_due:.2f}"  # noqa: F841
+    _fallback_body = f"Dear {variables['agency_name']},\n\nPlease find attached invoice #{invoice_ref} for \u00a3{total_due:.2f}.\n\nBest regards,\n{settings.get('company_name', 'Viper AI')}"  # noqa: F841
 
     # Generate PDF invoice
     pdf_attachments = []

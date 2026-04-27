@@ -543,10 +543,10 @@ def migrate_db():
         _add_column_if_missing(cursor, "credit_transactions", "reversed_at", "TEXT")
 
     # Seed expanded pricing elements if not present
-    existing_pricing_types = set()
+    _existing_pricing_types = set()
     if _table_exists(cursor, "pricing_settings"):
         cursor.execute("SELECT check_type FROM pricing_settings")
-        existing_pricing_types = {row["check_type"] for row in cursor.fetchall()}
+        _existing_pricing_types = {row["check_type"] for row in cursor.fetchall()}
     expanded_pricing = [
         ("standard_dbs", "Standard DBS Check", 18.0, 45.0),
         ("enhanced_dbs", "Enhanced DBS Check (no barred)", 38.0, 65.0),

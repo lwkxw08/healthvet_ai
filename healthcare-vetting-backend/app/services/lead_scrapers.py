@@ -10,7 +10,6 @@ import time
 import random
 import logging
 import traceback
-from typing import Optional
 from urllib.parse import urlparse
 
 import requests as http_requests

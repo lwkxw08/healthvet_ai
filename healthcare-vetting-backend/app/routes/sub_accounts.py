@@ -1,6 +1,6 @@
 """Agency Sub-Accounts with Role-Based Access — recruiter/compliance/manager permissions."""
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.database import get_db

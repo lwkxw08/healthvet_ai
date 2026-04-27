@@ -2,14 +2,13 @@
 API Routes for Reports, Audit Packs, Training Certificates, Fraud Detection,
 Billing/Subscriptions, Email Notifications, and Scheduler Management.
 """
-import json
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import io
 
 from app.database import get_db
-from app.utils.auth import get_current_user, get_current_admin, generate_id
+from app.utils.auth import get_current_user, get_current_admin
 
 router = APIRouter(prefix="/api", tags=["reports"])
 
@@ -481,8 +480,8 @@ async def download_invoice_pdf(invoice_id: str, user=Depends(get_current_user)):
     normal_style = styles['Normal']
     small_style = ParagraphStyle('InvSmall', parent=normal_style, fontSize=8,
                                   textColor=colors.grey)
-    bold_style = ParagraphStyle('InvBold', parent=normal_style,
-                                 fontName='Helvetica-Bold', fontSize=10)
+    _bold_style = ParagraphStyle('InvBold', parent=normal_style,  # noqa: F841
+                                  fontName='Helvetica-Bold', fontSize=10)
 
     elements = []
 

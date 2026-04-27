@@ -1,6 +1,6 @@
 """Authentication routes for candidates and agencies."""
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_db
@@ -8,14 +8,14 @@ from app.utils.auth import (
     hash_password, verify_password, create_access_token, generate_id,
     decode_token, get_current_user,
 )
-from app.schemas.candidates import CandidateCreate, CandidateLogin, TokenResponse
+from app.schemas.candidates import CandidateLogin, TokenResponse
 from app.schemas.agencies import AgencyCreate, AgencyLogin
 from app.middleware.rate_limiter import limiter
 from app.services.auth_hardening import (
     record_login_attempt, is_account_locked,
     create_password_reset_token, validate_password_reset_token,
     consume_password_reset_token, blacklist_token, is_token_blacklisted,
-    sanitise_string, validate_password_strength,
+    validate_password_strength,
 )
 
 

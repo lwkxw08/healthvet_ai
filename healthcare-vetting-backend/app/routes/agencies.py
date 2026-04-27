@@ -738,7 +738,7 @@ async def get_my_services(current_user: dict = Depends(get_current_user)):
 
         total_billed = sum(effective_amount(i) for i in invoices)
         total_paid = sum(effective_amount(i) for i in invoices if i["status"] == "paid")
-        total_outstanding = total_billed - total_paid
+        _total_outstanding = total_billed - total_paid  # noqa: F841
 
         # Breakdown by check type
         by_type = {}

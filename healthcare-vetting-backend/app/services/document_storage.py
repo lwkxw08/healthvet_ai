@@ -8,9 +8,7 @@ All backends implement the same interface so they are swappable via config.
 """
 import hashlib
 import hmac
-import io
 import json
-import mimetypes
 import os
 import shutil
 import time
@@ -18,7 +16,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 
 from app.database import get_db
 from app.utils.auth import generate_id
@@ -312,13 +310,17 @@ def list_documents(owner_id: str | None = None, candidate_id: str | None = None,
         clauses = []
         params: list = []
         if owner_id:
-            clauses.append("owner_id=%s"); params.append(owner_id)
+            clauses.append("owner_id=%s")
+            params.append(owner_id)
         if candidate_id:
-            clauses.append("candidate_id=%s"); params.append(candidate_id)
+            clauses.append("candidate_id=%s")
+            params.append(candidate_id)
         if agency_id:
-            clauses.append("agency_id=%s"); params.append(agency_id)
+            clauses.append("agency_id=%s")
+            params.append(agency_id)
         if category:
-            clauses.append("category=%s"); params.append(category)
+            clauses.append("category=%s")
+            params.append(category)
         where = " AND ".join(clauses) if clauses else "1=1"
         db.execute(f"SELECT * FROM documents WHERE {where} ORDER BY created_at DESC LIMIT %s", (*params, limit))
         rows = db.fetchall()

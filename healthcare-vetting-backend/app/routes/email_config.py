@@ -3,10 +3,9 @@ Admin API routes for Email Provider Configuration.
 Allows admins to configure email provider settings (API keys, sender info)
 directly from the admin UI instead of requiring environment variables.
 """
-import json
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 
