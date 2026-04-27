@@ -395,7 +395,7 @@ function EmploymentForm({
       {/* Pre-filled details */}
       <div className="bg-slate-50 rounded-lg p-4 mb-6">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">Employment Details to Verify</h3>
-        <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
           <div>
             <span className="text-slate-500">Candidate:</span>
             <p className="font-medium">{formData.candidate_name}</p>
@@ -501,7 +501,7 @@ function EmploymentForm({
         {/* Your Details */}
         <div className="border-t pt-4">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Your Details</h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-slate-500 mb-1">Your Name</label>
               <input
@@ -704,7 +704,7 @@ function ReferenceForm({
         </div>
 
         {/* Relationship */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Your Relationship</label>
             <select
@@ -772,7 +772,7 @@ function ReferenceForm({
         {/* Your Details */}
         <div className="border-t pt-4">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Your Details</h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-slate-500 mb-1">Your Name</label>
               <input

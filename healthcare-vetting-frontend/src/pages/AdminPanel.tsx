@@ -1123,7 +1123,7 @@ export default function AdminPanel() {
       { key: "sanction_alerts", label: "Sanction Alerts", icon: <XCircle className="text-red-400" size={16} />, emptyMsg: "No sanction alerts" },
     ];
     return (
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {sections.map((section) => {
           const items = results[section.key]; const arr = Array.isArray(items) ? items : [];
           return (
@@ -1155,16 +1155,16 @@ export default function AdminPanel() {
 
   return (
     <div className="min-h-screen bg-slate-900">
-      <header className="bg-slate-800/80 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <img src="/viper-logo.png" alt="Viper AI" className="h-12" />
-          <h1 className="text-xl font-bold text-white">Viper AI</h1>
-          <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded-full">Admin Panel</span>
+      <header className="bg-slate-800/80 border-b border-slate-700 px-4 sm:px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <img src="/viper-logo.png" alt="Viper AI" className="h-8 sm:h-12" />
+          <h1 className="text-lg sm:text-xl font-bold text-white truncate">Viper AI</h1>
+          <span className="hidden sm:inline text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded-full">Admin Panel</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           <button onClick={loadData} className="text-slate-400 hover:text-white"><RefreshCw size={18} /></button>
           {token && <span className="text-slate-300"><NotificationBell token={token} /></span>}
-          <button onClick={logout} className="text-slate-400 hover:text-red-400 flex items-center gap-1 text-sm"><LogOut size={16} /> Sign Out</button>
+          <button onClick={logout} className="text-slate-400 hover:text-red-400 flex items-center gap-1 text-sm"><LogOut size={16} /> <span className="hidden sm:inline">Sign Out</span></button>
         </div>
       </header>
 
@@ -1173,8 +1173,8 @@ export default function AdminPanel() {
       )}
 
       {/* Main Navigation — 7 tabs */}
-      <div className="bg-slate-800/50 border-b border-slate-700 px-6">
-        <div className="flex gap-1 overflow-x-auto">
+      <div className="bg-slate-800/50 border-b border-slate-700 px-4 sm:px-6">
+        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
           {([
             { key: "overview" as MainTab, label: "Overview", icon: <BarChart3 size={16} /> },
             { key: "candidates" as MainTab, label: "Candidates", icon: <Users size={16} /> },
@@ -1269,7 +1269,7 @@ export default function AdminPanel() {
         </div>
       )}
 
-      <main className="p-6">
+      <main className="p-4 sm:p-6">
         {/* Lead Generation Tab */}
         {tab === "lead-generation" && <LeadGenerationPanel />}
 
@@ -1308,7 +1308,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               {[
                 { label: "Pending Admin", value: trustidSummary.pending_admin ?? 0, color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
                 { label: "Awaiting Candidate", value: trustidSummary.awaiting_candidate ?? 0, color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
@@ -1490,7 +1490,7 @@ export default function AdminPanel() {
         {/* Overview Tab */}
         {tab === "overview" && stats && (
           <div className="space-y-6">
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: "Total Candidates", value: stats.total_candidates, icon: <Users className="text-blue-400" size={20} /> },
                 { label: "Compliant", value: stats.compliant, icon: <CheckCircle className="text-green-400" size={20} /> },
@@ -1503,7 +1503,7 @@ export default function AdminPanel() {
                 </div>
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Fixed pie chart - height 320, donut with legend */}
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-4">Compliance Distribution</h3>
@@ -1570,7 +1570,7 @@ export default function AdminPanel() {
                   <h3 className="text-md font-semibold text-white flex items-center gap-2"><Edit size={16} className="text-blue-400" /> Editing: {String(editingCandidate.first_name)} {String(editingCandidate.last_name)}</h3>
                   <button onClick={() => setEditingCandidate(null)} className="text-slate-400 hover:text-white text-xs">Cancel</button>
                 </div>
-                <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                   {[
                     { key: "first_name", label: "First Name" },
                     { key: "last_name", label: "Last Name" },
@@ -1599,8 +1599,8 @@ export default function AdminPanel() {
               </div>
             )}
 
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
-              <table className="w-full">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+              <table className="w-full min-w-[800px]">
                 <thead><tr className="border-b border-slate-700">
                   {["Name","Email","Profession","Registration","Score","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
                 </tr></thead>
@@ -1666,7 +1666,7 @@ export default function AdminPanel() {
             <h2 className="text-xl font-bold text-white">Continuous Monitoring</h2>
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
               <p className="text-slate-300 text-sm mb-4">Run all monitoring checks: DBS Update Service, visa expiry alerts, registration renewal tracking, sanction monitoring, and fraud pattern detection.</p>
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                 {[{ label: "DBS Update Service", desc: "Check for changes since certificate issue" },{ label: "Visa Expiry Alerts", desc: "30/60/90 day warnings + expired checks" },{ label: "Registration Renewals", desc: "NMC/GMC/HCPC renewal tracking" },{ label: "Sanction Alerts", desc: "New sanctions on registered professionals" }].map((item) => (
                   <div key={item.label} className="p-4 bg-slate-700/50 rounded-lg"><p className="text-white text-sm font-medium">{item.label}</p><p className="text-slate-400 text-xs mt-1">{item.desc}</p></div>
                 ))}
@@ -1688,7 +1688,7 @@ export default function AdminPanel() {
                 <PeriodFilter period={monRevenuePeriod} setPeriodFn={setMonRevenuePeriod} cFrom={monCustomFrom} setCFrom={setMonCustomFrom} cTo={monCustomTo} setCTo={setMonCustomTo} onApply={loadMonitoringRevenue} />
               </div>
               {monRevenueData ? (
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {[{ label: "Total Revenue", key: "total_revenue", color: "text-green-400" },{ label: "Total Cost", key: "total_cost", color: "text-amber-400" },{ label: "Margin", key: "total_margin", color: "text-emerald-400" }].map(m => (
                     <div key={m.key} className="p-4 bg-slate-700/50 rounded-lg text-center">
                       <p className="text-slate-400 text-xs mb-1">{m.label}</p>
@@ -1774,7 +1774,7 @@ export default function AdminPanel() {
             {revenueData && (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-4 flex items-center gap-2"><DollarSign className="text-green-400" size={18} /> Financial Summary</h3>
-                <div className="grid grid-cols-5 gap-4 mb-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
                   {[{ l: "Total Revenue", k: "total_revenue", c: "text-green-400" },{ l: "Total Cost", k: "total_cost", c: "text-amber-400" },{ l: "Gross Margin", k: "total_margin", c: "text-emerald-400" }].map(m => (
                     <div key={m.k} className="p-4 bg-slate-700/50 rounded-lg text-center"><p className="text-slate-400 text-xs mb-1">{m.l}</p><p className={`text-2xl font-bold ${m.c}`}>£{((revenueData[m.k] as number) || 0).toLocaleString("en-GB", { minimumFractionDigits: 2 })}</p></div>
                   ))}
@@ -1802,7 +1802,7 @@ export default function AdminPanel() {
             {opsData && (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-4 flex items-center gap-2"><BarChart3 className="text-blue-400" size={18} /> Operations Summary</h3>
-                <div className="grid grid-cols-5 gap-4 mb-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
                   {[{ l: "Total Candidates", k: "total_candidates", c: "text-white" },{ l: "Compliant", k: "compliant", c: "text-green-400" },{ l: "Success Rate", k: "success_rate", c: "text-emerald-400", s: "%" },{ l: "Avg Completion", k: "avg_completion_hours", c: "text-blue-400", s: "h" },{ l: "Flagged", k: "flagged", c: "text-red-400" }].map(m => (
                     <div key={m.k} className="p-4 bg-slate-700/50 rounded-lg text-center"><p className="text-slate-400 text-xs mb-1">{m.l}</p><p className={`text-2xl font-bold ${m.c}`}>{(opsData[m.k] as number) || 0}{m.s || ""}</p></div>
                   ))}
@@ -1872,7 +1872,7 @@ export default function AdminPanel() {
                         </div>
                         {(groupedResult.discount_percent as number) > 0 && <p className="text-xs text-purple-300 mb-2">Agency discount: {groupedResult.discount_percent as number}% applied</p>}
                         {(groupedResult.line_items as Record<string, unknown>[])?.length > 0 ? (
-                          <table className="w-full text-sm"><thead><tr className="border-b border-slate-700">
+                          <div className="overflow-x-auto"><table className="w-full text-sm min-w-[500px]"><thead><tr className="border-b border-slate-700">
                             {["Candidate","Check","Description","Cost","Sell"].map(h => <th key={h} className="text-left text-xs text-slate-400 px-2 py-1">{h}</th>)}
                           </tr></thead><tbody>
                             {(groupedResult.line_items as Record<string, unknown>[]).map((li, idx) => (
@@ -1888,7 +1888,7 @@ export default function AdminPanel() {
                             <td colSpan={3} className="px-2 py-2 text-white text-sm font-medium">Total ({groupedResult.generated as number} items)</td>
                             <td className="px-2 py-2 text-amber-400 font-medium">{"\u00A3"}{(Number(groupedResult.total_cost) || 0).toFixed(2)}</td>
                             <td className="px-2 py-2 text-green-400 font-medium">{"\u00A3"}{(Number(groupedResult.total_sell) || 0).toFixed(2)}</td>
-                          </tr></tfoot></table>
+                          </tr></tfoot></table></div>
                         ) : <p className="text-slate-400 text-sm">No new invoiceable items found in this date range.</p>}
                       </div>
                     )}
@@ -1931,7 +1931,7 @@ export default function AdminPanel() {
               </button>
             </div>
             {fraudSummary && (
-              <div className="grid grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                 <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5 text-center"><p className="text-slate-400 text-xs mb-1">Total Flags</p><p className="text-2xl font-bold text-white">{fraudSummary.total_flags as number}</p></div>
                 <div className="bg-slate-800/80 rounded-xl border border-red-500/30 p-5 text-center"><p className="text-slate-400 text-xs mb-1">Critical</p><p className="text-2xl font-bold text-red-400">{(fraudSummary.by_severity as Record<string, number>)?.critical || 0}</p></div>
                 <div className="bg-slate-800/80 rounded-xl border border-orange-500/30 p-5 text-center"><p className="text-slate-400 text-xs mb-1">High</p><p className="text-2xl font-bold text-orange-400">{(fraudSummary.by_severity as Record<string, number>)?.high || 0}</p></div>
@@ -1990,7 +1990,7 @@ export default function AdminPanel() {
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
               <h3 className="text-md font-semibold text-white mb-4">Manual Triggers</h3>
               <p className="text-slate-400 text-sm mb-4">Run scheduled jobs manually for immediate results.</p>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
                   { key: "monitoring", label: "Run Monitoring Checks", desc: "DBS updates, visa expiry, registration renewal, sanctions" },
                   { key: "expiry_warnings", label: "Send Expiry Warnings", desc: "Email notifications for expiring documents/registrations" },
@@ -2085,7 +2085,7 @@ export default function AdminPanel() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {Object.entries(subTiers).length > 0 ? Object.entries(subTiers).map(([tierKey, tier]) => {
                   const colors: Record<string, string> = { starter: "border-blue-500/30", growth: "border-green-500/30", professional: "border-cyan-500/30", enterprise: "border-purple-500/30" };
                   const isEditing = editingTier === tierKey;
@@ -2247,7 +2247,7 @@ export default function AdminPanel() {
             {/* Billing Methods */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
               <h3 className="text-md font-semibold text-white mb-4">Billing Methods</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-700/50 rounded-lg">
                   <p className="text-white font-medium mb-1">Stripe Card Payment</p>
                   <p className="text-slate-400 text-sm">Automatic monthly billing via Stripe. Agencies add a payment method and are charged automatically each billing cycle.</p>
@@ -2268,7 +2268,7 @@ export default function AdminPanel() {
             <p className="text-slate-400 text-sm">Force-pass or force-fail a candidate&apos;s individual check result. This overrides the automated result and triggers compliance re-evaluation.</p>
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
               <h3 className="text-md font-semibold text-white mb-4">Override a Check</h3>
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Candidate</label>
                   <select value={overrideCandId} onChange={(e) => { setOverrideCandId(e.target.value); if (e.target.value) loadCandidateDetail(e.target.value); }}
@@ -2360,8 +2360,8 @@ export default function AdminPanel() {
                 <Bell size={14} /> Send Payment Reminders
               </button>
             </div>
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
-              <table className="w-full"><thead><tr className="border-b border-slate-700">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+              <table className="w-full min-w-[800px]"><thead><tr className="border-b border-slate-700">
                 {["Agency Name","Email","Industry","Discount","Billing Mode","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {agencies.map((a) => {
@@ -2449,7 +2449,7 @@ export default function AdminPanel() {
             <h2 className="text-xl font-bold text-white flex items-center gap-2"><UserPlus className="text-blue-400" size={22} /> User Management</h2>
             <p className="text-slate-400 text-sm">Create and delete agency or candidate accounts. Edit candidate profiles directly.</p>
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Create Agency */}
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-4 flex items-center gap-2"><PlusCircle size={16} className="text-green-400" /> Create Agency</h3>
@@ -2496,9 +2496,9 @@ export default function AdminPanel() {
             </div>
 
             {/* Existing Candidates List with Edit/Delete */}
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
               <div className="p-4 border-b border-slate-700"><h3 className="text-md font-semibold text-white">All Candidates</h3></div>
-              <table className="w-full"><thead><tr className="border-b border-slate-700">
+              <table className="w-full min-w-[700px]"><thead><tr className="border-b border-slate-700">
                 {["Name","Email","Profession","Score","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {candidates.map((c) => (
@@ -2547,9 +2547,9 @@ export default function AdminPanel() {
             )}
 
             {/* Existing Agencies List with Delete */}
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
               <div className="p-4 border-b border-slate-700"><h3 className="text-md font-semibold text-white">All Agencies</h3></div>
-              <table className="w-full"><thead><tr className="border-b border-slate-700">
+              <table className="w-full min-w-[600px]"><thead><tr className="border-b border-slate-700">
                 {["Agency Name","Email","Contact","Phone","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {agencies.map((a) => (
@@ -2597,8 +2597,8 @@ export default function AdminPanel() {
                   className="px-3 py-1.5 rounded-lg text-xs bg-slate-700/50 text-slate-300 hover:bg-slate-700 disabled:opacity-50">Next</button>
               </div>
             </div>
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
-              <table className="w-full"><thead><tr className="border-b border-slate-700">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+              <table className="w-full min-w-[800px]"><thead><tr className="border-b border-slate-700">
                 {["Timestamp","Entity Type","Entity ID","Action","Actor","Details"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {auditLogs.map((log, idx) => (
@@ -2699,8 +2699,8 @@ export default function AdminPanel() {
               </div>
             )}
 
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
-              <table className="w-full"><thead><tr className="border-b border-slate-700">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+              <table className="w-full min-w-[900px]"><thead><tr className="border-b border-slate-700">
                 <th className="text-left text-xs text-slate-400 font-medium px-3 py-3 w-8"><input type="checkbox" className="rounded" onChange={(e) => { if (e.target.checked) { setSelectedInvoiceIds(adminInvoices.filter(inv => String(inv.status) === "pending").map(inv => String(inv.id))); } else { setSelectedInvoiceIds([]); } }} checked={selectedInvoiceIds.length > 0 && selectedInvoiceIds.length === adminInvoices.filter(inv => String(inv.status) === "pending").length} /></th>
                 {["Invoice ID","Agency","Candidate","Type","Original Amount","Adjusted","Discount","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-3 py-3">{h}</th>)}
               </tr></thead><tbody>
@@ -2789,7 +2789,7 @@ export default function AdminPanel() {
 
             {/* Summary */}
             {adminInvoices.length > 0 && (
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4 text-center">
                   <p className="text-slate-400 text-xs mb-1">Total Invoiced</p>
                   <p className="text-green-400 font-bold text-xl">{"\u00A3"}{adminInvoices.reduce((sum, inv) => sum + (Number(inv.sell_amount) || 0), 0).toFixed(2)}</p>
@@ -2833,8 +2833,8 @@ export default function AdminPanel() {
               </button>
             </div>
 
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+              <table className="w-full text-sm min-w-[700px]">
                 <thead className="bg-slate-900/50">
                   <tr>
                     <th className="text-left text-xs text-slate-400 font-medium px-3 py-3">Requested</th>
@@ -2932,8 +2932,8 @@ export default function AdminPanel() {
               </div>
             )}
 
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
-              <table className="w-full"><thead><tr className="border-b border-slate-700">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
+              <table className="w-full min-w-[700px]"><thead><tr className="border-b border-slate-700">
                 {["Check Type","Label","Cost Price (\u00A3)","Sell Price (\u00A3)","Margin","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {pricing.map((p) => {
@@ -2979,7 +2979,7 @@ export default function AdminPanel() {
             {editingTemplate && (
               <div className="bg-slate-800/90 rounded-xl border border-blue-500/30 p-6 space-y-4">
                 <h3 className="text-lg font-bold text-white">{editingTemplate.id ? "Edit Template" : "Create New Template"}</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs text-slate-400 block mb-1">Template Name</label>
                     <input value={String(editingTemplate.name || "")} onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })}
@@ -3133,7 +3133,7 @@ export default function AdminPanel() {
             <h2 className="text-xl font-bold text-white flex items-center gap-2"><Bell className="text-amber-400" size={22} /> Alert &amp; Expiry Warning Settings</h2>
             <p className="text-slate-400 text-sm">Configure the number of days before expiry that triggers a warning notification for each document type.</p>
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 {[
                   { key: "visa_expiry_days", label: "Visa Expiry Warning (days)", defaultVal: 30 },
                   { key: "dbs_renewal_days", label: "DBS Renewal Warning (days)", defaultVal: 60 },
@@ -3299,7 +3299,7 @@ export default function AdminPanel() {
                 <button onClick={() => evaluateCandidate(selectedCandidate.id as string)} className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1 rounded-full hover:bg-blue-600/30">Re-evaluate</button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-3">Details</h3>
                 <div className="space-y-2 text-sm">
@@ -3925,7 +3925,7 @@ export default function AdminPanel() {
             {benchmarkData && Array.isArray((benchmarkData as Record<string, unknown>).agencies) && (
               <div className="space-y-4">
                 {/* Summary Cards */}
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-5 text-center">
                     <div className="text-3xl font-bold text-blue-400">{((benchmarkData as Record<string, unknown>).agencies as Record<string, unknown>[]).length}</div>
                     <div className="text-xs text-slate-400 mt-1">Total Agencies</div>

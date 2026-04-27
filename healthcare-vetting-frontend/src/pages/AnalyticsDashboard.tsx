@@ -237,7 +237,7 @@ export default function AnalyticsDashboard({ agencyId }: AnalyticsDashboardProps
                   <h3 className="font-medium text-gray-900 capitalize">{checkType.replace(/_/g, " ")}</h3>
                   <span className="text-xs text-gray-400">{String(m.total_completed ?? 0)} completed</span>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <div className="text-xs text-gray-500">Average</div>
                     <div className="text-lg font-semibold text-blue-600">{Number(m.avg_days ?? 0).toFixed(1)} days</div>
@@ -266,7 +266,7 @@ export default function AnalyticsDashboard({ agencyId }: AnalyticsDashboardProps
             return (
               <div key={type} className="bg-white border rounded-lg p-4">
                 <h3 className="font-medium text-gray-900 capitalize mb-3">{type.replace(/_/g, " ")}</h3>
-                <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                   <div>
                     <div className="text-xs text-gray-500">Sent</div>
                     <div className="text-lg font-semibold">{String(d.total_sent ?? 0)}</div>

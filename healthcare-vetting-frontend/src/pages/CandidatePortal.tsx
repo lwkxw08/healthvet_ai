@@ -782,7 +782,7 @@ export default function CandidatePortal() {
                     Choose the identity document you will use for verification. In production, the Onfido Smart Capture SDK
                     opens here to guide you through document capture with real-time quality feedback.
                   </p>
-                  <div className="grid grid-cols-2 gap-3 mb-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
                     {([
                       { value: "passport", label: "Passport", desc: "International passport (any country)" },
                       { value: "driving_licence", label: "Driving Licence", desc: "UK or international driving licence" },
@@ -991,7 +991,7 @@ export default function CandidatePortal() {
                   </div>
 
                   {/* Detailed sub-checks */}
-                  <div className="grid grid-cols-2 gap-4 mb-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
                     <div className="p-3 bg-slate-700/50 rounded-lg">
                       <span className="text-xs text-slate-400 block mb-1">Document Authenticity</span>
                       <span className={`text-sm font-medium ${idResult.document_authenticity === "verified" ? "text-green-400" : "text-red-400"}`}>
@@ -1046,7 +1046,7 @@ export default function CandidatePortal() {
                           </div>
                           <span className="text-xs text-slate-500">{check.started_at as string}</span>
                         </div>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                           <div><span className="text-slate-400">Document:</span> <span className="text-white">{check.document_authenticity as string}</span></div>
                           <div><span className="text-slate-400">Facial Match:</span> <span className="text-white">{((check.facial_match_score as number) * 100).toFixed(0)}%</span></div>
                           <div><span className="text-slate-400">Liveness:</span> <span className="text-white">{check.liveness_check as string}</span></div>
@@ -1055,7 +1055,7 @@ export default function CandidatePortal() {
                         {reports && (
                           <div className="mt-3 pt-3 border-t border-slate-600/50">
                             <p className="text-xs text-slate-500 mb-2">Onfido Report Details</p>
-                            <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                               {reports.document && (
                                 <div className="bg-slate-800/50 rounded p-2">
                                   <span className="text-slate-400 block mb-1">Document Report</span>
@@ -1307,7 +1307,7 @@ export default function CandidatePortal() {
                         </div>
                         <span className="text-xs text-slate-500">{check.checked_at as string}</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                         <div><span className="text-slate-400">Status:</span> <span className="text-white">{(check.visa_type as string) || "N/A"}</span></div>
                         <div><span className="text-slate-400">Expiry:</span> <span className="text-white">{(check.visa_expiry as string) || "No expiry"}</span></div>
                         <div><span className="text-slate-400">Restrictions:</span> <span className="text-white">{(check.work_restrictions as string) || "None"}</span></div>
@@ -1423,7 +1423,7 @@ export default function CandidatePortal() {
                         <StatusBadge status={check.result as string} />
                         <span className="text-xs text-slate-500">{check.submitted_at as string}</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                         <div><span className="text-slate-400">Certificate:</span> <span className="text-white">{(check.certificate_number as string) || "Pending"}</span></div>
                         <div><span className="text-slate-400">Ref:</span> <span className="text-white">{check.application_ref as string}</span></div>
                         <div><span className="text-slate-400">Type:</span> <span className="text-white">{check.check_type as string}</span></div>
@@ -1546,7 +1546,7 @@ export default function CandidatePortal() {
               {addingEntry && (
                 <div className="bg-slate-800/80 rounded-xl border border-blue-500/30 p-6">
                   <h3 className="text-md font-semibold text-white mb-3">Add Employment Entry</h3>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                     <input type="text" placeholder="Employer name *" value={newEntry.employer_name}
                       onChange={(e) => setNewEntry({ ...newEntry, employer_name: e.target.value })}
                       className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1598,7 +1598,7 @@ export default function CandidatePortal() {
                       /* Edit mode */
                       <div>
                         <h3 className="text-sm font-semibold text-blue-400 mb-3">Edit Employment Entry</h3>
-                        <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                           <input type="text" placeholder="Employer name" value={editForm.employer_name || ""}
                             onChange={(e) => setEditForm({ ...editForm, employer_name: e.target.value })}
                             className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1676,7 +1676,7 @@ export default function CandidatePortal() {
                                 <span className="text-xs bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0 rounded">Domain Mismatch</span>
                               )}
                             </div>
-                            <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                               <div><span className="text-slate-400">Job Title Confirmed:</span> <span className={verification.job_title_confirmed ? "text-green-400" : "text-red-400"}>{verification.job_title_confirmed ? "Yes" : "No"}</span></div>
                               <div><span className="text-slate-400">Dates Confirmed:</span> <span className={verification.dates_confirmed ? "text-green-400" : "text-red-400"}>{verification.dates_confirmed ? "Yes" : "No"}</span></div>
                               {typeof verification.reason_for_leaving_confirmed === "string" && verification.reason_for_leaving_confirmed && (
@@ -1698,7 +1698,7 @@ export default function CandidatePortal() {
                             <p className="text-slate-400 text-xs mb-2 font-medium">
                               Provide the contact details of someone at this employer who can confirm your role:
                             </p>
-                            <div className="grid grid-cols-3 gap-2 mb-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
                               <input type="text" placeholder="Verifier name *" value={vf.name}
                                 onChange={(e) => setVerifierForm({ ...verifierForm, [entryId]: { ...vf, name: e.target.value } })}
                                 className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1781,7 +1781,7 @@ export default function CandidatePortal() {
                         <StatusBadge status={check.result as string} />
                         <span className="text-xs text-slate-500">{check.last_checked as string}</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                         <div><span className="text-slate-400">Body:</span> <span className="text-white">{check.body as string}</span></div>
                         <div><span className="text-slate-400">Active:</span> <span className="text-white">{check.is_active ? "Yes" : "No"}</span></div>
                         <div><span className="text-slate-400">Sanctions:</span> <span className="text-white">{(check.sanctions as string) || "None"}</span></div>
@@ -1808,7 +1808,7 @@ export default function CandidatePortal() {
                   Referees will receive a link to a secure portal where they can complete a structured reference form.
                   Responses are analysed for sentiment and checked for fraud automatically.
                 </p>
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                   <input type="text" placeholder="Referee name *" value={refName} onChange={(e) => setRefName(e.target.value)}
                     className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   <input type="email" placeholder="Referee email *" value={refEmail} onChange={(e) => setRefEmail(e.target.value)}
@@ -1845,7 +1845,7 @@ export default function CandidatePortal() {
                         <span className="text-white text-sm font-medium">{ref.referee_name as string}</span>
                         <StatusBadge status={ref.status as string} />
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                         <div><span className="text-slate-400">Email:</span> <span className="text-slate-300">{ref.referee_email as string}</span></div>
                         <div><span className="text-slate-400">Domain Verified:</span> <span className="text-slate-300">{ref.domain_verified ? "Yes" : "No"}</span></div>
                         <div><span className="text-slate-400">Reminders:</span> <span className="text-slate-300">{ref.reminder_count as number}</span></div>
@@ -1871,7 +1871,7 @@ export default function CandidatePortal() {
               {trainingCompliance && (
                 <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                   <h3 className="text-md font-semibold text-white mb-3">Compliance Summary</h3>
-                  <div className="grid grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="p-4 bg-slate-700/50 rounded-lg text-center">
                       <p className="text-slate-400 text-xs mb-1">Total Certs</p>
                       <p className="text-2xl font-bold text-white">{trainingCompliance.total_certificates as number}</p>
@@ -1901,7 +1901,7 @@ export default function CandidatePortal() {
               {/* Add New Certificate */}
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-3">Add Training Certificate</h3>
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                   <select value={newCertName} onChange={(e) => setNewCertName(e.target.value)}
                     className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Select certificate...</option>
@@ -1952,7 +1952,7 @@ export default function CandidatePortal() {
                           </div>
                           <button onClick={() => deleteTrainingCert(cert.id as string)} className="text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
                           {cert.provider ? <div><span className="text-slate-400">Provider:</span> <span className="text-slate-300">{String(cert.provider)}</span></div> : null}
                           {cert.issue_date ? <div><span className="text-slate-400">Issued:</span> <span className="text-slate-300">{String(cert.issue_date)}</span></div> : null}
                           {cert.expiry_date ? <div><span className="text-slate-400">Expires:</span> <span className={`${cert.status === "expired" ? "text-red-400" : "text-slate-300"}`}>{String(cert.expiry_date)}</span></div> : null}
