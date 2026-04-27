@@ -1832,5 +1832,155 @@ def init_db():
         );
     """)
 
+    # ── Performance indices ───────────────────────────────────────────
+    # Foreign-key lookup columns (candidate_id, agency_id) are the most
+    # frequently filtered columns (239 and 133 WHERE-clause hits respectively).
+    # Status / type columns support dashboard filters and reporting.
+    cursor.execute("""
+        -- candidates
+        CREATE INDEX IF NOT EXISTS idx_candidates_status        ON candidates(status);
+        CREATE INDEX IF NOT EXISTS idx_candidates_email         ON candidates(email);
+
+        -- agencies
+        CREATE INDEX IF NOT EXISTS idx_agencies_status          ON agencies(status);
+
+        -- agency_candidates (composite PK exists, but we need reverse lookup)
+        CREATE INDEX IF NOT EXISTS idx_agency_candidates_candidate ON agency_candidates(candidate_id);
+
+        -- identity_checks
+        CREATE INDEX IF NOT EXISTS idx_identity_checks_candidate ON identity_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_identity_checks_status    ON identity_checks(status);
+
+        -- right_to_work_checks
+        CREATE INDEX IF NOT EXISTS idx_rtw_checks_candidate      ON right_to_work_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_rtw_checks_status         ON right_to_work_checks(status);
+
+        -- dbs_checks
+        CREATE INDEX IF NOT EXISTS idx_dbs_checks_candidate      ON dbs_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_dbs_checks_status         ON dbs_checks(status);
+
+        -- cv_analyses
+        CREATE INDEX IF NOT EXISTS idx_cv_analyses_candidate     ON cv_analyses(candidate_id);
+
+        -- registration_checks
+        CREATE INDEX IF NOT EXISTS idx_reg_checks_candidate      ON registration_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_reg_checks_status         ON registration_checks(status);
+
+        -- references_
+        CREATE INDEX IF NOT EXISTS idx_references_candidate      ON references_(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_references_status         ON references_(status);
+        CREATE INDEX IF NOT EXISTS idx_references_token          ON references_(token);
+
+        -- compliance_records
+        CREATE INDEX IF NOT EXISTS idx_compliance_candidate      ON compliance_records(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_compliance_status         ON compliance_records(overall_status);
+
+        -- monitoring_alerts
+        CREATE INDEX IF NOT EXISTS idx_mon_alerts_candidate      ON monitoring_alerts(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_mon_alerts_severity       ON monitoring_alerts(severity);
+        CREATE INDEX IF NOT EXISTS idx_mon_alerts_unresolved     ON monitoring_alerts(is_resolved) WHERE is_resolved = 0;
+
+        -- audit_logs
+        CREATE INDEX IF NOT EXISTS idx_audit_entity              ON audit_logs(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_created             ON audit_logs(created_at);
+
+        -- employment_history
+        CREATE INDEX IF NOT EXISTS idx_emp_history_candidate     ON employment_history(candidate_id);
+
+        -- employment_verifications
+        CREATE INDEX IF NOT EXISTS idx_emp_verif_candidate       ON employment_verifications(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_emp_verif_status          ON employment_verifications(status);
+
+        -- agency_invites
+        CREATE INDEX IF NOT EXISTS idx_invites_agency            ON agency_invites(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_invites_status            ON agency_invites(status);
+
+        -- invoices
+        CREATE INDEX IF NOT EXISTS idx_invoices_agency           ON invoices(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_invoices_status           ON invoices(status);
+        CREATE INDEX IF NOT EXISTS idx_invoices_candidate        ON invoices(candidate_id);
+
+        -- email_notifications
+        CREATE INDEX IF NOT EXISTS idx_email_notif_recipient     ON email_notifications(recipient_email);
+        CREATE INDEX IF NOT EXISTS idx_email_notif_status        ON email_notifications(status);
+
+        -- training_certificates
+        CREATE INDEX IF NOT EXISTS idx_training_certs_candidate  ON training_certificates(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_training_certs_expiry     ON training_certificates(expiry_date);
+
+        -- fraud_flags
+        CREATE INDEX IF NOT EXISTS idx_fraud_flags_candidate     ON fraud_flags(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_fraud_flags_unresolved    ON fraud_flags(is_resolved) WHERE is_resolved = 0;
+
+        -- agency_subscriptions
+        CREATE INDEX IF NOT EXISTS idx_agency_subs_agency        ON agency_subscriptions(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_agency_subs_status        ON agency_subscriptions(status);
+
+        -- candidate_submissions
+        CREATE INDEX IF NOT EXISTS idx_submissions_candidate     ON candidate_submissions(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_submissions_status        ON candidate_submissions(status);
+
+        -- candidate_draft_data
+        CREATE INDEX IF NOT EXISTS idx_draft_data_submission     ON candidate_draft_data(submission_id);
+        CREATE INDEX IF NOT EXISTS idx_draft_data_candidate      ON candidate_draft_data(candidate_id);
+
+        -- consent_logs
+        CREATE INDEX IF NOT EXISTS idx_consent_candidate         ON consent_logs(candidate_id);
+
+        -- revet_requests
+        CREATE INDEX IF NOT EXISTS idx_revet_agency              ON revet_requests(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_revet_candidate           ON revet_requests(candidate_id);
+
+        -- credit_transactions
+        CREATE INDEX IF NOT EXISTS idx_credit_tx_agency          ON credit_transactions(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_credit_tx_created         ON credit_transactions(created_at);
+
+        -- gdpr_erasure_requests
+        CREATE INDEX IF NOT EXISTS idx_gdpr_erasure_candidate    ON gdpr_erasure_requests(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_gdpr_erasure_status       ON gdpr_erasure_requests(status);
+
+        -- in_app_notifications
+        CREATE INDEX IF NOT EXISTS idx_notif_user                ON in_app_notifications(user_id, user_type);
+        CREATE INDEX IF NOT EXISTS idx_notif_unread              ON in_app_notifications(is_read) WHERE is_read = 0;
+
+        -- agency_sub_accounts
+        CREATE INDEX IF NOT EXISTS idx_sub_accounts_agency       ON agency_sub_accounts(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_sub_accounts_email        ON agency_sub_accounts(email);
+
+        -- webhook_subscriptions
+        CREATE INDEX IF NOT EXISTS idx_webhook_subs_agency       ON webhook_subscriptions(agency_id);
+
+        -- webhook_deliveries
+        CREATE INDEX IF NOT EXISTS idx_webhook_del_subscription  ON webhook_deliveries(subscription_id);
+        CREATE INDEX IF NOT EXISTS idx_webhook_del_status        ON webhook_deliveries(status);
+
+        -- scrape_jobs
+        CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status        ON scrape_jobs(status);
+
+        -- leads
+        CREATE INDEX IF NOT EXISTS idx_leads_scrape_job          ON leads(scrape_job_id);
+        CREATE INDEX IF NOT EXISTS idx_leads_status              ON leads(status);
+        CREATE INDEX IF NOT EXISTS idx_leads_industry            ON leads(industry_slug);
+
+        -- registration_scrape_results
+        CREATE INDEX IF NOT EXISTS idx_reg_scrape_candidate      ON registration_scrape_results(candidate_id);
+
+        -- trustid_checks
+        CREATE INDEX IF NOT EXISTS idx_trustid_candidate         ON trustid_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_trustid_status            ON trustid_checks(status);
+
+        -- industry_template_checks
+        CREATE INDEX IF NOT EXISTS idx_tmpl_checks_template      ON industry_template_checks(template_id);
+
+        -- webhook_events
+        CREATE INDEX IF NOT EXISTS idx_webhook_events_source     ON webhook_events(source, event_type);
+
+        -- background_tasks
+        CREATE INDEX IF NOT EXISTS idx_bg_tasks_status           ON background_tasks(status);
+
+        -- api_keys
+        CREATE INDEX IF NOT EXISTS idx_api_keys_agency           ON api_keys(agency_id);
+    """)
+
     conn.commit()
     _return_connection(conn)
