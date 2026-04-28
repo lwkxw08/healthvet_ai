@@ -183,14 +183,14 @@ export default function LeadGenerationPanel() {
       )}
 
       {/* Sub-tabs */}
-      <div className="flex gap-2 border-b border-slate-700 pb-2">
+      <div className="flex gap-2 border-b border-slate-700 pb-2 overflow-x-auto scrollbar-hide">
         {[
           { key: "scrape" as const, label: "New Scrape", icon: <Play size={14} /> },
           { key: "jobs" as const, label: "Scrape Jobs", icon: <Clock size={14} /> },
           { key: "leads" as const, label: "Leads", icon: <Building2 size={14} /> },
         ].map((t) => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === t.key ? "bg-blue-600 text-white" : "bg-slate-700/50 text-slate-300 hover:bg-slate-700"}`}>
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${activeTab === t.key ? "bg-blue-600 text-white" : "bg-slate-700/50 text-slate-300 hover:bg-slate-700"}`}>
             {t.icon} {t.label}
           </button>
         ))}
@@ -198,7 +198,7 @@ export default function LeadGenerationPanel() {
 
       {/* New Scrape Tab */}
       {activeTab === "scrape" && (
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
               <Search size={20} className="text-blue-400" /> Configure Scrape Job
@@ -347,7 +347,7 @@ export default function LeadGenerationPanel() {
         <div className="space-y-4">
           {/* Stats */}
           {leadStats && (
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { label: "Total Leads", value: String((leadStats as Record<string, unknown>).total || 0), icon: <Building2 className="text-blue-400" size={18} /> },
                 { label: "With Email", value: String((leadStats as Record<string, unknown>).with_email || 0), icon: <Mail className="text-green-400" size={18} /> },

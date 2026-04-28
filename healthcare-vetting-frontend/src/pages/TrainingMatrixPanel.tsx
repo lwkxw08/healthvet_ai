@@ -324,12 +324,12 @@ export default function TrainingMatrixPanel() {
                 </label>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-3">
                 <label className="text-xs text-slate-400">Name *</label>
                 <input className={inputClass} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Manual Handling" />
               </div>
-              <div className="col-span-3">
+              <div className="sm:col-span-3">
                 <label className="text-xs text-slate-400">Aliases <span className="text-slate-500">(semicolon-separated — used to match variant spellings)</span></label>
                 <input className={inputClass} value={draft.aliases} onChange={e => setDraft({ ...draft, aliases: e.target.value })} placeholder="Moving and Handling; Moving & Handling" />
               </div>
@@ -350,7 +350,7 @@ export default function TrainingMatrixPanel() {
                 <label className="text-xs text-slate-400">Sort order</label>
                 <input type="number" className={inputClass} value={draft.sort_order} onChange={e => setDraft({ ...draft, sort_order: Number(e.target.value) })} />
               </div>
-              <div className="col-span-3">
+              <div className="sm:col-span-3">
                 <label className="text-xs text-slate-400">Description</label>
                 <input className={inputClass} value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} />
               </div>

@@ -243,14 +243,14 @@ export default function SubscriptionPlansPanel() {
       )}
 
       {/* Sub-tabs */}
-      <div className="flex gap-2 border-b border-slate-700 pb-2">
+      <div className="flex gap-2 border-b border-slate-700 pb-2 overflow-x-auto scrollbar-hide">
         {[
           { key: "plans" as const, label: "Credit Packs", icon: <Layers size={14} /> },
           { key: "pricing" as const, label: "Per-Check Pricing", icon: <Tag size={14} /> },
           { key: "matrix" as const, label: "Pricing Matrix", icon: <CreditCard size={14} /> },
         ].map((t) => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === t.key ? "bg-blue-600 text-white" : "bg-slate-700/50 text-slate-300 hover:bg-slate-700"}`}>
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${activeTab === t.key ? "bg-blue-600 text-white" : "bg-slate-700/50 text-slate-300 hover:bg-slate-700"}`}>
             {t.icon} {t.label}
           </button>
         ))}
@@ -278,7 +278,7 @@ export default function SubscriptionPlansPanel() {
           {creatingPlanLink && (
             <div className="bg-slate-800/80 rounded-xl border border-blue-500/30 p-4">
               <h4 className="text-white font-medium mb-3">New Industry Plan Link</h4>
-              <div className="grid grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 <div>
                   <label className="block text-slate-400 text-xs mb-1">Tier</label>
                   <select value={newPlanLink.tier_key} onChange={(e) => setNewPlanLink((p) => ({ ...p, tier_key: e.target.value }))}
@@ -407,7 +407,7 @@ export default function SubscriptionPlansPanel() {
           {addingPricing && selectedIndustry && (
             <div className="bg-slate-800/80 rounded-xl border border-blue-500/30 p-4">
               <h4 className="text-white font-medium mb-3">New Check Pricing</h4>
-              <div className="grid grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 <div>
                   <label className="block text-slate-400 text-xs mb-1">Check Type</label>
                   <select value={newPricing.check_type} onChange={(e) => setNewPricing((p) => ({ ...p, check_type: e.target.value }))}
@@ -572,7 +572,7 @@ export default function SubscriptionPlansPanel() {
               {matrixAddingCheck && (
                 <div className="bg-slate-800/80 rounded-xl border border-blue-500/30 p-4">
                   <h4 className="text-white font-medium mb-3 text-sm">Add Check Pricing</h4>
-                  <div className="grid grid-cols-5 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                     <div>
                       <label className="block text-slate-400 text-xs mb-1">Check Type</label>
                       <select value={matrixNewCheck.check_type} onChange={(e) => setMatrixNewCheck((p) => ({ ...p, check_type: e.target.value }))}
@@ -743,7 +743,7 @@ export default function SubscriptionPlansPanel() {
                 {pricingMatrix && ((pricingMatrix as Record<string, unknown>).default_rates as Record<string, unknown>[] || []).length > 0 && (
                   <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4">
                     <h4 className="text-white font-medium mb-3 flex items-center gap-2"><DollarSign size={16} className="text-amber-400" /> Default Credit Rates (fallback)</h4>
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {((pricingMatrix as Record<string, unknown>).default_rates as Record<string, unknown>[]).map((rate) => (
                         <div key={String(rate.check_type)} className="bg-slate-700/30 rounded-lg p-2 border border-slate-600/50">
                           <p className="text-slate-400 text-xs">{String(rate.label || rate.check_type)}</p>

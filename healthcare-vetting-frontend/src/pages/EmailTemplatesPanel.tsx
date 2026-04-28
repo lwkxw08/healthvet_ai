@@ -312,7 +312,7 @@ export default function EmailTemplatesPanel() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Mail className="text-blue-400" size={22} /> Email Templates
@@ -340,7 +340,7 @@ export default function EmailTemplatesPanel() {
 
       {/* Stats Bar */}
       {stats && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
             { label: "Total Emails", value: stats.total, icon: <Mail size={16} className="text-blue-400" /> },
             { label: "Sent (SendGrid)", value: stats.sent, icon: <CheckCircle size={16} className="text-green-400" /> },
@@ -366,9 +366,9 @@ export default function EmailTemplatesPanel() {
 
       {/* Templates View */}
       {activeView === "templates" && (
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Template List */}
-          <div className="col-span-1 space-y-2">
+          <div className="md:col-span-1 space-y-2">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
                 {templates.length} Templates
@@ -452,7 +452,7 @@ export default function EmailTemplatesPanel() {
           </div>
 
           {/* Template Detail */}
-          <div className="col-span-2">
+          <div className="md:col-span-2">
             {!selectedTemplate ? (
               <div className="bg-slate-800/40 rounded-xl border border-slate-700/50 p-12 text-center">
                 <Mail className="text-slate-600 mx-auto mb-3" size={40} />

@@ -295,7 +295,7 @@ export default function AuditReportingPanel() {
           {cqcReport && (
             <div className="bg-white border rounded-lg p-4">
               <h4 className="font-medium text-gray-900 mb-2">CQC Audit Report</h4>
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                 <div className="text-center p-3 bg-gray-50 rounded">
                   <div className="text-xs text-gray-500">Total Mutations</div>
                   <div className="text-xl font-bold">{String(cqcReport.total_mutations ?? 0)}</div>
@@ -377,7 +377,7 @@ export default function AuditReportingPanel() {
           {retentionReport.age_distribution ? (
             <div>
               <h4 className="text-sm font-medium text-gray-700 mb-2">Age Distribution</h4>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {Object.entries(retentionReport.age_distribution as Record<string, unknown>).map(([period, count]) => (
                   <div key={period} className="bg-gray-50 rounded p-2 text-center">
                     <div className="text-xs text-gray-500">{period}</div>

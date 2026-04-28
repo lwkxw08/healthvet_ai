@@ -1324,13 +1324,13 @@ export default function AdminPanel() {
             </div>
 
             {/* Task Queue */}
-            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
-              <div className="flex items-center justify-between mb-4">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <h3 className="text-lg font-semibold text-white">Task Queue</h3>
-                <div className="flex gap-2">
+                <div className="flex gap-2 overflow-x-auto scrollbar-hide">
                   {["", "pending_admin", "awaiting_candidate", "submitted_to_trustid"].map((f) => (
                     <button key={f} onClick={() => setTrustidTaskFilter(f)}
-                      className={`px-3 py-1 rounded text-xs font-medium ${trustidTaskFilter === f ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400 hover:text-white"}`}>
+                      className={`px-3 py-1 rounded text-xs font-medium whitespace-nowrap ${trustidTaskFilter === f ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400 hover:text-white"}`}>
                       {f ? f.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()) : "All"}
                     </button>
                   ))}
@@ -1350,7 +1350,7 @@ export default function AdminPanel() {
                         </div>
                         <span className="text-xs text-slate-500">{(task.created_at as string)?.split("T")[0]}</span>
                       </div>
-                      <div className="grid grid-cols-3 gap-2 text-xs mb-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs mb-3">
                         <div><span className="text-slate-400">Candidate:</span> <span className="text-white">{task.candidate_name as string || `${task.first_name || ""} ${task.last_name || ""}`.trim() || "N/A"}</span></div>
                         <div><span className="text-slate-400">Email:</span> <span className="text-white">{task.candidate_email as string || task.candidate_email_lookup as string || "N/A"}</span></div>
                         <div><span className="text-slate-400">DOB:</span> <span className="text-white">{task.candidate_dob as string || "N/A"}</span></div>
@@ -1760,11 +1760,13 @@ export default function AdminPanel() {
         {/* Analytics Tab */}
         {tab === "analytics" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2"><TrendingUp className="text-blue-400" size={22} /> Analytics & Reports</h2>
-              <div className="flex gap-2">
-                <button onClick={downloadFinancialReport} className="bg-green-600/20 text-green-400 border border-green-600/30 px-3 py-1.5 rounded-lg text-xs hover:bg-green-600/30 flex items-center gap-1"><Download size={14} /> Financial PDF</button>
-                <button onClick={downloadComplianceReport} className="bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-600/30 flex items-center gap-1"><Download size={14} /> Compliance PDF</button>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2"><TrendingUp className="text-blue-400" size={22} /> Analytics & Reports</h2>
+                <div className="flex gap-2">
+                  <button onClick={downloadFinancialReport} className="bg-green-600/20 text-green-400 border border-green-600/30 px-3 py-1.5 rounded-lg text-xs hover:bg-green-600/30 flex items-center gap-1"><Download size={14} /> Financial PDF</button>
+                  <button onClick={downloadComplianceReport} className="bg-blue-600/20 text-blue-400 border border-blue-600/30 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-600/30 flex items-center gap-1"><Download size={14} /> Compliance PDF</button>
+                </div>
               </div>
               <PeriodFilter period={revenuePeriod} setPeriodFn={setRevenuePeriod} cFrom={customFrom} setCFrom={setCustomFrom} cTo={customTo} setCTo={setCustomTo} onApply={loadAnalytics} />
             </div>
@@ -1809,7 +1811,7 @@ export default function AdminPanel() {
                 </div>
                 {Boolean(opsData.checks_completed) && typeof opsData.checks_completed === "object" && (
                   <div><h4 className="text-sm font-medium text-slate-300 mb-3">Checks Completed</h4>
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {Object.entries(opsData.checks_completed as Record<string, number>).map(([key, val]) => (
                         <div key={key} className="p-3 bg-slate-700/30 rounded-lg text-center"><p className="text-slate-400 text-xs mb-1 capitalize">{key.replace(/_/g, " ")}</p><p className="text-lg font-bold text-white">{val}</p></div>
                       ))}
@@ -2042,7 +2044,7 @@ export default function AdminPanel() {
                           className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div>
                         <label className="block text-xs text-slate-400 mb-1">Pack Price (£)</label>
                         <input type="number" step="0.01" value={newTierData.monthly_price} onChange={(e) => setNewTierData(prev => ({...prev, monthly_price: e.target.value}))}
@@ -3374,7 +3376,7 @@ export default function AdminPanel() {
                       {reports && (
                         <div className="mt-3 pt-3 border-t border-slate-600/50">
                           <p className="text-xs text-slate-500 mb-2">Onfido Report Details</p>
-                          <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                             {reports.document && (
                               <div className="bg-slate-800/50 rounded p-2">
                                 <span className="text-slate-400 block mb-1">Document Report</span>

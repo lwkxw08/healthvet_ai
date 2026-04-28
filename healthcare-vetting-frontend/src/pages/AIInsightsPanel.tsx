@@ -168,16 +168,16 @@ export default function AIInsightsPanel() {
     <div className="space-y-4">
       {/* AI Status Bar */}
       {aiStatus && (
-        <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-lg p-3 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <Brain className="w-5 h-5 text-purple-400" />
+            <Brain className="w-5 h-5 text-purple-400 shrink-0" />
             <span className="text-sm text-purple-200">
               AI Engine: <strong>{aiStatus.openai_configured ? "OpenAI GPT-4o-mini" : "Rule-Based (No API Key)"}</strong>
             </span>
           </div>
-          <div className="flex gap-3 text-xs">
+          <div className="flex gap-2 text-xs overflow-x-auto scrollbar-hide">
             {features && Object.entries(features).map(([key, val]) => (
-              <span key={key} className={`px-2 py-1 rounded ${val.method === "openai" ? "bg-purple-800/50 text-purple-200" : "bg-gray-700/50 text-gray-300"}`}>
+              <span key={key} className={`px-2 py-1 rounded whitespace-nowrap ${val.method === "openai" ? "bg-purple-800/50 text-purple-200" : "bg-gray-700/50 text-gray-300"}`}>
                 {key.replace(/_/g, " ")}: {String(val.method)}
               </span>
             ))}
@@ -186,7 +186,7 @@ export default function AIInsightsPanel() {
       )}
 
       {/* Sub-tab navigation */}
-      <div className="flex gap-2 border-b border-gray-700 pb-2">
+      <div className="flex gap-2 border-b border-gray-700 pb-2 overflow-x-auto scrollbar-hide">
         {([
           { id: "cv-analysis", label: "CV Gap Analysis", icon: FileText },
           { id: "reference-sentiment", label: "Reference Sentiment", icon: Users },
@@ -196,7 +196,7 @@ export default function AIInsightsPanel() {
           <button
             key={id}
             onClick={() => setSubTab(id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-t text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-t text-sm font-medium transition-colors whitespace-nowrap ${
               subTab === id ? "bg-purple-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
             }`}
           >
