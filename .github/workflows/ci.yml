@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, "devin/*"]
   pull_request:
-    branches: [main]
+    branches: [main, "devin/1774026028-initial-codebase"]
  
 concurrency:
   group: ci-${{ github.ref }}
