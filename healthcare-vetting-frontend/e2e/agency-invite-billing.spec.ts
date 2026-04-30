@@ -57,9 +57,9 @@ test.describe("Agency Invite → Billing", () => {
     );
     await page.reload();
 
-    // Should see the agency dashboard
+    // Should see the agency dashboard — look for the "Agency Dashboard" badge or tab buttons
     await expect(
-      page.locator("text=Dashboard, text=Candidates, text=Invites").first(),
+      page.getByText("Agency Dashboard").or(page.getByText("Viper AI")),
     ).toBeVisible({ timeout: 15000 });
 
     // Navigate to Invites tab
@@ -150,8 +150,8 @@ test.describe("Agency Invite → Billing", () => {
       await page.waitForTimeout(2000);
     }
 
-    // The newly registered candidate should appear
-    const candidateRow = page.locator(`text=E2E Invited, text=${candidateEmail}`).first();
+    // The newly registered candidate should appear (search for name or email)
+    const candidateRow = page.getByText("E2E Invited").or(page.getByText(candidateEmail)).first();
     await expect(candidateRow).toBeVisible({ timeout: 10000 });
   });
 
@@ -217,9 +217,8 @@ test.describe("Agency Invite → Billing", () => {
       await billingTab.click();
       await page.waitForTimeout(1000);
 
-      const billingContent = page.locator(
-        "text=Credit, text=Plan, text=Subscription, text=Invoice, text=Billing",
-      ).first();
+      // Billing tab heading is "Credit Packs & Billing"
+      const billingContent = page.getByText("Credit Packs").or(page.getByText("12-Month Credit"));
       await expect(billingContent).toBeVisible({ timeout: 5000 });
     }
   });
