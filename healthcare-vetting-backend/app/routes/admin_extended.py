@@ -386,6 +386,8 @@ async def admin_purge_test_accounts(current_user: dict = Depends(get_current_use
         "agency_invites", "agency_candidates", "invoices", "agency_sub_accounts",
     ]
 
+    errors_log: list[str] = []
+
     def _safe_delete(db, table: str, col: str, val: str):
         """Delete rows from a table, using a SAVEPOINT so that errors from
         missing tables/columns don't abort the whole transaction."""
@@ -394,7 +396,8 @@ async def admin_purge_test_accounts(current_user: dict = Depends(get_current_use
             db.execute(f"SAVEPOINT {sp}")
             db.execute(f"DELETE FROM {table} WHERE {col}=%s", (val,))
             db.execute(f"RELEASE SAVEPOINT {sp}")
-        except Exception:
+        except Exception as exc:
+            errors_log.append(f"{table}.{col}={val[:8]}...: {exc}")
             db.execute(f"ROLLBACK TO SAVEPOINT {sp}")
 
     with get_db() as db:
@@ -433,6 +436,7 @@ async def admin_purge_test_accounts(current_user: dict = Depends(get_current_use
             "status": "purged",
             "candidates_deleted": len(test_candidates),
             "agencies_deleted": len(test_agencies),
+            "errors": errors_log[:20],
         }
 
 
