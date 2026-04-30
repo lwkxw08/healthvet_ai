@@ -57,9 +57,9 @@ test.describe("Agency Invite → Billing", () => {
     );
     await page.reload();
 
-    // Should see the agency dashboard — look for the "Agency Dashboard" badge or tab buttons
+    // Should see the agency dashboard — look for the "Agency Dashboard" badge
     await expect(
-      page.getByText("Agency Dashboard").or(page.getByText("Viper AI")),
+      page.getByText("Agency Dashboard"),
     ).toBeVisible({ timeout: 15000 });
 
     // Navigate to Invites tab
@@ -218,7 +218,7 @@ test.describe("Agency Invite → Billing", () => {
       await page.waitForTimeout(1000);
 
       // Billing tab heading is "Credit Packs & Billing"
-      const billingContent = page.getByText("Credit Packs").or(page.getByText("12-Month Credit"));
+      const billingContent = page.getByRole("heading", { name: "Credit Packs & Billing" });
       await expect(billingContent).toBeVisible({ timeout: 5000 });
     }
   });
