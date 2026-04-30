@@ -10,19 +10,25 @@
  */
 import { test, expect } from "@playwright/test";
 
+const suffix = Math.random().toString(36).slice(2, 8);
+
+/** Get the API base URL from env or fall back to localhost. */
+function apiBase(): string {
+  return process.env.BASE_URL || "http://localhost:5173";
+}
+
 test.describe("Agency Invite → Billing", () => {
-  const suffix = Math.random().toString(36).slice(2, 8);
   let agencyToken: string;
   let agencyId: string;
   let candidateEmail: string;
-  let baseURL: string;
+  let base: string;
 
   test.beforeAll(async ({ request }) => {
-    baseURL = process.env.BASE_URL || "http://localhost:5173";
+    base = apiBase();
     candidateEmail = `e2e-invited-${suffix}@test.viperai`;
 
     // Register a new agency
-    const resp = await request.post(`${baseURL}/api/auth/agencies/register`, {
+    const resp = await request.post(`${base}/api/auth/agencies/register`, {
       data: {
         email: `e2e-agency-${suffix}@test.viperai`,
         password: "E2eTest123!",
@@ -36,7 +42,7 @@ test.describe("Agency Invite → Billing", () => {
     agencyId = body.user_id;
 
     // Subscribe to starter plan via API (gives credits)
-    await request.post(`${baseURL}/api/billing/subscribe`, {
+    await request.post(`${base}/api/billing/subscribe`, {
       headers: { "X-Auth-Token": agencyToken },
       data: { tier: "starter", billing_method: "invoice" },
     });
@@ -50,7 +56,7 @@ test.describe("Agency Invite → Billing", () => {
     );
     await page.reload();
 
-    // Should see the agency dashboard
+    // Should see the agency dashboard — wait for any dashboard content
     await expect(
       page.locator("text=Dashboard, text=Candidates, text=Invites").first(),
     ).toBeVisible({ timeout: 15000 });
@@ -64,8 +70,7 @@ test.describe("Agency Invite → Billing", () => {
   });
 
   test("send a candidate invite via the API", async ({ request }) => {
-    // Send invite via API
-    const resp = await request.post(`${baseURL}/api/agencies/invites`, {
+    const resp = await request.post(`${base}/api/agencies/invites`, {
       headers: { "X-Auth-Token": agencyToken },
       data: { candidate_email: candidateEmail },
     });
@@ -103,7 +108,7 @@ test.describe("Agency Invite → Billing", () => {
     request,
   }) => {
     // Get the invite info to find the invite code
-    const listResp = await request.get(`${baseURL}/api/agencies/invites`, {
+    const listResp = await request.get(`${base}/api/agencies/invites`, {
       headers: { "X-Auth-Token": agencyToken },
     });
     const invites = await listResp.json();
@@ -115,7 +120,7 @@ test.describe("Agency Invite → Billing", () => {
 
     // Register the candidate with the invite code
     const regResp = await request.post(
-      `${baseURL}/api/auth/candidates/register`,
+      `${base}/api/auth/candidates/register`,
       {
         data: {
           email: candidateEmail,
@@ -154,15 +159,13 @@ test.describe("Agency Invite → Billing", () => {
 
   test("billing reflects the invite credit usage", async ({ request }) => {
     // Check remaining credits via API
-    const creditsResp = await request.get(`${baseURL}/api/billing/remaining-checks`, {
+    const creditsResp = await request.get(`${base}/api/billing/remaining-checks`, {
       headers: { "X-Auth-Token": agencyToken },
     });
 
     if (creditsResp.ok()) {
       const credits = await creditsResp.json();
-      // Verify the response structure contains credit info
       expect(credits).toBeTruthy();
-      // Credits should exist (may be zero if starter plan has limited credits)
       expect(
         credits.remaining !== undefined ||
         credits.remaining_checks !== undefined ||
@@ -171,7 +174,7 @@ test.describe("Agency Invite → Billing", () => {
     }
 
     // Check billing history / invoices via API
-    const historyResp = await request.get(`${baseURL}/api/billing/history`, {
+    const historyResp = await request.get(`${base}/api/billing/history`, {
       headers: { "X-Auth-Token": agencyToken },
     });
 
@@ -200,7 +203,7 @@ test.describe("Agency Invite → Billing", () => {
     }
 
     // Verify invite email input exists
-    const emailInput = page.locator('input[placeholder*="email" i], input[name*="email" i]').first();
+    const emailInput = page.locator('input[type="email"], input[placeholder*="email" i]').first();
     await expect(emailInput).toBeVisible({ timeout: 5000 });
 
     // Type a new email and check the invite button is there

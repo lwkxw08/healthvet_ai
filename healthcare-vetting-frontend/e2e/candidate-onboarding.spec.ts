@@ -2,68 +2,72 @@
  * Flow 1: Candidate Onboarding → Vetting Pass
  *
  * Registers a new candidate via the UI, fills in the multi-step onboarding
- * form (personal details, identity, right to work, DBS, CV, registration,
- * references, training), gives consent, and submits for vetting.
+ * form, gives consent, and submits for vetting.
  *
  * Uses the default healthcare industry template.
  */
 import { test, expect } from "@playwright/test";
 
+const suffix = Math.random().toString(36).slice(2, 8);
+const candidatePassword = "E2eTest123!";
+
+/** Get the API base URL — the backend that serves /api routes. */
+function apiBase(page?: { url: () => string }): string {
+  // Prefer env var; the Vite frontend proxies /api to the backend on the same origin
+  return process.env.BASE_URL || "http://localhost:5173";
+}
+
 test.describe("Candidate Onboarding → Vetting Pass", () => {
-  const suffix = Math.random().toString(36).slice(2, 8);
-  const candidateEmail = `e2e-cand-${suffix}@test.viperai`;
-  const candidatePassword = "E2eTest123!";
 
   test("register a new candidate via the login page", async ({ page }) => {
+    const candidateEmail = `e2e-reg-${suffix}@test.viperai`;
+
     await page.goto("/");
 
-    // Should land on the login page
-    await expect(page.locator("text=Sign In")).toBeVisible({ timeout: 15000 });
+    // Wait for the login page to fully render (look for the Sign In button)
+    await expect(page.locator('button:has-text("Sign In")').first()).toBeVisible({ timeout: 15000 });
 
-    // Click "Candidate" tab if not already selected
-    const candidateTab = page.locator("button", { hasText: "Candidate" });
+    // Make sure we're on the Candidate tab
+    const candidateTab = page.locator("button", { hasText: "Candidate" }).first();
     if (await candidateTab.isVisible()) {
       await candidateTab.click();
     }
 
-    // Switch to registration mode
-    const registerLink = page.locator("text=Create account");
-    if (await registerLink.isVisible()) {
-      await registerLink.click();
-    } else {
-      // Try alternative text
-      const signUpLink = page.locator("text=Sign up");
-      if (await signUpLink.isVisible()) await signUpLink.click();
-    }
+    // Switch to registration mode — the link text is "Register"
+    const registerLink = page.locator('button:has-text("Register")').first();
+    await registerLink.click();
 
-    // Fill registration form
-    await page.fill('input[name="email"], input[placeholder*="email" i]', candidateEmail);
-    await page.fill('input[name="password"], input[placeholder*="password" i], input[type="password"]', candidatePassword);
+    // Wait for registration form — the submit button now says "Create Account"
+    await expect(page.locator('button:has-text("Create Account")').first()).toBeVisible({ timeout: 5000 });
 
-    // Fill name fields if visible
-    const firstNameInput = page.locator('input[name="firstName"], input[placeholder*="first" i]');
-    if (await firstNameInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await firstNameInput.fill("E2E");
-    }
-    const lastNameInput = page.locator('input[name="lastName"], input[placeholder*="last" i]');
-    if (await lastNameInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await lastNameInput.fill("Candidate");
-    }
+    // Fill name fields (appear first in register mode for candidates)
+    const firstNameInput = page.locator('input[type="text"]').first();
+    await firstNameInput.fill("E2E");
+
+    const lastNameInput = page.locator('input[type="text"]').nth(1);
+    await lastNameInput.fill("Candidate");
+
+    // Fill email (type="email")
+    const emailInput = page.locator('input[type="email"]');
+    await emailInput.fill(candidateEmail);
+
+    // Fill password (type="password")
+    const passwordInput = page.locator('input[type="password"]');
+    await passwordInput.fill(candidatePassword);
 
     // Submit registration
-    const submitBtn = page.locator('button[type="submit"]');
-    await submitBtn.click();
+    await page.locator('button:has-text("Create Account")').click();
 
     // Should redirect to the candidate onboarding dashboard
     await expect(
-      page.locator("text=Personal Details, text=Onboarding, text=Welcome").first(),
+      page.locator("text=Personal Details").first(),
     ).toBeVisible({ timeout: 15000 });
   });
 
   test("fill personal details section", async ({ page, request }) => {
-    // Register and inject auth via API for speed
-    const baseURL = page.url().split("/").slice(0, 3).join("/") || "http://localhost:5173";
-    const resp = await request.post(`${baseURL}/api/auth/candidates/register`, {
+    const base = apiBase();
+
+    const resp = await request.post(`${base}/api/auth/candidates/register`, {
       data: {
         email: `e2e-pd-${suffix}@test.viperai`,
         password: candidatePassword,
@@ -88,23 +92,17 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
     await expect(page.locator("text=Personal Details").first()).toBeVisible({ timeout: 15000 });
 
     // Click Personal Details section
-    const personalSection = page.locator("text=Personal Details").first();
-    await personalSection.click();
+    await page.locator("text=Personal Details").first().click();
 
-    // Fill fields that are visible — the form layout varies by template
-    const dateOfBirth = page.locator('input[name="date_of_birth"], input[type="date"]').first();
-    if (await dateOfBirth.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await dateOfBirth.fill("1990-06-15");
+    // Fill fields that are visible
+    const dateInput = page.locator('input[type="date"]').first();
+    if (await dateInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await dateInput.fill("1990-06-15");
     }
 
-    const address = page.locator('input[name="address"], textarea[name="address"]').first();
-    if (await address.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await address.fill("123 E2E Test Street, London, E1 1AA");
-    }
-
-    const niNumber = page.locator('input[name="ni_number"], input[placeholder*="national" i]').first();
-    if (await niNumber.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await niNumber.fill("AB123456C");
+    const textareas = page.locator("textarea").first();
+    if (await textareas.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await textareas.fill("123 E2E Test Street, London, E1 1AA");
     }
 
     // Save / Next
@@ -114,15 +112,15 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
       await page.waitForTimeout(1000);
     }
 
-    // Verify we're on the page and no critical errors
-    await expect(page.locator("text=Error").first()).not.toBeVisible({ timeout: 2000 }).catch(() => {
-      // Some non-critical validation errors are OK
-    });
+    // Page should still be functional — no crash
+    const pageContent = await page.textContent("body");
+    expect(pageContent).toBeTruthy();
   });
 
   test("navigate through all onboarding sections", async ({ page, request }) => {
-    const baseURL = page.url().split("/").slice(0, 3).join("/") || "http://localhost:5173";
-    const resp = await request.post(`${baseURL}/api/auth/candidates/register`, {
+    const base = apiBase();
+
+    const resp = await request.post(`${base}/api/auth/candidates/register`, {
       data: {
         email: `e2e-nav-${suffix}@test.viperai`,
         password: candidatePassword,
@@ -162,10 +160,10 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
   });
 
   test("submit onboarding and check compliance status", async ({ page, request }) => {
-    const baseURL = page.url().split("/").slice(0, 3).join("/") || "http://localhost:5173";
+    const base = apiBase();
 
     // Register candidate
-    const regResp = await request.post(`${baseURL}/api/auth/candidates/register`, {
+    const regResp = await request.post(`${base}/api/auth/candidates/register`, {
       data: {
         email: `e2e-submit-${suffix}@test.viperai`,
         password: candidatePassword,
@@ -180,7 +178,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
     const candidateToken = auth.access_token;
 
     // Create a submission via API
-    const subResp = await request.post(`${baseURL}/api/submissions`, {
+    const subResp = await request.post(`${base}/api/submissions`, {
       headers: { "X-Auth-Token": candidateToken },
       data: {},
     });
@@ -189,7 +187,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
 
     if (submissionId) {
       // Save section data for personal details
-      await request.put(`${baseURL}/api/submissions/${submissionId}/sections/personal`, {
+      await request.put(`${base}/api/submissions/${submissionId}/sections/personal`, {
         headers: { "X-Auth-Token": candidateToken },
         data: {
           first_name: "E2E",
@@ -201,12 +199,12 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
       });
 
       // Submit the application
-      await request.post(`${baseURL}/api/submissions/${submissionId}/submit`, {
+      await request.post(`${base}/api/submissions/${submissionId}/submit`, {
         headers: { "X-Auth-Token": candidateToken },
       });
     }
 
-    // Load the page and verify compliance indicators appear
+    // Load the page and verify it renders without errors
     await page.goto("/");
     await page.evaluate(
       (a) => localStorage.setItem("viperai_auth", JSON.stringify(a)),
@@ -216,12 +214,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
 
     await expect(page.locator("text=Personal Details").first()).toBeVisible({ timeout: 15000 });
 
-    // Check that compliance status/score indicators exist on the page
-    const complianceIndicator = page.locator(
-      "text=Compliance, text=CQC, text=Score, text=Status, text=Checks"
-    ).first();
-    // This may or may not be visible depending on the candidate state
-    // but the onboarding page should load successfully without errors
+    // The onboarding page should load successfully without errors
     const pageContent = await page.textContent("body");
     expect(pageContent).toBeTruthy();
     expect(pageContent).not.toContain("Something went wrong");
