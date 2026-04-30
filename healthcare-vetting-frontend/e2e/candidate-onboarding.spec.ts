@@ -11,6 +11,13 @@ import { test, expect } from "@playwright/test";
 const suffix = Math.random().toString(36).slice(2, 8);
 const candidatePassword = "E2eTest123!";
 
+/**
+ * The backend API lives on a separate origin (api.viperai.io) from the
+ * frontend (app.viperai.io). Playwright's baseURL is the frontend; API
+ * calls need the backend origin.
+ */
+const API_URL = process.env.API_URL || "https://api.viperai.io";
+
 test.describe("Candidate Onboarding → Vetting Pass", () => {
 
   test("register a new candidate via the login page", async ({ page }) => {
@@ -18,7 +25,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
 
     await page.goto("/");
 
-    // Wait for the login page to fully render (look for the Sign In button)
+    // Wait for the login page to fully render
     await expect(page.locator('button:has-text("Sign In")').first()).toBeVisible({ timeout: 15000 });
 
     // Make sure we're on the Candidate tab
@@ -27,11 +34,11 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
       await candidateTab.click();
     }
 
-    // Switch to registration mode — the link text is "Register"
+    // Switch to registration mode
     const registerLink = page.locator('button:has-text("Register")').first();
     await registerLink.click();
 
-    // Wait for registration form — the submit button now says "Create Account"
+    // Wait for registration form
     await expect(page.locator('button:has-text("Create Account")').first()).toBeVisible({ timeout: 5000 });
 
     // Fill name fields (appear first in register mode for candidates)
@@ -41,13 +48,9 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
     const lastNameInput = page.locator('input[type="text"]').nth(1);
     await lastNameInput.fill("Candidate");
 
-    // Fill email (type="email")
-    const emailInput = page.locator('input[type="email"]');
-    await emailInput.fill(candidateEmail);
-
-    // Fill password (type="password")
-    const passwordInput = page.locator('input[type="password"]');
-    await passwordInput.fill(candidatePassword);
+    // Fill email and password
+    await page.locator('input[type="email"]').fill(candidateEmail);
+    await page.locator('input[type="password"]').fill(candidatePassword);
 
     // Submit registration
     await page.locator('button:has-text("Create Account")').click();
@@ -59,8 +62,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
   });
 
   test("fill personal details section", async ({ page, request }) => {
-    // Use relative URL — Playwright's request fixture prepends baseURL from config
-    const resp = await request.post("/api/auth/candidates/register", {
+    const resp = await request.post(`${API_URL}/api/auth/candidates/register`, {
       data: {
         email: `e2e-pd-${suffix}@test.viperai`,
         password: candidatePassword,
@@ -72,6 +74,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
         registration_number: "12A3456B",
       },
     });
+    expect(resp.ok()).toBeTruthy();
     const auth = await resp.json();
 
     await page.goto("/");
@@ -105,13 +108,13 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
       await page.waitForTimeout(1000);
     }
 
-    // Page should still be functional — no crash
+    // Page should still be functional
     const pageContent = await page.textContent("body");
     expect(pageContent).toBeTruthy();
   });
 
   test("navigate through all onboarding sections", async ({ page, request }) => {
-    const resp = await request.post("/api/auth/candidates/register", {
+    const resp = await request.post(`${API_URL}/api/auth/candidates/register`, {
       data: {
         email: `e2e-nav-${suffix}@test.viperai`,
         password: candidatePassword,
@@ -120,6 +123,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
         profession: "Healthcare Assistant",
       },
     });
+    expect(resp.ok()).toBeTruthy();
     const auth = await resp.json();
 
     await page.goto("/");
@@ -151,8 +155,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
   });
 
   test("submit onboarding and check compliance status", async ({ page, request }) => {
-    // Register candidate
-    const regResp = await request.post("/api/auth/candidates/register", {
+    const regResp = await request.post(`${API_URL}/api/auth/candidates/register`, {
       data: {
         email: `e2e-submit-${suffix}@test.viperai`,
         password: candidatePassword,
@@ -163,11 +166,12 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
         registration_number: "99Z9999Z",
       },
     });
+    expect(regResp.ok()).toBeTruthy();
     const auth = await regResp.json();
     const candidateToken = auth.access_token;
 
     // Create a submission via API
-    const subResp = await request.post("/api/submissions", {
+    const subResp = await request.post(`${API_URL}/api/submissions`, {
       headers: { "X-Auth-Token": candidateToken },
       data: {},
     });
@@ -175,8 +179,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
     const submissionId = submission.id || submission.submission_id;
 
     if (submissionId) {
-      // Save section data for personal details
-      await request.put(`/api/submissions/${submissionId}/sections/personal`, {
+      await request.put(`${API_URL}/api/submissions/${submissionId}/sections/personal`, {
         headers: { "X-Auth-Token": candidateToken },
         data: {
           first_name: "E2E",
@@ -187,8 +190,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
         },
       });
 
-      // Submit the application
-      await request.post(`/api/submissions/${submissionId}/submit`, {
+      await request.post(`${API_URL}/api/submissions/${submissionId}/submit`, {
         headers: { "X-Auth-Token": candidateToken },
       });
     }
@@ -203,7 +205,6 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
 
     await expect(page.locator("text=Personal Details").first()).toBeVisible({ timeout: 15000 });
 
-    // The onboarding page should load successfully without errors
     const pageContent = await page.textContent("body");
     expect(pageContent).toBeTruthy();
     expect(pageContent).not.toContain("Something went wrong");

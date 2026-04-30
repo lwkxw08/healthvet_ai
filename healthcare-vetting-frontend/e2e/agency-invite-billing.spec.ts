@@ -12,6 +12,13 @@ import { test, expect } from "@playwright/test";
 
 const suffix = Math.random().toString(36).slice(2, 8);
 
+/**
+ * The backend API lives on a separate origin (api.viperai.io) from the
+ * frontend (app.viperai.io). Playwright's baseURL is the frontend; API
+ * calls need the backend origin.
+ */
+const API_URL = process.env.API_URL || "https://api.viperai.io";
+
 test.describe("Agency Invite → Billing", () => {
   let agencyToken: string;
   let agencyId: string;
@@ -20,8 +27,8 @@ test.describe("Agency Invite → Billing", () => {
   test.beforeAll(async ({ request }) => {
     candidateEmail = `e2e-invited-${suffix}@test.viperai`;
 
-    // Register a new agency (relative URL — Playwright prepends baseURL)
-    const resp = await request.post("/api/auth/agencies/register", {
+    // Register a new agency
+    const resp = await request.post(`${API_URL}/api/auth/agencies/register`, {
       data: {
         email: `e2e-agency-${suffix}@test.viperai`,
         password: "E2eTest123!",
@@ -30,12 +37,13 @@ test.describe("Agency Invite → Billing", () => {
         phone: "07700900002",
       },
     });
+    expect(resp.ok()).toBeTruthy();
     const body = await resp.json();
     agencyToken = body.access_token;
     agencyId = body.user_id;
 
     // Subscribe to starter plan via API (gives credits)
-    await request.post("/api/billing/subscribe", {
+    await request.post(`${API_URL}/api/billing/subscribe`, {
       headers: { "X-Auth-Token": agencyToken },
       data: { tier: "starter", billing_method: "invoice" },
     });
@@ -49,7 +57,7 @@ test.describe("Agency Invite → Billing", () => {
     );
     await page.reload();
 
-    // Should see the agency dashboard — wait for any dashboard content
+    // Should see the agency dashboard
     await expect(
       page.locator("text=Dashboard, text=Candidates, text=Invites").first(),
     ).toBeVisible({ timeout: 15000 });
@@ -63,7 +71,7 @@ test.describe("Agency Invite → Billing", () => {
   });
 
   test("send a candidate invite via the API", async ({ request }) => {
-    const resp = await request.post("/api/agencies/invites", {
+    const resp = await request.post(`${API_URL}/api/agencies/invites`, {
       headers: { "X-Auth-Token": agencyToken },
       data: { candidate_email: candidateEmail },
     });
@@ -101,7 +109,7 @@ test.describe("Agency Invite → Billing", () => {
     request,
   }) => {
     // Get the invite info to find the invite code
-    const listResp = await request.get("/api/agencies/invites", {
+    const listResp = await request.get(`${API_URL}/api/agencies/invites`, {
       headers: { "X-Auth-Token": agencyToken },
     });
     const invites = await listResp.json();
@@ -112,7 +120,7 @@ test.describe("Agency Invite → Billing", () => {
     const inviteCode = invite?.invite_code || invite?.id;
 
     // Register the candidate with the invite code
-    const regResp = await request.post("/api/auth/candidates/register", {
+    const regResp = await request.post(`${API_URL}/api/auth/candidates/register`, {
       data: {
         email: candidateEmail,
         password: "E2eTest123!",
@@ -149,7 +157,7 @@ test.describe("Agency Invite → Billing", () => {
 
   test("billing reflects the invite credit usage", async ({ request }) => {
     // Check remaining credits via API
-    const creditsResp = await request.get("/api/billing/remaining-checks", {
+    const creditsResp = await request.get(`${API_URL}/api/billing/remaining-checks`, {
       headers: { "X-Auth-Token": agencyToken },
     });
 
@@ -163,8 +171,8 @@ test.describe("Agency Invite → Billing", () => {
       ).toBeTruthy();
     }
 
-    // Check billing history / invoices via API
-    const historyResp = await request.get("/api/billing/history", {
+    // Check billing history
+    const historyResp = await request.get(`${API_URL}/api/billing/history`, {
       headers: { "X-Auth-Token": agencyToken },
     });
 
@@ -209,7 +217,6 @@ test.describe("Agency Invite → Billing", () => {
       await billingTab.click();
       await page.waitForTimeout(1000);
 
-      // Should show some billing content
       const billingContent = page.locator(
         "text=Credit, text=Plan, text=Subscription, text=Invoice, text=Billing",
       ).first();
