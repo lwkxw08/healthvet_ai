@@ -679,6 +679,31 @@ export default function AdminPanel() {
     finally { setSavingEdit(false); }
   };
 
+  // Purge test accounts (only @test.viperai emails)
+  const handlePurgeTestAccounts = async () => {
+    if (!token) return;
+    const testCandidates = candidates.filter((c) => String(c.email || "").endsWith("@test.viperai"));
+    const testCount = testCandidates.length;
+    const totalCount = candidates.length;
+    const realCount = totalCount - testCount;
+    if (testCount === 0) { showMessage("No @test.viperai accounts found to purge"); return; }
+    const confirmed = confirm(
+      `This will delete ${testCount} test account(s) with @test.viperai emails.\n\n` +
+      `${realCount} real account(s) will NOT be affected.\n\n` +
+      `This cannot be undone. Proceed?`
+    );
+    if (!confirmed) return;
+    try {
+      const result = await adminExtendedApi.purgeTestAccounts(token);
+      showMessage(`Purged ${result.candidates_deleted} test candidates and ${result.agencies_deleted} test agencies`);
+    } catch (err) {
+      showMessage(`Error: ${err instanceof Error ? err.message : "Failed to purge"}`);
+    } finally {
+      await loadData();
+      await loadAgencies();
+    }
+  };
+
   // Save alert settings
   const handleSaveAlertSettings = async () => {
     if (!token) return;
@@ -1564,17 +1589,10 @@ export default function AdminPanel() {
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">All Candidates ({candidates.length})</h2>
               <button
-                onClick={async () => {
-                  if (!token || !confirm("Delete ALL @test.viperai accounts? This cannot be undone.")) return;
-                  try {
-                    const result = await adminExtendedApi.purgeTestAccounts(token);
-                    showMessage(`Purged ${result.candidates_deleted} test candidates and ${result.agencies_deleted} test agencies`);
-                    await loadData();
-                  } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
-                }}
+                onClick={handlePurgeTestAccounts}
                 className="bg-amber-600 hover:bg-amber-700 text-white text-xs px-4 py-2 rounded-lg font-medium flex items-center gap-2"
               >
-                <Trash2 size={14} /> Purge Test Accounts
+                <Trash2 size={14} /> Purge Test Accounts ({candidates.filter((c) => String(c.email || "").endsWith("@test.viperai")).length})
               </button>
             </div>
 
@@ -2520,17 +2538,10 @@ export default function AdminPanel() {
                 <p className="text-xs text-amber-200/70 mt-1">Delete all candidates and agencies with @test.viperai emails created by automated tests.</p>
               </div>
               <button
-                onClick={async () => {
-                  if (!token || !confirm("Delete ALL @test.viperai accounts? This cannot be undone.")) return;
-                  try {
-                    const result = await adminExtendedApi.purgeTestAccounts(token);
-                    showMessage(`Purged ${result.candidates_deleted} test candidates and ${result.agencies_deleted} test agencies`);
-                    await loadData();
-                  } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
-                }}
+                onClick={handlePurgeTestAccounts}
                 className="bg-amber-600 hover:bg-amber-700 text-white text-xs px-4 py-2 rounded-lg font-medium whitespace-nowrap"
               >
-                Purge Test Accounts
+                Purge Test Accounts ({candidates.filter((c) => String(c.email || "").endsWith("@test.viperai")).length})
               </button>
             </div>
 
