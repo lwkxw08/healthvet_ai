@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { submissionsApi, candidatesApi, trustidApi, documentsApi, trainingCatalogueApi, type TrainingCourse } from "../api/client";
-import { LogOut, RefreshCw, ChevronRight, CheckCircle, XCircle, Clock, AlertTriangle, Loader2, Upload } from "lucide-react";
+import { LogOut, RefreshCw, ChevronRight, CheckCircle, XCircle, Clock, AlertTriangle, Loader2, Upload, Shield } from "lucide-react";
+import GDPRPrivacyPanel from "../components/GDPRPrivacyPanel";
 
 const SECTIONS = [
   { key: "personal", label: "Personal Details" },
@@ -29,9 +30,10 @@ function getRevetTokenFromURL(): string | null {
 }
 
 export default function CandidateOnboarding() {
-  const { token, logout } = useAuth();
+  const { token, userId, logout } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const [showPrivacy, setShowPrivacy] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState<string>("draft");
   const [sectionData, setSectionData] = useState<SectionData>({});
   const [sectionCompleted, setSectionCompleted] = useState<SectionCompleted>({});
@@ -279,11 +281,21 @@ export default function CandidateOnboarding() {
         </div>
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {saving && <span className="text-xs text-yellow-400 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Saving...</span>}
+          <button onClick={() => setShowPrivacy(!showPrivacy)} className="bg-slate-700 hover:bg-slate-600 text-white border-none rounded-lg px-3 sm:px-4 py-1.5 cursor-pointer text-sm flex items-center gap-1">
+            <Shield size={14} /> <span className="hidden sm:inline">My Data</span>
+          </button>
           <button onClick={logout} className="bg-red-600 hover:bg-red-700 text-white border-none rounded-lg px-3 sm:px-4 py-1.5 cursor-pointer text-sm flex items-center gap-1">
             <LogOut size={14} /> <span className="hidden sm:inline">Sign Out</span>
           </button>
         </div>
       </header>
+
+      {/* GDPR Privacy Panel */}
+      {showPrivacy && token && userId && (
+        <div className="border-b border-slate-700 bg-slate-800/80 px-4 sm:px-6 py-6">
+          <GDPRPrivacyPanel token={token} userId={userId} />
+        </div>
+      )}
 
       {revetInfo && (
         <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-3">

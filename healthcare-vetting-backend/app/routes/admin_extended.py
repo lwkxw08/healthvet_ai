@@ -5,7 +5,7 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.database import get_db
-from app.utils.auth import get_current_user, generate_id, hash_password
+from app.utils.auth import get_current_user, generate_id, hash_password, create_access_token
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Extended"])
 
@@ -1356,3 +1356,128 @@ async def decide_refund(
                 status_code=502,
                 detail=f"Stripe refund failed: {refund_result.get('error', 'unknown error')}",
             )
+
+
+# ── Admin Impersonation / "View As" ─────────────────────────────
+# Allows admins to see the platform as a specific candidate or agency user.
+# Every impersonation session is fully audit-logged.
+
+
+class ImpersonateRequest(BaseModel):
+    target_user_id: str
+    target_user_type: str  # "candidate" or "agency"
+    reason: str
+
+
+@router.post("/impersonate")
+async def admin_impersonate(
+    body: ImpersonateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Generate a short-lived token to view the platform as another user.
+
+    The token carries an 'imp' (impersonator) claim so all actions are
+    attributable to the admin who initiated the session.
+    """
+    require_admin(current_user)
+    admin_id = current_user["sub"]
+    now = datetime.now(timezone.utc).isoformat()
+
+    if body.target_user_type not in ("candidate", "agency"):
+        raise HTTPException(status_code=400, detail="target_user_type must be 'candidate' or 'agency'")
+
+    with get_db() as db:
+        # Verify target user exists
+        if body.target_user_type == "candidate":
+            db.execute("SELECT id, email, first_name, last_name FROM candidates WHERE id=%s", (body.target_user_id,))
+        else:
+            db.execute("SELECT id, email, name FROM agencies WHERE id=%s", (body.target_user_id,))
+
+        target = db.fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail=f"{body.target_user_type} not found")
+        target = dict(target)
+
+        # Create impersonation token (15 min, carries admin's ID in 'imp' claim)
+        token = create_access_token(
+            body.target_user_id,
+            body.target_user_type,
+            impersonator_id=admin_id,
+        )
+
+        # Audit log the impersonation
+        log_id = generate_id()
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (
+                log_id,
+                body.target_user_type,
+                body.target_user_id,
+                "admin_impersonation_started",
+                admin_id,
+                f"Admin {admin_id} started impersonation of {body.target_user_type} "
+                f"{body.target_user_id} ({target.get('email', 'unknown')}). Reason: {body.reason}",
+                now,
+            ),
+        )
+
+        return {
+            "access_token": token,
+            "user_id": body.target_user_id,
+            "user_type": body.target_user_type,
+            "impersonator": admin_id,
+            "expires_in_minutes": 15,
+        }
+
+
+@router.post("/impersonate/end")
+async def admin_end_impersonation(
+    current_user: dict = Depends(get_current_user),
+):
+    """Log the end of an impersonation session.
+
+    Called by the frontend when the admin exits view-as mode. The 'imp' claim
+    in the token identifies who was impersonating.
+    """
+    impersonator_id = current_user.get("imp")
+    if not impersonator_id:
+        raise HTTPException(status_code=400, detail="Not in an impersonation session")
+
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as db:
+        log_id = generate_id()
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (
+                log_id,
+                current_user.get("type", "unknown"),
+                current_user["sub"],
+                "admin_impersonation_ended",
+                impersonator_id,
+                f"Admin {impersonator_id} ended impersonation of {current_user['sub']}",
+                now,
+            ),
+        )
+
+    return {"status": "impersonation_ended"}
+
+
+@router.get("/impersonation-log")
+async def admin_get_impersonation_log(
+    current_user: dict = Depends(get_current_user),
+):
+    """Retrieve all impersonation audit entries for compliance review."""
+    require_admin(current_user)
+
+    with get_db() as db:
+        db.execute(
+            """SELECT id, entity_type, entity_id, action, actor, details, created_at
+               FROM audit_logs
+               WHERE action IN ('admin_impersonation_started', 'admin_impersonation_ended')
+               ORDER BY created_at DESC
+               LIMIT 200"""
+        )
+        rows = db.fetchall()
+        return [dict(r) for r in rows]

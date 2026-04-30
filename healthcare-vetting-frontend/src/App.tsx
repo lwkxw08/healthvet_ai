@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import ImpersonationBanner from "./components/ImpersonationBanner";
 
 // Code-split large page bundles — each loads only when needed
 const LoginPage = lazy(() => import("./pages/LoginPage"));
@@ -51,6 +52,7 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
+      <ImpersonationBanner />
       <Suspense fallback={<LoadingFallback />}>
         <AppContent />
       </Suspense>

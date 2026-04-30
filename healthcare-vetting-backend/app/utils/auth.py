@@ -54,8 +54,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
-def create_access_token(user_id: str, user_type: str) -> str:
-    """Create a short-lived access token (15 min default)."""
+def create_access_token(user_id: str, user_type: str, *, impersonator_id: str | None = None) -> str:
+    """Create a short-lived access token (15 min default).
+
+    If impersonator_id is set, the token represents an admin viewing as another user.
+    The 'imp' claim records the admin's ID for audit purposes.
+    """
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": user_id,
@@ -64,6 +68,8 @@ def create_access_token(user_id: str, user_type: str) -> str:
         "iat": datetime.now(timezone.utc),
         "jti": str(uuid.uuid4()),
     }
+    if impersonator_id:
+        payload["imp"] = impersonator_id
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 

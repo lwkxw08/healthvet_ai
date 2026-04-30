@@ -329,6 +329,20 @@ export const adminExtendedApi = {
   purgeTestAccounts: (token: string) =>
     apiRequest<{ status: string; candidates_deleted: number; agencies_deleted: number }>("/api/admin/purge-test-accounts", { method: "POST", token }),
 
+  // Impersonation / "View As"
+  impersonate: (token: string, targetUserId: string, targetUserType: string, reason: string) =>
+    apiRequest<{ access_token: string; user_id: string; user_type: string; impersonator: string; expires_in_minutes: number }>(
+      "/api/admin/impersonate",
+      { method: "POST", body: { target_user_id: targetUserId, target_user_type: targetUserType, reason }, token },
+    ),
+  endImpersonation: (token: string) =>
+    apiRequest<{ status: string }>("/api/admin/impersonate/end", { method: "POST", token }),
+  getImpersonationLog: (token: string) =>
+    apiRequest<Array<{ id: string; entity_type: string; entity_id: string; action: string; actor: string; details: string; created_at: string }>>(
+      "/api/admin/impersonation-log",
+      { token },
+    ),
+
   // Alert settings
   getAlertSettings: (token: string) =>
     apiRequest<Record<string, unknown>>("/api/admin/alert-settings", { token }),
@@ -1112,4 +1126,22 @@ export const agencyInvitesApi = {
     apiRequest<Record<string, unknown>[]>("/api/agencies/my-agencies", { token }),
   getPendingInvites: (token: string) =>
     apiRequest<Record<string, unknown>[]>("/api/agencies/pending-invites", { token }),
+};
+
+// GDPR / Data Privacy API
+export const gdprApi = {
+  requestDataExport: (token: string, candidateId: string, reason?: string) =>
+    apiRequest<Record<string, unknown>>("/api/gdpr/data-export", {
+      method: "POST",
+      body: { candidate_id: candidateId, reason: reason || "Subject Access Request" },
+      token,
+    }),
+  requestErasure: (token: string, candidateId: string, reason: string) =>
+    apiRequest<{ erasure_id: string; status: string }>("/api/gdpr/erasure-request", {
+      method: "POST",
+      body: { candidate_id: candidateId, reason, confirmed: true },
+      token,
+    }),
+  getPrivacyNotice: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/gdpr/privacy-notice", { token }),
 };

@@ -1,14 +1,17 @@
-"""Enhanced audit logging middleware — logs every state-changing request with full context."""
+"""Enhanced audit logging middleware — logs every request with structured context."""
 
+import logging
 import uuid
 import time
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+logger = logging.getLogger("viperai.http")
+
 
 class AuditMiddleware(BaseHTTPMiddleware):
-    """Attach a unique request ID to every request and log state-changing operations.
+    """Attach a unique request ID to every request, log structured HTTP context.
 
     The request ID is:
     - Stored in request.state.request_id for use by route handlers
@@ -38,5 +41,27 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Response-Time"] = f"{duration_ms}ms"
+
+        # Structured request log (skip health checks and static files)
+        path = request.url.path
+        if not path.startswith(("/health", "/static", "/favicon")):
+            logger.info(
+                "%s %s %s %.0fms",
+                request.method, path, response.status_code, duration_ms,
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": path,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                    "ip": client_ip,
+                    "http": {
+                        "method": request.method,
+                        "url": str(request.url),
+                        "status_code": response.status_code,
+                        "user_agent": request.headers.get("user-agent", ""),
+                    },
+                },
+            )
 
         return response

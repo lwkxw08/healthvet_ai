@@ -2535,6 +2535,17 @@ export default function AdminPanel() {
                       <div className="flex items-center gap-2">
                         <button onClick={() => { setEditingCandidate(c); setEditFields({ first_name: String(c.first_name || ""), last_name: String(c.last_name || ""), email: String(c.email || ""), phone: String(c.phone || ""), profession: String(c.profession || ""), registration_body: String(c.registration_body || ""), registration_number: String(c.registration_number || ""), date_of_birth: String(c.date_of_birth || ""), address: String(c.address || "") }); }}
                           className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"><Edit size={12} /> Edit</button>
+                        <button onClick={async () => {
+                          if (!token) return;
+                          const reason = prompt("Reason for viewing as this candidate (required for audit):");
+                          if (!reason) return;
+                          try {
+                            const result = await adminExtendedApi.impersonate(token, String(c.id), "candidate", reason);
+                            localStorage.setItem("viperai_impersonation", JSON.stringify({ originalToken: token, impersonator: result.impersonator }));
+                            localStorage.setItem("viperai_auth", JSON.stringify({ token: result.access_token, userType: result.user_type, userId: result.user_id }));
+                            window.location.href = "/";
+                          } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+                        }} className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"><Eye size={12} /> View As</button>
                         <button onClick={() => handleDeleteCandidate(String(c.id))} disabled={deletingId === String(c.id)}
                           className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"><Trash2 size={12} /> {deletingId === String(c.id) ? "..." : "Delete"}</button>
                       </div>
@@ -2582,8 +2593,21 @@ export default function AdminPanel() {
                     <td className="px-4 py-3 text-sm text-slate-300">{String(a.contact_name || "N/A")}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{String(a.phone || "N/A")}</td>
                     <td className="px-4 py-3">
-                      <button onClick={() => handleDeleteAgency(String(a.id))} disabled={deletingId === String(a.id)}
-                        className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"><Trash2 size={12} /> {deletingId === String(a.id) ? "..." : "Delete"}</button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={async () => {
+                          if (!token) return;
+                          const reason = prompt("Reason for viewing as this agency (required for audit):");
+                          if (!reason) return;
+                          try {
+                            const result = await adminExtendedApi.impersonate(token, String(a.id), "agency", reason);
+                            localStorage.setItem("viperai_impersonation", JSON.stringify({ originalToken: token, impersonator: result.impersonator }));
+                            localStorage.setItem("viperai_auth", JSON.stringify({ token: result.access_token, userType: result.user_type, userId: result.user_id }));
+                            window.location.href = "/";
+                          } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+                        }} className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"><Eye size={12} /> View As</button>
+                        <button onClick={() => handleDeleteAgency(String(a.id))} disabled={deletingId === String(a.id)}
+                          className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"><Trash2 size={12} /> {deletingId === String(a.id) ? "..." : "Delete"}</button>
+                      </div>
                     </td>
                   </tr>
                 ))}

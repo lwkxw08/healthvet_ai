@@ -8,6 +8,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
+# ── Structured JSON logging (must run before any other logging) ──────────────
+from app.services.structured_logging import setup_logging
+setup_logging()
+
 # ── Sentry SDK — error monitoring ────────────────────────────────────────────
 _SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
 if _SENTRY_DSN:
@@ -62,12 +66,19 @@ from app.middleware.audit import AuditMiddleware
 from app.middleware.agency_scope import AgencyScopeMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
+from app.middleware.api_versioning import APIVersioningMiddleware
 
 app = FastAPI(
     title="Viper AI - Vetting Intelligence Platform for Enterprise Risk",
     description="AI-powered compliance intelligence for healthcare staffing",
     version="1.0.0",
+    docs_url="/api/v1/docs",
+    redoc_url="/api/v1/redoc",
+    openapi_url="/api/v1/openapi.json",
 )
+
+# ── API Versioning (/api/v1/* → /api/*) ──────────────────────────────────────
+app.add_middleware(APIVersioningMiddleware)
 
 # ── Security Headers Middleware ──────────────────────────────────────────────
 app.add_middleware(SecurityHeadersMiddleware)
