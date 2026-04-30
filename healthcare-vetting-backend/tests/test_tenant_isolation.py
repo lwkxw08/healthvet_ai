@@ -191,7 +191,7 @@ class TestReportsIsolation:
                     aid = item.get("agency_id")
                     if aid:
                         assert aid != agency_a["agency_id"], \
-                            f"Agency B received Agency A's data in compliance report"
+                            "Agency B received Agency A's data in compliance report"
 
 
 class TestInvoiceIsolation:

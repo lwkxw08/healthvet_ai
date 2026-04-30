@@ -138,10 +138,10 @@ export default function GDPRPrivacyPanel({ token, userId }: Props) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleDelete}
-                    disabled={deleteStatus === "loading" || deleteReason.length < 5}
+                    disabled={deleteReason.length < 5}
                     className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:opacity-50 text-white text-xs px-4 py-2 rounded-lg font-medium"
                   >
-                    {deleteStatus === "loading" ? "Processing..." : "Confirm Deletion"}
+                    Confirm Deletion
                   </button>
                   <button
                     onClick={() => { setDeleteStatus("idle"); setDeleteReason(""); }}
