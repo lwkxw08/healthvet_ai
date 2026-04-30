@@ -1561,7 +1561,22 @@ export default function AdminPanel() {
         {/* Candidates Tab */}
         {tab === "candidates" && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-white">All Candidates ({candidates.length})</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">All Candidates ({candidates.length})</h2>
+              <button
+                onClick={async () => {
+                  if (!token || !confirm("Delete ALL @test.viperai accounts? This cannot be undone.")) return;
+                  try {
+                    const result = await adminExtendedApi.purgeTestAccounts(token);
+                    showMessage(`Purged ${result.candidates_deleted} test candidates and ${result.agencies_deleted} test agencies`);
+                    await loadData();
+                  } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+                }}
+                className="bg-amber-600 hover:bg-amber-700 text-white text-xs px-4 py-2 rounded-lg font-medium flex items-center gap-2"
+              >
+                <Trash2 size={14} /> Purge Test Accounts
+              </button>
+            </div>
 
             {/* Inline Edit Panel */}
             {editingCandidate && (
@@ -1627,6 +1642,7 @@ export default function AdminPanel() {
                           });
                         }} className="text-amber-400 hover:text-amber-300 text-xs flex items-center gap-1"><Edit size={12} /> Edit</button>
                         <button onClick={() => evaluateCandidate(c.id as string)} className="text-purple-400 hover:text-purple-300 text-xs flex items-center gap-1"><RefreshCw size={12} /> Eval</button>
+                        <button onClick={() => handleDeleteCandidate(String(c.id))} disabled={deletingId === String(c.id)} className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1"><Trash2 size={12} /> {deletingId === String(c.id) ? "..." : "Delete"}</button>
                       </div></td>
                     </tr>
                   ))}
