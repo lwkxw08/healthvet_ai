@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 from app.database import get_db
-from app.utils.auth import get_current_user, generate_id
+from app.utils.auth import get_current_user, get_current_admin, generate_id
 
 logger = logging.getLogger(__name__)
 
