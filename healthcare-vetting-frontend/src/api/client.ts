@@ -62,9 +62,18 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
     headers["X-Auth-Token"] = token;
   }
 
+  // Include CSRF token on state-changing requests (cookie-based auth)
+  if (method !== "GET" && method !== "HEAD") {
+    const csrfMatch = document.cookie.match(/(?:^|; )viperai_csrf=([^;]*)/);
+    if (csrfMatch) {
+      headers["X-CSRF-Token"] = decodeURIComponent(csrfMatch[1]);
+    }
+  }
+
   const response = await fetch(`${API_URL}${endpoint}`, {
     method,
     headers,
+    credentials: "include",  // send httpOnly cookies
     body: body ? JSON.stringify(body) : undefined,
   });
 

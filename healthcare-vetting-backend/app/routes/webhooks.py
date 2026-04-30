@@ -133,22 +133,27 @@ async def stripe_webhook(request: Request):
     event_id = generate_id()
     now = datetime.now(timezone.utc).isoformat()
 
-    # Optionally verify Stripe signature
+    # Verify Stripe signature on ALL events (mandatory in production)
     sig_header = request.headers.get("stripe-signature")
     payload = json.loads(raw_body)
     event_type = payload.get("type", "unknown")
 
-    if sig_header:
-        from app.services.payment_providers import PaymentProviderService
-        provider_config = PaymentProviderService.get_provider("stripe")
-        webhook_secret = (provider_config or {}).get("webhook_secret", "")
-        if webhook_secret:
-            try:
-                import stripe
-                stripe.Webhook.construct_event(raw_body, sig_header, webhook_secret)
-            except Exception as e:
-                logger.warning("Stripe signature verification failed: %s", e)
-                raise HTTPException(status_code=400, detail="Invalid Stripe signature")
+    from app.services.payment_providers import PaymentProviderService
+    provider_config = PaymentProviderService.get_provider("stripe")
+    webhook_secret = (provider_config or {}).get("webhook_secret", "")
+
+    if webhook_secret:
+        if not sig_header:
+            logger.warning("Stripe webhook missing signature header for event %s", event_type)
+            raise HTTPException(status_code=400, detail="Missing Stripe signature")
+        try:
+            import stripe
+            stripe.Webhook.construct_event(raw_body, sig_header, webhook_secret)
+        except Exception as e:
+            logger.warning("Stripe signature verification failed: %s", e)
+            raise HTTPException(status_code=400, detail="Invalid Stripe signature")
+    elif sig_header:
+        logger.warning("Stripe webhook_secret not configured — signature verification skipped")
 
     with get_db() as db:
         db.execute(

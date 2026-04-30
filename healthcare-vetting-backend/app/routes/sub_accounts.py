@@ -8,14 +8,24 @@ from app.utils.auth import get_current_user, generate_id, hash_password, verify_
 
 router = APIRouter(prefix="/api/agencies/sub-accounts", tags=["Sub-Accounts"])
 
-# Role definitions with permissions
+# Role definitions with granular check-level permissions.
+# Enterprise roles: viewer, operator, manager, billing_admin, owner.
+# Legacy roles (compliance_officer, recruiter) map to nearest enterprise equivalent.
 ROLE_PERMISSIONS = {
     "owner": {
         "label": "Owner",
         "permissions": [
             "view_candidates", "edit_candidates", "invite_candidates", "manage_billing",
             "view_compliance", "manage_sub_accounts", "view_invoices", "download_reports",
-            "manage_settings", "view_analytics", "request_revet",
+            "manage_settings", "view_analytics", "request_revet", "manage_integrations",
+            "trigger_checks", "approve_checks", "export_data", "manage_templates",
+        ],
+    },
+    "billing_admin": {
+        "label": "Billing Admin",
+        "permissions": [
+            "manage_billing", "view_invoices", "download_reports", "view_analytics",
+            "view_candidates", "export_data",
         ],
     },
     "manager": {
@@ -23,23 +33,73 @@ ROLE_PERMISSIONS = {
         "permissions": [
             "view_candidates", "edit_candidates", "invite_candidates",
             "view_compliance", "view_invoices", "download_reports",
-            "view_analytics", "request_revet",
+            "view_analytics", "request_revet", "trigger_checks", "approve_checks",
+            "export_data", "manage_templates",
         ],
     },
+    "operator": {
+        "label": "Operator",
+        "permissions": [
+            "view_candidates", "edit_candidates", "invite_candidates",
+            "view_compliance", "trigger_checks", "request_revet",
+        ],
+    },
+    "viewer": {
+        "label": "Viewer",
+        "permissions": [
+            "view_candidates", "view_compliance", "view_analytics",
+        ],
+    },
+    # Legacy roles kept for backward compatibility
     "compliance_officer": {
         "label": "Compliance Officer",
         "permissions": [
             "view_candidates", "view_compliance", "download_reports",
-            "view_analytics", "request_revet",
+            "view_analytics", "request_revet", "approve_checks",
         ],
     },
     "recruiter": {
         "label": "Recruiter",
         "permissions": [
             "view_candidates", "invite_candidates", "view_compliance",
+            "trigger_checks",
         ],
     },
 }
+
+
+def require_permission(current_user: dict, permission: str, db_cursor=None) -> None:
+    """Check that the current user (or their sub-account role) has a specific permission.
+    Raises 403 if not authorized."""
+    user_type = current_user.get("type")
+
+    # Admin always has all permissions
+    if user_type == "admin":
+        return
+
+    # Agency owner has all permissions
+    if user_type == "agency":
+        return
+
+    # Sub-account: look up role from the token or DB
+    role = current_user.get("role")
+    if not role and db_cursor and current_user.get("sub"):
+        db_cursor.execute(
+            "SELECT role FROM agency_sub_accounts WHERE id=%s", (current_user["sub"],)
+        )
+        row = db_cursor.fetchone()
+        if row:
+            role = dict(row)["role"]
+
+    if not role:
+        raise HTTPException(status_code=403, detail="No role assigned")
+
+    role_perms = ROLE_PERMISSIONS.get(role, {}).get("permissions", [])
+    if permission not in role_perms:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Permission '{permission}' required. Your role '{role}' does not have it.",
+        )
 
 
 class SubAccountCreate(BaseModel):

@@ -1204,3 +1204,20 @@ def _generate_invoice_pdf(
 
     doc.build(elements)
     return buf.getvalue()
+
+
+# ── Billing Reconciliation Endpoints ────────────────────────────────────────
+
+@router.post("/billing/reconcile")
+async def run_billing_reconciliation(user=Depends(get_current_admin)):
+    """Run Stripe billing reconciliation (admin only).
+    Compares webhook events against invoice statuses to detect drops."""
+    from app.services.billing_reconciliation import BillingReconciliationService
+    return BillingReconciliationService.reconcile_stripe_payments()
+
+
+@router.post("/billing/backfill-invite-ids")
+async def backfill_invoice_invite_ids(user=Depends(get_current_admin)):
+    """Backfill invite_id on pre-migration invoices (admin only)."""
+    from app.services.billing_reconciliation import BillingReconciliationService
+    return BillingReconciliationService.backfill_invoice_invite_ids()

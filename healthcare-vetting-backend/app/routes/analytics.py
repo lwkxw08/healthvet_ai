@@ -10,8 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import io
 
+from fastapi import Request as _Request
 from app.database import get_db
 from app.utils.auth import get_current_user, get_current_admin, generate_id
+from app.middleware.rate_limiter import limiter
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics & Reporting"])
 
@@ -56,7 +58,8 @@ async def get_check_volume_trend(agency_id: str = None, months: int = 6,
 
 
 @router.get("/export/compliance-csv")
-async def export_compliance_csv(agency_id: str = None, user=Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def export_compliance_csv(request: _Request, agency_id: str = None, user=Depends(get_current_user)):
     """Export compliance data as CSV."""
     from app.services.analytics_reporting import AnalyticsReportingService
     real_id = user["sub"] if agency_id == "me" else agency_id

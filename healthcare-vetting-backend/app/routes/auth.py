@@ -1,12 +1,16 @@
 """Authentication routes for candidates and agencies."""
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_db
 from app.utils.auth import (
-    hash_password, verify_password, create_access_token, generate_id,
-    decode_token, get_current_user,
+    hash_password, verify_password, create_access_token, create_refresh_token,
+    generate_id, decode_token, get_current_user, generate_csrf_token,
+    REFRESH_COOKIE_NAME, CSRF_COOKIE_NAME,
+    COOKIE_SECURE, COOKIE_SAMESITE, COOKIE_HTTPONLY, COOKIE_DOMAIN,
+    REFRESH_TOKEN_EXPIRE_DAYS,
 )
 from app.schemas.candidates import CandidateLogin, TokenResponse
 from app.schemas.agencies import AgencyCreate, AgencyLogin
@@ -17,6 +21,39 @@ from app.services.auth_hardening import (
     consume_password_reset_token, blacklist_token, is_token_blacklisted,
     validate_password_strength,
 )
+
+
+def _set_auth_cookies(response: JSONResponse, user_id: str, user_type: str) -> None:
+    """Set httpOnly refresh cookie + readable CSRF cookie on a response."""
+    refresh = create_refresh_token(user_id, user_type)
+    csrf = generate_csrf_token()
+    max_age = REFRESH_TOKEN_EXPIRE_DAYS * 86400
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh,
+        httponly=COOKIE_HTTPONLY,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=max_age,
+        path="/",
+        domain=COOKIE_DOMAIN,
+    )
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=csrf,
+        httponly=False,  # readable by JS for CSRF header
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=max_age,
+        path="/",
+        domain=COOKIE_DOMAIN,
+    )
+
+
+def _clear_auth_cookies(response: JSONResponse) -> None:
+    """Remove auth cookies on logout."""
+    for name in (REFRESH_COOKIE_NAME, CSRF_COOKIE_NAME):
+        response.delete_cookie(key=name, path="/", domain=COOKIE_DOMAIN)
 
 
 class CandidateRegisterWithInvite(BaseModel):
@@ -118,7 +155,10 @@ async def login_candidate(request: Request, data: CandidateLogin):
 
     record_login_attempt(data.email, "candidate", ip, True)
     token = create_access_token(user_dict["id"], "candidate")
-    return TokenResponse(access_token=token, user_type="candidate", user_id=user_dict["id"])
+    body = TokenResponse(access_token=token, user_type="candidate", user_id=user_dict["id"])
+    response = JSONResponse(content=body.model_dump())
+    _set_auth_cookies(response, user_dict["id"], "candidate")
+    return response
 
 
 @router.post("/agencies/register", response_model=TokenResponse)
@@ -165,7 +205,10 @@ async def login_agency(request: Request, data: AgencyLogin):
 
     record_login_attempt(data.email, "agency", ip, True)
     token = create_access_token(user_dict["id"], "agency")
-    return TokenResponse(access_token=token, user_type="agency", user_id=user_dict["id"])
+    body = TokenResponse(access_token=token, user_type="agency", user_id=user_dict["id"])
+    response = JSONResponse(content=body.model_dump())
+    _set_auth_cookies(response, user_dict["id"], "agency")
+    return response
 
 
 @router.post("/admin/login", response_model=TokenResponse)
@@ -188,7 +231,10 @@ async def login_admin(request: Request, data: CandidateLogin):
 
     record_login_attempt(data.email, "admin", ip, True)
     token = create_access_token(admin_dict["id"], "admin")
-    return TokenResponse(access_token=token, user_type="admin", user_id=admin_dict["id"])
+    body = TokenResponse(access_token=token, user_type="admin", user_id=admin_dict["id"])
+    response = JSONResponse(content=body.model_dump())
+    _set_auth_cookies(response, admin_dict["id"], "admin")
+    return response
 
 
 @router.post("/token/refresh", response_model=TokenResponse)
@@ -288,7 +334,9 @@ async def logout(request: Request, current_user: dict = Depends(get_current_user
             from datetime import datetime as dt
             exp = dt.fromtimestamp(exp, tz=timezone.utc).isoformat()
         blacklist_token(jti, current_user["sub"], str(exp))
-    return {"message": "Logged out successfully"}
+    response = JSONResponse(content={"message": "Logged out successfully"})
+    _clear_auth_cookies(response)
+    return response
 
 
 # ── Pre-Notification Endpoints ──────────────────────────────────────────────
@@ -330,11 +378,55 @@ async def get_ready_pre_notifications(request: Request, current_user: dict = Dep
 
 
 def _extract_token(request: Request) -> str | None:
-    """Extract JWT from request headers."""
+    """Extract JWT from request headers or cookies."""
     x_auth = request.headers.get("X-Auth-Token")
     if x_auth:
         return x_auth
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         return auth_header[7:]
-    return None
+    # Fall back to refresh cookie
+    return request.cookies.get(REFRESH_COOKIE_NAME)
+
+
+# ── CSRF Token Endpoint ─────────────────────────────────────────────────────
+
+@router.get("/csrf-token")
+async def get_csrf_token():
+    """Return a fresh CSRF token. Frontend should include it as X-CSRF-Token header on mutations."""
+    csrf = generate_csrf_token()
+    response = JSONResponse(content={"csrf_token": csrf})
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=csrf,
+        httponly=False,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=86400,
+        path="/",
+        domain=COOKIE_DOMAIN,
+    )
+    return response
+
+
+# ── Token Refresh via Cookie ──────────────────────────────────────────────
+
+@router.post("/token/refresh-cookie")
+async def refresh_token_cookie(request: Request):
+    """Issue a new short-lived access token using the httpOnly refresh cookie."""
+    refresh = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not refresh:
+        raise HTTPException(status_code=401, detail="No refresh cookie")
+    payload = decode_token(refresh)
+    if payload.get("token_type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    jti = str(payload.get("jti", ""))
+    if is_token_blacklisted(jti):
+        raise HTTPException(status_code=401, detail="Refresh token revoked")
+    user_id = payload["sub"]
+    user_type = payload["type"]
+    new_access = create_access_token(user_id, user_type)
+    body = TokenResponse(access_token=new_access, user_type=user_type, user_id=user_id)
+    response = JSONResponse(content=body.model_dump())
+    _set_auth_cookies(response, user_id, user_type)
+    return response

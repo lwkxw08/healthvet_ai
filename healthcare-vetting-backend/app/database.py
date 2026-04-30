@@ -1060,6 +1060,26 @@ def migrate_db():
              "System Administrator", "super_admin"),
         )
 
+    # ── Audit trail immutability: prevent UPDATE/DELETE on audit_trail ────
+    # Uses a PostgreSQL trigger to enforce append-only semantics.
+    cursor.execute("""
+        CREATE OR REPLACE FUNCTION audit_trail_immutable()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            RAISE EXCEPTION 'audit_trail is append-only: % operations are not allowed', TG_OP;
+            RETURN NULL;
+        END;
+        $$ LANGUAGE plpgsql;
+    """)
+    cursor.execute("""
+        DROP TRIGGER IF EXISTS trg_audit_trail_immutable ON audit_trail;
+    """)
+    cursor.execute("""
+        CREATE TRIGGER trg_audit_trail_immutable
+        BEFORE UPDATE OR DELETE ON audit_trail
+        FOR EACH ROW EXECUTE FUNCTION audit_trail_immutable();
+    """)
+
     conn.commit()
     _return_connection(conn)
 

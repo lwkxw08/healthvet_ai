@@ -4,8 +4,10 @@ import io
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from fastapi import Request as _Request
 from app.database import get_db
 from app.utils.auth import get_current_user, generate_id, hash_password
+from app.middleware.rate_limiter import limiter
 
 router = APIRouter(prefix="/api/agencies", tags=["Bulk Import"])
 
@@ -16,7 +18,8 @@ class BulkImportRequest(BaseModel):
 
 
 @router.post("/bulk-import")
-async def bulk_import_candidates(data: BulkImportRequest, current_user: dict = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def bulk_import_candidates(request: _Request, data: BulkImportRequest, current_user: dict = Depends(get_current_user)):
     """Import multiple candidates from CSV data.
     Expected CSV columns: email, first_name, last_name, phone (optional), profession (optional)
     """

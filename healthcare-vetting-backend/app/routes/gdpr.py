@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.database import get_db
+from app.middleware.rate_limiter import limiter
 from app.utils.auth import (
     generate_id,
     get_current_admin,
@@ -63,6 +64,7 @@ class RetentionPolicyRecord(BaseModel):
 # ── Subject Access Request (Data Export) ────────────────────────────────────
 
 @router.post("/data-export")
+@limiter.limit("3/minute")
 async def request_data_export(
     request: Request,
     data: DataExportRequest,

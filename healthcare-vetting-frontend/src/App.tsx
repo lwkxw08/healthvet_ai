@@ -1,9 +1,12 @@
+import { Suspense, lazy } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import LoginPage from "./pages/LoginPage";
-import CandidateOnboarding from "./pages/CandidateOnboarding";
-import AgencyDashboard from "./pages/AgencyDashboard";
-import AdminPanel from "./pages/AdminPanel";
-import VerificationPortal from "./pages/VerificationPortal";
+
+// Code-split large page bundles — each loads only when needed
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const CandidateOnboarding = lazy(() => import("./pages/CandidateOnboarding"));
+const AgencyDashboard = lazy(() => import("./pages/AgencyDashboard"));
+const AdminPanel = lazy(() => import("./pages/AdminPanel"));
+const VerificationPortal = lazy(() => import("./pages/VerificationPortal"));
 
 function getInviteCodeFromURL(): string | null {
   const params = new URLSearchParams(window.location.search);
@@ -13,6 +16,12 @@ function getInviteCodeFromURL(): string | null {
 function isVerifyRoute(): boolean {
   return window.location.pathname === "/verify" || window.location.pathname.startsWith("/verify/");
 }
+
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+  </div>
+);
 
 function AppContent() {
   const { isAuthenticated, userType } = useAuth();
@@ -42,7 +51,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <Suspense fallback={<LoadingFallback />}>
+        <AppContent />
+      </Suspense>
     </AuthProvider>
   );
 }

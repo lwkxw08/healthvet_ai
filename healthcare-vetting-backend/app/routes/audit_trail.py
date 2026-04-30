@@ -84,3 +84,65 @@ async def get_retention_report(user=Depends(get_current_admin)):
     """Get retention policy enforcement report (admin only)."""
     from app.services.audit_trail import AuditTrailService
     return AuditTrailService.get_retention_report()
+
+
+# ── Quarterly Signed Export (Enterprise Compliance) ─────────────────────────
+
+@router.get("/export/quarterly/csv")
+async def export_quarterly_csv(
+    quarter_start: str,
+    quarter_end: str,
+    agency_id: str = None,
+    user=Depends(get_current_admin),
+):
+    """Export quarterly audit trail as signed CSV with integrity proof (admin only).
+    Quarter dates in ISO format, e.g. 2026-01-01T00:00:00 to 2026-04-01T00:00:00."""
+    from app.services.audit_trail import AuditTrailService
+    export = AuditTrailService.generate_quarterly_export(quarter_start, quarter_end, agency_id)
+    csv_bytes = export["csv_bytes"]
+    proof = export["integrity_proof"]
+
+    filename = f"audit_export_{quarter_start[:10]}_{quarter_end[:10]}.csv"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-Export-Hash-SHA256": proof["export_hash_sha256"],
+        "X-Chain-First-Hash": proof["first_chain_hash"][:32],
+        "X-Chain-Last-Hash": proof["last_chain_hash"][:32],
+        "X-Record-Count": str(proof["record_count"]),
+    }
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv",
+        headers=headers,
+    )
+
+
+@router.get("/export/quarterly/pdf")
+async def export_quarterly_pdf(
+    quarter_start: str,
+    quarter_end: str,
+    agency_id: str = None,
+    user=Depends(get_current_admin),
+):
+    """Export quarterly audit integrity proof as PDF (admin only)."""
+    from app.services.audit_trail import AuditTrailService
+    pdf_bytes = AuditTrailService.generate_quarterly_pdf(quarter_start, quarter_end, agency_id)
+    filename = f"audit_proof_{quarter_start[:10]}_{quarter_end[:10]}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export/quarterly/proof")
+async def get_quarterly_proof(
+    quarter_start: str,
+    quarter_end: str,
+    agency_id: str = None,
+    user=Depends(get_current_admin),
+):
+    """Get the integrity proof JSON for a quarterly export (admin only)."""
+    from app.services.audit_trail import AuditTrailService
+    export = AuditTrailService.generate_quarterly_export(quarter_start, quarter_end, agency_id)
+    return export["integrity_proof"]

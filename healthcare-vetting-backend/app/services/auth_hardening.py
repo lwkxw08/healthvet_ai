@@ -18,7 +18,7 @@ PASSWORD_RESET_TOKEN_EXPIRY_HOURS = 1
 # ── Account Lockout ─────────────────────────────────────────────────────────
 
 def record_login_attempt(email: str, user_type: str, ip_address: str, success: bool) -> None:
-    """Record a login attempt and update the lockout counter on the user row."""
+    """Record a login attempt, update the lockout counter, and write to the audit trail."""
     now = datetime.now(timezone.utc).isoformat()
     with get_db() as db:
         db.execute(
@@ -40,6 +40,22 @@ def record_login_attempt(email: str, user_type: str, ip_address: str, success: b
             if row and row["failed_login_attempts"] >= MAX_FAILED_ATTEMPTS:
                 lock_until = (datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_DURATION_MINUTES)).isoformat()
                 db.execute(f"UPDATE {table} SET locked_until=%s WHERE email=%s", (lock_until, email))
+                _write_audit_entry(db, email, user_type, ip_address, "account_locked", now)
+            else:
+                _write_audit_entry(db, email, user_type, ip_address, "login_failed", now)
+
+
+def _write_audit_entry(db, email: str, user_type: str, ip_address: str, action: str, timestamp: str) -> None:
+    """Write a login-related event to the audit_trail table."""
+    try:
+        db.execute(
+            """INSERT INTO audit_trail (id, action, entity_type, entity_id, actor, details, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (generate_id(), action, "auth", email, f"{user_type}:{email}",
+             f'{{"ip":"{ip_address}","user_type":"{user_type}"}}', timestamp),
+        )
+    except Exception:
+        pass  # Don't fail login flow if audit write fails
 
 
 def is_account_locked(email: str, user_type: str) -> bool:

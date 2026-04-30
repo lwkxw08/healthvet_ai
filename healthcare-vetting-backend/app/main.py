@@ -60,6 +60,7 @@ from app.routes import websocket as ws_routes
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.agency_scope import AgencyScopeMiddleware
+from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
 
 app = FastAPI(
@@ -70,6 +71,9 @@ app = FastAPI(
 
 # ── Security Headers Middleware ──────────────────────────────────────────────
 app.add_middleware(SecurityHeadersMiddleware)
+
+# ── CSRF Protection (cookie-authenticated mutations) ────────────────────────
+app.add_middleware(CSRFMiddleware)
 
 # ── Agency Scope / Multi-Tenancy Middleware ──────────────────────────────────
 app.add_middleware(AgencyScopeMiddleware)
@@ -92,7 +96,7 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Auth-Token"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Auth-Token", "X-CSRF-Token"],
     max_age=600,
 )
 

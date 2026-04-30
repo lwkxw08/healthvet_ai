@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from app.database import get_db
 from app.utils.auth import get_current_user, generate_id
+from app.middleware.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,8 @@ def _run_scrape_in_background(job_id: str, source: str, config: dict, industry: 
 # ── Scrape Job Endpoints ─────────────────────────────────────────────
 
 @router.post("/scrape")
-async def trigger_scrape(data: ScrapeJobRequest, current_user: dict = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def trigger_scrape(request, data: ScrapeJobRequest, current_user: dict = Depends(get_current_user)):
     """Trigger a new scrape job. Runs in background."""
     if current_user.get("role") != "admin" and current_user.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
@@ -453,7 +455,9 @@ async def bulk_delete_leads(data: BulkDeleteRequest, current_user: dict = Depend
 
 
 @router.post("/leads/export")
+@limiter.limit("10/minute")
 async def export_leads(
+    request,
     source: Optional[str] = None,
     industry: Optional[str] = None,
     status: Optional[str] = None,
@@ -567,7 +571,8 @@ async def export_leads(
 # ── Professional Registration Scraping ────────────────────────────────
 
 @router.post("/registration-scrape")
-async def scrape_professional_registration(data: RegistrationScrapeRequest, current_user: dict = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def scrape_professional_registration(request, data: RegistrationScrapeRequest, current_user: dict = Depends(get_current_user)):
     """
     Scrape a professional register (NMC, GMC, HCPC, GPhC) for a candidate's registration.
     Returns real-time scraped data from the public register.
