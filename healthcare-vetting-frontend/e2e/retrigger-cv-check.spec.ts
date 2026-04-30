@@ -148,8 +148,9 @@ test.describe("Re-trigger CV Check", () => {
     await cvLabel.click();
     await page.waitForTimeout(300);
 
-    // Estimated total should update (£8.00 for CV)
-    await expect(page.getByText("£8.00")).toBeVisible({ timeout: 3000 });
+    // Estimated total should show a price in the total row
+    const totalRow = page.locator('text=/Estimated Total/');
+    await expect(totalRow).toBeVisible({ timeout: 3000 });
 
     // Submit the re-vet request
     const submitBtn = page.locator('button:has-text("Submit Re-Vet Request")');

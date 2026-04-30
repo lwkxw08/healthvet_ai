@@ -19,10 +19,16 @@ test.describe("Training Matrix Edit", () => {
   let healthcareTemplateId: string;
 
   test.beforeAll(async ({ request }) => {
-    // Login as admin
-    const adminResp = await request.post(`${API_URL}/api/auth/admin/login`, {
+    // Login as admin (retry if rate-limited by prior test suites)
+    let adminResp = await request.post(`${API_URL}/api/auth/admin/login`, {
       data: { email: "admin@viperai.io", password: "Password123!" },
     });
+    if (!adminResp.ok()) {
+      await new Promise((r) => setTimeout(r, 5000));
+      adminResp = await request.post(`${API_URL}/api/auth/admin/login`, {
+        data: { email: "admin@viperai.io", password: "Password123!" },
+      });
+    }
     expect(adminResp.ok()).toBeTruthy();
     const adminBody = await adminResp.json();
     adminToken = adminBody.access_token;
