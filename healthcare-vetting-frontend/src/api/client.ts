@@ -326,6 +326,8 @@ export const adminExtendedApi = {
     apiRequest<Record<string, unknown>>(`/api/admin/agencies/${agencyId}`, { method: "DELETE", token }),
   deleteCandidate: (token: string, candidateId: string) =>
     apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}`, { method: "DELETE", token }),
+  purgeTestAccounts: (token: string) =>
+    apiRequest<{ status: string; candidates_deleted: number; agencies_deleted: number }>("/api/admin/purge-test-accounts", { method: "POST", token }),
 
   // Alert settings
   getAlertSettings: (token: string) =>

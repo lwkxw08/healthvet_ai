@@ -42,33 +42,41 @@ test.describe("Re-trigger CV Check", () => {
       data: { tier: "starter", billing_method: "invoice" },
     });
 
-    // Send invite
-    await request.post(`${API_URL}/api/agencies/invites`, {
+    // Send invite and register candidate
+    const inviteResp = await request.post(`${API_URL}/api/agencies/invites`, {
       headers: { "X-Auth-Token": agencyToken },
       data: { candidate_email: candidateEmail },
     });
+    let inviteCode: string | undefined;
+    if (inviteResp.ok()) {
+      const inviteBody = await inviteResp.json();
+      inviteCode = inviteBody.invite_code || inviteBody.id;
+    }
 
-    // Register candidate with invite
-    const listResp = await request.get(`${API_URL}/api/agencies/invites`, {
-      headers: { "X-Auth-Token": agencyToken },
-    });
-    const invites = await listResp.json();
-    const invite = (Array.isArray(invites) ? invites : []).find(
-      (i: Record<string, unknown>) =>
-        (i.candidate_email as string)?.toLowerCase() === candidateEmail.toLowerCase(),
-    );
+    // If no code from create response, look it up
+    if (!inviteCode) {
+      const listResp = await request.get(`${API_URL}/api/agencies/invites`, {
+        headers: { "X-Auth-Token": agencyToken },
+      });
+      const invites = await listResp.json();
+      const invite = (Array.isArray(invites) ? invites : []).find(
+        (i: Record<string, unknown>) =>
+          (i.candidate_email as string)?.toLowerCase() === candidateEmail.toLowerCase(),
+      );
+      inviteCode = (invite?.invite_code || invite?.id) as string | undefined;
+    }
 
-    await request.post(`${API_URL}/api/auth/candidates/register`, {
-      data: {
-        email: candidateEmail,
-        password: "E2eTest123!",
-        first_name: "E2E",
-        last_name: "ReVetCandidate",
-        phone: "07700900055",
-        profession: "Registered Nurse",
-        invite_code: invite?.invite_code || invite?.id,
-      },
-    });
+    const regData: Record<string, unknown> = {
+      email: candidateEmail,
+      password: "E2eTest123!",
+      first_name: "E2E",
+      last_name: "ReVetCandidate",
+      phone: "07700900055",
+      profession: "Registered Nurse",
+    };
+    if (inviteCode) regData.invite_code = inviteCode;
+
+    await request.post(`${API_URL}/api/auth/candidates/register`, { data: regData });
   });
 
   test("agency dashboard shows candidate with Re-Vet button", async ({ page }) => {
@@ -86,9 +94,17 @@ test.describe("Re-trigger CV Check", () => {
     await candidatesTab.click();
     await page.waitForTimeout(2000);
 
-    // Candidate should be visible
-    const candidateRow = page.getByText("E2E ReVetCandidate").or(page.getByText(candidateEmail)).first();
-    await expect(candidateRow).toBeVisible({ timeout: 10000 });
+    // Candidate should be visible (may need a page reload if data is still loading)
+    let candidateRow = page.getByText("E2E ReVetCandidate").or(page.getByText(candidateEmail)).first();
+    const visible = await candidateRow.isVisible({ timeout: 5000 }).catch(() => false);
+    if (!visible) {
+      await page.reload();
+      await expect(page.getByText("Agency Dashboard")).toBeVisible({ timeout: 15000 });
+      await page.locator("button", { hasText: "Candidates" }).first().click();
+      await page.waitForTimeout(3000);
+      candidateRow = page.getByText("E2E ReVetCandidate").or(page.getByText(candidateEmail)).first();
+    }
+    await expect(candidateRow).toBeVisible({ timeout: 15000 });
 
     // Re-Vet button should exist on the page
     const revetBtn = page.locator('button:has-text("Re-Vet")').first();

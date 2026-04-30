@@ -2497,6 +2497,27 @@ export default function AdminPanel() {
               </div>
             </div>
 
+            {/* Purge E2E Test Data */}
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-amber-300 flex items-center gap-2"><Trash2 size={16} /> Purge E2E Test Data</h3>
+                <p className="text-xs text-amber-200/70 mt-1">Delete all candidates and agencies with @test.viperai emails created by automated tests.</p>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!token || !confirm("Delete ALL @test.viperai accounts? This cannot be undone.")) return;
+                  try {
+                    const result = await adminExtendedApi.purgeTestAccounts(token);
+                    showMessage(`Purged ${result.candidates_deleted} test candidates and ${result.agencies_deleted} test agencies`);
+                    await loadData();
+                  } catch (err) { showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`); }
+                }}
+                className="bg-amber-600 hover:bg-amber-700 text-white text-xs px-4 py-2 rounded-lg font-medium whitespace-nowrap"
+              >
+                Purge Test Accounts
+              </button>
+            </div>
+
             {/* Existing Candidates List with Edit/Delete */}
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
               <div className="p-4 border-b border-slate-700"><h3 className="text-md font-semibold text-white">All Candidates</h3></div>
