@@ -11,12 +11,6 @@ import { test, expect } from "@playwright/test";
 const suffix = Math.random().toString(36).slice(2, 8);
 const candidatePassword = "E2eTest123!";
 
-/** Get the API base URL — the backend that serves /api routes. */
-function apiBase(page?: { url: () => string }): string {
-  // Prefer env var; the Vite frontend proxies /api to the backend on the same origin
-  return process.env.BASE_URL || "http://localhost:5173";
-}
-
 test.describe("Candidate Onboarding → Vetting Pass", () => {
 
   test("register a new candidate via the login page", async ({ page }) => {
@@ -65,9 +59,8 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
   });
 
   test("fill personal details section", async ({ page, request }) => {
-    const base = apiBase();
-
-    const resp = await request.post(`${base}/api/auth/candidates/register`, {
+    // Use relative URL — Playwright's request fixture prepends baseURL from config
+    const resp = await request.post("/api/auth/candidates/register", {
       data: {
         email: `e2e-pd-${suffix}@test.viperai`,
         password: candidatePassword,
@@ -118,9 +111,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
   });
 
   test("navigate through all onboarding sections", async ({ page, request }) => {
-    const base = apiBase();
-
-    const resp = await request.post(`${base}/api/auth/candidates/register`, {
+    const resp = await request.post("/api/auth/candidates/register", {
       data: {
         email: `e2e-nav-${suffix}@test.viperai`,
         password: candidatePassword,
@@ -160,10 +151,8 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
   });
 
   test("submit onboarding and check compliance status", async ({ page, request }) => {
-    const base = apiBase();
-
     // Register candidate
-    const regResp = await request.post(`${base}/api/auth/candidates/register`, {
+    const regResp = await request.post("/api/auth/candidates/register", {
       data: {
         email: `e2e-submit-${suffix}@test.viperai`,
         password: candidatePassword,
@@ -178,7 +167,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
     const candidateToken = auth.access_token;
 
     // Create a submission via API
-    const subResp = await request.post(`${base}/api/submissions`, {
+    const subResp = await request.post("/api/submissions", {
       headers: { "X-Auth-Token": candidateToken },
       data: {},
     });
@@ -187,7 +176,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
 
     if (submissionId) {
       // Save section data for personal details
-      await request.put(`${base}/api/submissions/${submissionId}/sections/personal`, {
+      await request.put(`/api/submissions/${submissionId}/sections/personal`, {
         headers: { "X-Auth-Token": candidateToken },
         data: {
           first_name: "E2E",
@@ -199,7 +188,7 @@ test.describe("Candidate Onboarding → Vetting Pass", () => {
       });
 
       // Submit the application
-      await request.post(`${base}/api/submissions/${submissionId}/submit`, {
+      await request.post(`/api/submissions/${submissionId}/submit`, {
         headers: { "X-Auth-Token": candidateToken },
       });
     }
