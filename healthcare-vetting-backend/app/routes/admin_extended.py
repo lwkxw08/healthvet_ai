@@ -346,12 +346,16 @@ async def admin_delete_candidate(candidate_id: str, current_user: dict = Depends
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}"
-        # Remove all related data
+        # Remove all related data (best-effort per table)
         for tbl in ["identity_checks", "right_to_work_checks", "dbs_checks", "cv_analyses",
                      "registration_checks", "references_", "compliance_records", "monitoring_alerts",
-                     "employment_history", "employment_verifications", "training_certificates", "fraud_flags"]:
-            db.execute(f"DELETE FROM {tbl} WHERE candidate_id=%s", (candidate_id,))
-        db.execute("DELETE FROM agency_candidates WHERE candidate_id=%s", (candidate_id,))
+                     "employment_history", "employment_verifications", "training_certificates", "fraud_flags",
+                     "candidate_draft_data", "candidate_documents", "submissions", "consent_logs",
+                     "gdpr_erasure_requests", "agency_candidates"]:
+            try:
+                db.execute(f"DELETE FROM {tbl} WHERE candidate_id=%s", (candidate_id,))
+            except Exception:
+                pass
         db.execute("DELETE FROM candidates WHERE id=%s", (candidate_id,))
 
         log_id = generate_id()
@@ -368,40 +372,56 @@ async def admin_purge_test_accounts(current_user: dict = Depends(get_current_use
     require_admin(current_user)
     now = datetime.now(timezone.utc).isoformat()
 
+    _CANDIDATE_TABLES = [
+        "identity_checks", "right_to_work_checks", "dbs_checks", "cv_analyses",
+        "registration_checks", "references_", "compliance_records", "monitoring_alerts",
+        "employment_history", "employment_verifications", "training_certificates", "fraud_flags",
+        "candidate_draft_data", "candidate_documents", "submissions", "consent_logs",
+        "gdpr_erasure_requests", "agency_candidates",
+    ]
+    _AGENCY_TABLES = [
+        "agency_invites", "agency_candidates", "invoices", "agency_sub_accounts",
+    ]
+
     with get_db() as db:
         # Delete test candidates
-        db.execute("SELECT id, first_name, last_name, email FROM candidates WHERE email LIKE %s", ("%@test.viperai",))
+        db.execute("SELECT id, email FROM candidates WHERE email LIKE %s", ("%@test.viperai",))
         test_candidates = db.fetchall()
         for cand in test_candidates:
             c = dict(cand)
-            for tbl in ["identity_checks", "right_to_work_checks", "dbs_checks", "cv_analyses",
-                         "registration_checks", "references_", "compliance_records", "monitoring_alerts",
-                         "employment_history", "employment_verifications", "training_certificates", "fraud_flags",
-                         "candidate_draft_data", "candidate_documents", "submissions"]:
+            for tbl in _CANDIDATE_TABLES:
                 try:
                     db.execute(f"DELETE FROM {tbl} WHERE candidate_id=%s", (c["id"],))
                 except Exception:
                     pass
-            db.execute("DELETE FROM agency_candidates WHERE candidate_id=%s", (c["id"],))
-            db.execute("DELETE FROM candidates WHERE id=%s", (c["id"],))
+            try:
+                db.execute("DELETE FROM candidates WHERE id=%s", (c["id"],))
+            except Exception:
+                pass
 
         # Delete test agencies
-        db.execute("SELECT id, name, email FROM agencies WHERE email LIKE %s", ("%@test.viperai",))
+        db.execute("SELECT id, email FROM agencies WHERE email LIKE %s", ("%@test.viperai",))
         test_agencies = db.fetchall()
         for ag in test_agencies:
             a = dict(ag)
-            for tbl in ["agency_invites", "agency_candidates", "invoices", "agency_sub_accounts"]:
+            for tbl in _AGENCY_TABLES:
                 try:
                     db.execute(f"DELETE FROM {tbl} WHERE agency_id=%s", (a["id"],))
                 except Exception:
                     pass
-            db.execute("DELETE FROM agencies WHERE id=%s", (a["id"],))
+            try:
+                db.execute("DELETE FROM agencies WHERE id=%s", (a["id"],))
+            except Exception:
+                pass
 
-        log_id = generate_id()
-        db.execute(
-            "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            (log_id, "system", "test-purge", "admin_purged_test_accounts", current_user["sub"],
-             f"Purged {len(test_candidates)} candidates and {len(test_agencies)} agencies with @test.viperai emails", now))
+        try:
+            log_id = generate_id()
+            db.execute(
+                "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (log_id, "system", "test-purge", "admin_purged_test_accounts", current_user["sub"],
+                 f"Purged {len(test_candidates)} candidates and {len(test_agencies)} agencies with @test.viperai emails", now))
+        except Exception:
+            pass
 
         return {
             "status": "purged",
