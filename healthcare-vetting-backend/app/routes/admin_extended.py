@@ -346,16 +346,19 @@ async def admin_delete_candidate(candidate_id: str, current_user: dict = Depends
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         cand_name = f"{dict(cand)['first_name']} {dict(cand)['last_name']}"
-        # Remove all related data (best-effort per table)
+        # Remove all related data (best-effort per table, using SAVEPOINTs)
         for tbl in ["identity_checks", "right_to_work_checks", "dbs_checks", "cv_analyses",
                      "registration_checks", "references_", "compliance_records", "monitoring_alerts",
                      "employment_history", "employment_verifications", "training_certificates", "fraud_flags",
                      "candidate_draft_data", "candidate_documents", "submissions", "consent_logs",
                      "gdpr_erasure_requests", "agency_candidates"]:
+            sp = f"sp_{tbl}"
             try:
+                db.execute(f"SAVEPOINT {sp}")
                 db.execute(f"DELETE FROM {tbl} WHERE candidate_id=%s", (candidate_id,))
+                db.execute(f"RELEASE SAVEPOINT {sp}")
             except Exception:
-                pass
+                db.execute(f"ROLLBACK TO SAVEPOINT {sp}")
         db.execute("DELETE FROM candidates WHERE id=%s", (candidate_id,))
 
         log_id = generate_id()
@@ -383,45 +386,48 @@ async def admin_purge_test_accounts(current_user: dict = Depends(get_current_use
         "agency_invites", "agency_candidates", "invoices", "agency_sub_accounts",
     ]
 
+    def _safe_delete(db, table: str, col: str, val: str):
+        """Delete rows from a table, using a SAVEPOINT so that errors from
+        missing tables/columns don't abort the whole transaction."""
+        sp = f"sp_{table}_{val[:8]}"
+        try:
+            db.execute(f"SAVEPOINT {sp}")
+            db.execute(f"DELETE FROM {table} WHERE {col}=%s", (val,))
+            db.execute(f"RELEASE SAVEPOINT {sp}")
+        except Exception:
+            db.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+
     with get_db() as db:
         # Delete test candidates
         db.execute("SELECT id, email FROM candidates WHERE email LIKE %s", ("%@test.viperai",))
         test_candidates = db.fetchall()
         for cand in test_candidates:
-            c = dict(cand)
+            cid = dict(cand)["id"]
             for tbl in _CANDIDATE_TABLES:
-                try:
-                    db.execute(f"DELETE FROM {tbl} WHERE candidate_id=%s", (c["id"],))
-                except Exception:
-                    pass
-            try:
-                db.execute("DELETE FROM candidates WHERE id=%s", (c["id"],))
-            except Exception:
-                pass
+                _safe_delete(db, tbl, "candidate_id", cid)
+            _safe_delete(db, "candidates", "id", cid)
 
         # Delete test agencies
         db.execute("SELECT id, email FROM agencies WHERE email LIKE %s", ("%@test.viperai",))
         test_agencies = db.fetchall()
         for ag in test_agencies:
-            a = dict(ag)
+            aid = dict(ag)["id"]
             for tbl in _AGENCY_TABLES:
-                try:
-                    db.execute(f"DELETE FROM {tbl} WHERE agency_id=%s", (a["id"],))
-                except Exception:
-                    pass
-            try:
-                db.execute("DELETE FROM agencies WHERE id=%s", (a["id"],))
-            except Exception:
-                pass
+                _safe_delete(db, tbl, "agency_id", aid)
+            _safe_delete(db, "agencies", "id", aid)
 
+        # Audit log (best-effort)
+        sp = "sp_audit"
         try:
+            db.execute(f"SAVEPOINT {sp}")
             log_id = generate_id()
             db.execute(
                 "INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (log_id, "system", "test-purge", "admin_purged_test_accounts", current_user["sub"],
                  f"Purged {len(test_candidates)} candidates and {len(test_agencies)} agencies with @test.viperai emails", now))
+            db.execute(f"RELEASE SAVEPOINT {sp}")
         except Exception:
-            pass
+            db.execute(f"ROLLBACK TO SAVEPOINT {sp}")
 
         return {
             "status": "purged",
