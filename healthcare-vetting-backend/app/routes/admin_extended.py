@@ -350,8 +350,10 @@ async def admin_delete_candidate(candidate_id: str, current_user: dict = Depends
         for tbl in ["identity_checks", "right_to_work_checks", "dbs_checks", "cv_analyses",
                      "registration_checks", "references_", "compliance_records", "monitoring_alerts",
                      "employment_history", "employment_verifications", "training_certificates", "fraud_flags",
-                     "candidate_draft_data", "candidate_documents", "submissions", "consent_logs",
-                     "gdpr_erasure_requests", "agency_candidates"]:
+                     "candidate_draft_data", "candidate_submissions", "consent_logs",
+                     "gdpr_erasure_requests", "candidate_pre_notifications", "imposter_declarations",
+                     "registration_scrape_results", "revet_requests", "trustid_checks",
+                     "agency_candidates", "agency_invites"]:
             sp = f"sp_{tbl}"
             try:
                 db.execute(f"SAVEPOINT {sp}")
@@ -379,8 +381,10 @@ async def admin_purge_test_accounts(current_user: dict = Depends(get_current_use
         "identity_checks", "right_to_work_checks", "dbs_checks", "cv_analyses",
         "registration_checks", "references_", "compliance_records", "monitoring_alerts",
         "employment_history", "employment_verifications", "training_certificates", "fraud_flags",
-        "candidate_draft_data", "candidate_documents", "submissions", "consent_logs",
-        "gdpr_erasure_requests", "agency_candidates",
+        "candidate_draft_data", "candidate_submissions", "consent_logs",
+        "gdpr_erasure_requests", "candidate_pre_notifications", "imposter_declarations",
+        "registration_scrape_results", "revet_requests", "trustid_checks",
+        "agency_candidates", "agency_invites",
     ]
     _AGENCY_TABLES = [
         "agency_invites", "agency_candidates", "invoices", "agency_sub_accounts",
