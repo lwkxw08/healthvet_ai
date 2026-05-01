@@ -591,7 +591,7 @@ export const reportsApi = {
   },
   downloadBulkCandidateAudit: (token: string, candidateIds: string[]) => {
     const headers: Record<string, string> = { "X-Auth-Token": token, "Content-Type": "application/json" };
-    return fetch(`${API_URL}/api/reports/audit/bulk-candidates`, { method: "POST", headers, body: JSON.stringify({ candidate_ids: candidateIds }) });
+    return fetch(`${API_URL}/api/audit/bulk-candidates`, { method: "POST", headers, body: JSON.stringify({ candidate_ids: candidateIds }) });
   },
   downloadFinancialReport: (token: string, period?: string, dateFrom?: string, dateTo?: string) => {
     const qs = new URLSearchParams();

@@ -418,12 +418,12 @@ export default function AgencyDashboard() {
     setDownloadingAudit(true);
     try {
       const resp = await reportsApi.downloadAgencyAudit(token, "me");
-      if (!resp.ok) throw new Error("Failed");
+      if (!resp.ok) { const e = await resp.json().catch(() => null); throw new Error(e?.detail || "Failed to generate audit"); }
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = "agency_audit_pack.pdf"; a.click();
       URL.revokeObjectURL(url);
-    } catch (err) { console.error("Download failed", err); }
+    } catch (err) { alert(err instanceof Error ? err.message : "Download failed"); }
     finally { setDownloadingAudit(false); }
   };
 
@@ -432,12 +432,12 @@ export default function AgencyDashboard() {
     setDownloadingSingleAudit(candidateId);
     try {
       const resp = await reportsApi.downloadCandidateAudit(token, candidateId);
-      if (!resp.ok) throw new Error("Failed");
+      if (!resp.ok) { const e = await resp.json().catch(() => null); throw new Error(e?.detail || "Failed to generate audit"); }
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = `candidate_audit_${candidateId}.pdf`; a.click();
       URL.revokeObjectURL(url);
-    } catch (err) { console.error("Download failed", err); }
+    } catch (err) { alert(err instanceof Error ? err.message : "Download failed"); }
     finally { setDownloadingSingleAudit(""); }
   };
 
@@ -446,12 +446,12 @@ export default function AgencyDashboard() {
     setDownloadingBulkAudit(true);
     try {
       const resp = await reportsApi.downloadBulkCandidateAudit(token, selectedAuditCandidates);
-      if (!resp.ok) throw new Error("Failed");
+      if (!resp.ok) { const e = await resp.json().catch(() => null); throw new Error(e?.detail || "Failed to generate audit"); }
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = "bulk_candidate_audit.pdf"; a.click();
       URL.revokeObjectURL(url);
-    } catch (err) { console.error("Download failed", err); }
+    } catch (err) { alert(err instanceof Error ? err.message : "Download failed"); }
     finally { setDownloadingBulkAudit(false); }
   };
 
