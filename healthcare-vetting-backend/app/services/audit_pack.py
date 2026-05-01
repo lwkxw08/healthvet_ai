@@ -17,6 +17,19 @@ from reportlab.platypus import (
 from app.database import get_db
 
 
+def _s(val, default="N/A"):
+    """Return val as a string, or default if val is None."""
+    return str(val) if val is not None else default
+
+
+def _n(val, default=0):
+    """Return val as a number, or default if val is None."""
+    try:
+        return float(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
 class AuditPackService:
     """Generate CQC-ready audit packs."""
 
@@ -128,15 +141,15 @@ class AuditPackService:
         elements.append(Spacer(1, 10*mm))
 
         # Candidate info table
-        candidate_name = f"{c.get('first_name', '')} {c.get('last_name', '')}"
+        candidate_name = f"{_s(c.get('first_name'), '')} {_s(c.get('last_name'), '')}"
         comp = dict(compliance) if compliance else {}
         info_data = [
             ["Candidate Name:", candidate_name],
-            ["Email:", c.get("email", "N/A")],
-            ["Profession:", c.get("profession", "N/A")],
-            ["Registration:", f"{c.get('registration_body', 'N/A')} - {c.get('registration_number', 'N/A')}"],
-            ["Compliance Score:", f"{comp.get('score', 0)}%"],
-            ["Compliance Status:", comp.get("overall_status", "incomplete").upper()],
+            ["Email:", _s(c.get("email"))],
+            ["Profession:", _s(c.get("profession"))],
+            ["Registration:", f"{_s(c.get('registration_body'))} - {_s(c.get('registration_number'))}"],
+            ["Compliance Score:", f"{_n(comp.get('score')):.0f}%"],
+            ["Compliance Status:", _s(comp.get("overall_status"), "incomplete").upper()],
             ["CQC Ready:", "YES" if comp.get("cqc_ready") else "NO"],
             ["Report Generated:", datetime.now(timezone.utc).strftime("%d %B %Y at %H:%M UTC")],
         ]
@@ -160,8 +173,8 @@ class AuditPackService:
                 data = [
                     ["Provider:", cd.get("provider", "N/A")],
                     ["Document Type:", cd.get("document_type", "N/A")],
-                    ["Result:", cd.get("result", "N/A").upper()],
-                    ["Facial Match:", f"{cd.get('facial_match_score', 0):.0f}%"],
+                    ["Result:", _s(cd.get("result")).upper()],
+                    ["Facial Match:", f"{_n(cd.get('facial_match_score')):.0f}%"],
                     ["Liveness:", cd.get("liveness_check", "N/A")],
                     ["Address Verified:", "Yes" if cd.get("address_verified") else "No"],
                     ["Date:", cd.get("started_at", "N/A")],
@@ -217,7 +230,7 @@ class AuditPackService:
                     ["Provider:", cd.get("provider", "N/A")],
                     ["Check Type:", cd.get("check_type", "enhanced")],
                     ["Status:", cd.get("status", "N/A")],
-                    ["Result:", cd.get("result", "N/A").upper()],
+                    ["Result:", _s(cd.get("result")).upper()],
                     ["Certificate No:", cd.get("certificate_number", "N/A")],
                     ["Issue Date:", cd.get("issue_date", "N/A")],
                     ["Update Service:", "Registered" if cd.get("update_service_registered") else "Not Registered"],
@@ -244,7 +257,7 @@ class AuditPackService:
             for check in cv:
                 cd = dict(check)
                 data = [
-                    ["Fraud Risk Score:", f"{cd.get('fraud_risk_score', 0):.1%}"],
+                    ["Fraud Risk Score:", f"{_n(cd.get('fraud_risk_score')):.1%}"],
                     ["Status:", cd.get("status", "N/A")],
                     ["Analysis Date:", cd.get("analysed_at", "N/A")],
                 ]
@@ -340,7 +353,7 @@ class AuditPackService:
                 ref_table_data.append([
                     r.get("referee_name", "N/A"),
                     r.get("referee_organisation", "N/A"),
-                    r.get("status", "N/A").upper(),
+                    _s(r.get("status")).upper(),
                     "Yes" if r.get("domain_verified") else "No",
                     r.get("sent_at", "N/A")[:10] if r.get("sent_at") else "N/A",
                 ])
@@ -373,7 +386,7 @@ class AuditPackService:
                     cd.get("provider", "N/A"),
                     cd.get("issue_date", "N/A"),
                     cd.get("expiry_date", "N/A"),
-                    cd.get("status", "N/A").upper(),
+                    _s(cd.get("status")).upper(),
                 ])
             t = Table(train_data, colWidths=[40*mm, 35*mm, 30*mm, 30*mm, 25*mm])
             t.setStyle(TableStyle([
@@ -400,9 +413,9 @@ class AuditPackService:
             for alert in alerts:
                 ad = dict(alert)
                 alert_data.append([
-                    ad.get("alert_type", "N/A").replace("_", " ").title(),
-                    ad.get("severity", "N/A").upper(),
-                    ad.get("message", "N/A")[:60],
+                    _s(ad.get("alert_type")).replace("_", " ").title(),
+                    _s(ad.get("severity")).upper(),
+                    _s(ad.get("message"))[:60],
                     "Yes" if ad.get("is_resolved") else "No",
                     ad.get("created_at", "N/A")[:10] if ad.get("created_at") else "N/A",
                 ])
@@ -549,10 +562,10 @@ class AuditPackService:
             for cand in candidates:
                 cd = dict(cand)
                 cand_data.append([
-                    f"{cd.get('first_name', '')} {cd.get('last_name', '')}",
-                    cd.get("profession", "N/A"),
-                    f"{cd.get('compliance_score', 0):.0f}%",
-                    cd.get("compliance_status", "incomplete").upper(),
+                    f"{_s(cd.get('first_name'), '')} {_s(cd.get('last_name'), '')}",
+                    _s(cd.get("profession")),
+                    f"{_n(cd.get('compliance_score')):.0f}%",
+                    _s(cd.get("compliance_status"), "incomplete").upper(),
                     "Yes" if cd.get("compliance_status") == "compliant" else "No",
                 ])
             t = Table(cand_data, colWidths=[40*mm, 30*mm, 25*mm, 35*mm, 25*mm])
