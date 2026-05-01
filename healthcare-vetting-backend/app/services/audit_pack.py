@@ -441,28 +441,89 @@ class AuditPackService:
         elements.append(HRFlowable(width="100%", color=colors.lightgrey))
         elements.append(Spacer(1, 3*mm))
         if audit_logs:
-            log_data = [["Action", "Actor", "Details", "Timestamp"]]
-            for log in audit_logs[:50]:  # Last 50 entries
+            def _fmt_action(raw):
+                """Convert snake_case action to readable label."""
+                if not raw:
+                    return "N/A"
+                return str(raw).replace("_", " ").title()
+
+            def _fmt_actor(raw):
+                """Shorten UUIDs and clean up actor names."""
+                if not raw:
+                    return "N/A"
+                s = str(raw)
+                if s == "compliance_engine":
+                    return "System"
+                # Truncate UUIDs (8 chars + ...)
+                import re
+                s = re.sub(
+                    r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                    lambda m: m.group(0)[:8] + '\u2026',
+                    s,
+                )
+                return s
+
+            def _fmt_details(raw):
+                """Parse JSON details into readable key-value summary."""
+                if not raw:
+                    return ""
+                s = str(raw)
+                try:
+                    d = json.loads(s) if isinstance(raw, str) else (raw if isinstance(raw, dict) else {})
+                    if isinstance(d, dict):
+                        parts = []
+                        for k, v in d.items():
+                            if k in ("flags",) and not v:
+                                continue
+                            label = str(k).replace("_", " ").title()
+                            val = str(v)
+                            if len(val) > 30:
+                                val = val[:27] + "..."
+                            parts.append(f"{label}: {val}")
+                        return " | ".join(parts) if parts else s[:60]
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+                return s[:60] + ("..." if len(s) > 60 else "")
+
+            def _fmt_ts(raw):
+                """Format timestamp to readable date/time."""
+                if not raw:
+                    return "N/A"
+                s = str(raw)[:19]  # 2026-04-28T21:56:18
+                try:
+                    dt = datetime.fromisoformat(s)
+                    return dt.strftime("%d %b %Y  %H:%M")
+                except (ValueError, TypeError):
+                    return s
+
+            audit_style = ParagraphStyle('AuditCell', parent=normal_style,
+                                          fontSize=7, leading=9,
+                                          wordWrap='CJK')
+            log_data = [[
+                Paragraph("<b>Action</b>", audit_style),
+                Paragraph("<b>Actor</b>", audit_style),
+                Paragraph("<b>Details</b>", audit_style),
+                Paragraph("<b>Timestamp</b>", audit_style),
+            ]]
+            for log in audit_logs[:50]:
                 ld = dict(log)
-                details = ld.get("details", "")
-                if details and len(details) > 80:
-                    details = details[:77] + "..."
                 log_data.append([
-                    ld.get("action", "N/A"),
-                    ld.get("actor", "N/A"),
-                    details,
-                    ld.get("created_at", "N/A")[:19] if ld.get("created_at") else "N/A",
+                    Paragraph(_fmt_action(ld.get("action")), audit_style),
+                    Paragraph(_fmt_actor(ld.get("actor")), audit_style),
+                    Paragraph(_fmt_details(ld.get("details")), audit_style),
+                    Paragraph(_fmt_ts(ld.get("created_at")), audit_style),
                 ])
-            t = Table(log_data, colWidths=[30*mm, 30*mm, 70*mm, 35*mm])
+            t = Table(log_data, colWidths=[32*mm, 22*mm, 80*mm, 30*mm])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 7),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
             ]))
             elements.append(t)
         else:
