@@ -409,26 +409,35 @@ class AuditPackService:
         elements.append(HRFlowable(width="100%", color=colors.lightgrey))
         elements.append(Spacer(1, 3*mm))
         if alerts:
-            alert_data = [["Type", "Severity", "Message", "Resolved", "Date"]]
+            alert_cell = ParagraphStyle('AlertCell', parent=normal_style,
+                                         fontSize=8, leading=10, wordWrap='CJK')
+            alert_data = [[
+                Paragraph("<b>Type</b>", alert_cell),
+                Paragraph("<b>Severity</b>", alert_cell),
+                Paragraph("<b>Message</b>", alert_cell),
+                Paragraph("<b>Resolved</b>", alert_cell),
+                Paragraph("<b>Date</b>", alert_cell),
+            ]]
             for alert in alerts:
                 ad = dict(alert)
                 alert_data.append([
-                    _s(ad.get("alert_type")).replace("_", " ").title(),
-                    _s(ad.get("severity")).upper(),
-                    _s(ad.get("message"))[:60],
-                    "Yes" if ad.get("is_resolved") else "No",
-                    ad.get("created_at", "N/A")[:10] if ad.get("created_at") else "N/A",
+                    Paragraph(_s(ad.get("alert_type")).replace("_", " ").title(), alert_cell),
+                    Paragraph(_s(ad.get("severity")).upper(), alert_cell),
+                    Paragraph(_s(ad.get("message"))[:80], alert_cell),
+                    Paragraph("Yes" if ad.get("is_resolved") else "No", alert_cell),
+                    Paragraph(str(ad.get("created_at", "N/A"))[:10] if ad.get("created_at") else "N/A", alert_cell),
                 ])
-            t = Table(alert_data, colWidths=[30*mm, 20*mm, 65*mm, 20*mm, 25*mm])
+            t = Table(alert_data, colWidths=[35*mm, 18*mm, 75*mm, 16*mm, 22*mm])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 7),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
             ]))
             elements.append(t)
         else:
@@ -467,23 +476,28 @@ class AuditPackService:
                 """Parse JSON details into readable key-value summary."""
                 if not raw:
                     return ""
+                import re as _re
+                _uuid_re = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
                 s = str(raw)
                 try:
                     d = json.loads(s) if isinstance(raw, str) else (raw if isinstance(raw, dict) else {})
                     if isinstance(d, dict):
+                        skip_keys = {"flags", "compliance_label", "template_checks"}
                         parts = []
                         for k, v in d.items():
-                            if k in ("flags",) and not v:
+                            if k in skip_keys and (not v or str(v).startswith("[")):
                                 continue
                             label = str(k).replace("_", " ").title()
                             val = str(v)
-                            if len(val) > 30:
-                                val = val[:27] + "..."
+                            val = _re.sub(_uuid_re, lambda m: m.group(0)[:8] + '\u2026', val)
+                            if len(val) > 40:
+                                val = val[:37] + "..."
                             parts.append(f"{label}: {val}")
                         return " | ".join(parts) if parts else s[:60]
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
-                return s[:60] + ("..." if len(s) > 60 else "")
+                s = _re.sub(_uuid_re, lambda m: m.group(0)[:8] + '\u2026', s)
+                return s[:80] + ("..." if len(s) > 80 else "")
 
             def _fmt_ts(raw):
                 """Format timestamp to readable date/time."""
