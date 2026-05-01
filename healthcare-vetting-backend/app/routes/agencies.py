@@ -717,95 +717,150 @@ async def update_candidate_status(
 
 @router.get("/my-services")
 async def get_my_services(current_user: dict = Depends(get_current_user)):
-    """Get the agency's services rendered breakdown based on admin-set pricing."""
+    """Get the agency's services rendered breakdown based on completed vetting checks."""
     if current_user["type"] != "agency":
         raise HTTPException(status_code=403, detail="Agencies only")
 
     agency_id = current_user["sub"]
 
     with get_db() as db:
-        # Get invoices for this agency
+        # Get all candidate IDs for this agency
         db.execute(
-            "SELECT * FROM invoices WHERE agency_id=%s ORDER BY created_at DESC",
+            "SELECT candidate_id FROM agency_candidates WHERE agency_id=%s",
             (agency_id,),
         )
-        invoices = [dict(r) for r in db.fetchall()]
+        cand_rows = db.fetchall()
+        candidate_ids = [dict(r)["candidate_id"] for r in cand_rows]
 
-        # Use adjusted_amount if admin has adjusted, otherwise use sell_amount
-        def effective_amount(inv):
-            adj = inv.get("adjusted_amount")
-            return adj if adj is not None else inv["sell_amount"]
+        if not candidate_ids:
+            return {"services": [], "total_cost": 0, "total_revenue": 0, "total_margin": 0}
 
-        total_billed = sum(effective_amount(i) for i in invoices)
-        total_paid = sum(effective_amount(i) for i in invoices if i["status"] == "paid")
-        _total_outstanding = total_billed - total_paid  # noqa: F841
+        # Load industry pricing for the agency
+        from app.routes.subscription_plans import _sync_industry_pricing
+        template_id = _resolve_agency_template_id(db, agency_id)
 
-        # Breakdown by check type
-        by_type = {}
-        for inv in invoices:
-            ct = inv["check_type"] or "other"
-            if ct not in by_type:
-                by_type[ct] = {"description": inv["description"] or ct, "count": 0, "total": 0.0}
-            by_type[ct]["count"] += 1
-            by_type[ct]["total"] += effective_amount(inv)
+        # Build pricing lookup
+        pricing = {}
+        if template_id:
+            _sync_industry_pricing(db, template_id)
+            db.execute(
+                "SELECT check_type, label, sell_price, third_party_cost FROM industry_check_pricing "
+                "WHERE industry_template_id=%s AND is_active=1",
+                (template_id,),
+            )
+            for row in db.fetchall():
+                p = dict(row)
+                pricing[p["check_type"]] = p
+        # Fallback to pricing_settings
+        db.execute("SELECT check_type, label, sell_price, cost_price FROM pricing_settings")
+        for row in db.fetchall():
+            p = dict(row)
+            if p["check_type"] not in pricing:
+                pricing[p["check_type"]] = {
+                    "check_type": p["check_type"],
+                    "label": p["label"],
+                    "sell_price": p["sell_price"],
+                    "third_party_cost": p.get("cost_price", 0),
+                }
 
-        # Get candidate count
+        # Count completed checks per type across all candidates
+        placeholders = ",".join(["%s"] * len(candidate_ids))
+        services_map = {}
+
+        # Identity checks
         db.execute(
-            "SELECT COUNT(*) as cnt FROM agency_candidates WHERE agency_id=%s",
-            (agency_id,),
+            f"SELECT COUNT(*) as cnt FROM identity_checks WHERE candidate_id IN ({placeholders}) AND result IS NOT NULL",
+            candidate_ids,
         )
-        cand_count = db.fetchone()
+        cnt = dict(db.fetchone())["cnt"]
+        if cnt > 0:
+            p = pricing.get("identity", pricing.get("identity_verified", {}))
+            services_map["identity"] = {"check_type": "identity", "label": p.get("label", "Identity Verification"), "count": cnt, "sell_price": float(p.get("sell_price", 0)), "third_party_cost": float(p.get("third_party_cost", 0))}
 
-        # Include re-vet requests in the breakdown
+        # Right to Work
         db.execute(
-            "SELECT rr.*, c.first_name, c.last_name FROM revet_requests rr JOIN candidates c ON rr.candidate_id = c.id WHERE rr.agency_id=%s",
-            (agency_id,),
+            f"SELECT COUNT(*) as cnt FROM right_to_work_checks WHERE candidate_id IN ({placeholders}) AND verified=1",
+            candidate_ids,
         )
-        revet_rows = db.fetchall()
+        cnt = dict(db.fetchone())["cnt"]
+        if cnt > 0:
+            p = pricing.get("right_to_work", pricing.get("right_to_work_valid", {}))
+            services_map["right_to_work"] = {"check_type": "right_to_work", "label": p.get("label", "Right to Work"), "count": cnt, "sell_price": float(p.get("sell_price", 0)), "third_party_cost": float(p.get("third_party_cost", 0))}
 
-        revet_items = []
-        revet_total = 0.0
-        import json as _json
-        for rr in revet_rows:
-            rd = dict(rr)
-            sections = _json.loads(rd["sections"]) if rd["sections"] else []
-            cand_name = f"{rd['first_name']} {rd['last_name']}"
-            for sec in sections:
-                db.execute(
-                    "SELECT sell_price, label FROM pricing_settings WHERE check_type=%s", (sec,)
-                )
-                price_row = db.fetchone()
-                if price_row:
-                    pd = dict(price_row)
-                    cost = pd["sell_price"]
-                    revet_total += cost
-                    revet_items.append({
-                        "section": sec,
-                        "label": f"Re-vet: {pd['label']}",
-                        "candidate": cand_name,
-                        "cost": cost,
-                        "status": rd["status"],
-                        "created_at": rd["created_at"],
-                    })
-                    # Add to by_type
-                    ct_key = f"revet_{sec}"
-                    if ct_key not in by_type:
-                        by_type[ct_key] = {"description": f"Re-vet: {pd['label']}", "count": 0, "total": 0.0}
-                    by_type[ct_key]["count"] += 1
-                    by_type[ct_key]["total"] += cost
+        # DBS
+        db.execute(
+            f"SELECT COUNT(*) as cnt FROM dbs_checks WHERE candidate_id IN ({placeholders}) AND result IS NOT NULL",
+            candidate_ids,
+        )
+        cnt = dict(db.fetchone())["cnt"]
+        if cnt > 0:
+            p = pricing.get("dbs", pricing.get("dbs_enhanced", pricing.get("dbs_valid", {})))
+            services_map["dbs"] = {"check_type": "dbs", "label": p.get("label", "DBS Check"), "count": cnt, "sell_price": float(p.get("sell_price", 0)), "third_party_cost": float(p.get("third_party_cost", 0))}
 
-        total_billed += revet_total
+        # CV Analysis
+        db.execute(
+            f"SELECT COUNT(*) as cnt FROM cv_analyses WHERE candidate_id IN ({placeholders}) AND status IS NOT NULL",
+            candidate_ids,
+        )
+        cnt = dict(db.fetchone())["cnt"]
+        if cnt > 0:
+            p = pricing.get("cv_analysis", pricing.get("cv_validated", {}))
+            services_map["cv_analysis"] = {"check_type": "cv_analysis", "label": p.get("label", "CV Analysis"), "count": cnt, "sell_price": float(p.get("sell_price", 0)), "third_party_cost": float(p.get("third_party_cost", 0))}
+
+        # Employment Verification
+        db.execute(
+            f"SELECT COUNT(*) as cnt FROM employment_verifications WHERE candidate_id IN ({placeholders}) AND status IN ('verified','completed')",
+            candidate_ids,
+        )
+        cnt = dict(db.fetchone())["cnt"]
+        if cnt > 0:
+            p = pricing.get("employment", pricing.get("employment_verified", {}))
+            services_map["employment"] = {"check_type": "employment", "label": p.get("label", "Employment Verification"), "count": cnt, "sell_price": float(p.get("sell_price", 0)), "third_party_cost": float(p.get("third_party_cost", 0))}
+
+        # References
+        db.execute(
+            f"SELECT COUNT(*) as cnt FROM references_ WHERE candidate_id IN ({placeholders}) AND status IN ('completed','verified')",
+            candidate_ids,
+        )
+        cnt = dict(db.fetchone())["cnt"]
+        if cnt > 0:
+            p = pricing.get("references", pricing.get("references_verified", {}))
+            services_map["references"] = {"check_type": "references", "label": p.get("label", "Professional References"), "count": cnt, "sell_price": float(p.get("sell_price", 0)), "third_party_cost": float(p.get("third_party_cost", 0))}
+
+        # Registration
+        db.execute(
+            f"SELECT COUNT(*) as cnt FROM registration_checks WHERE candidate_id IN ({placeholders}) AND is_active=1",
+            candidate_ids,
+        )
+        cnt = dict(db.fetchone())["cnt"]
+        if cnt > 0:
+            p = pricing.get("registration", pricing.get("registration_active", {}))
+            services_map["registration"] = {"check_type": "registration", "label": p.get("label", "Professional Registration"), "count": cnt, "sell_price": float(p.get("sell_price", 0)), "third_party_cost": float(p.get("third_party_cost", 0))}
+
+        # Build services array
+        services = []
+        total_cost = 0.0
+        total_revenue = 0.0
+        for svc in services_map.values():
+            total_sell = round(svc["count"] * svc["sell_price"], 2)
+            total_cost_item = round(svc["count"] * svc["third_party_cost"], 2)
+            services.append({
+                "check_type": svc["check_type"],
+                "label": svc["label"],
+                "count": svc["count"],
+                "sell_price": svc["sell_price"],
+                "total_sell": total_sell,
+                "third_party_cost": svc["third_party_cost"],
+                "total_cost": total_cost_item,
+            })
+            total_revenue += total_sell
+            total_cost += total_cost_item
 
         return {
-            "total_billed": round(total_billed, 2),
-            "total_paid": round(total_paid, 2),
-            "total_outstanding": round(total_billed - total_paid, 2),
-            "invoice_count": len(invoices),
-            "candidate_count": dict(cand_count)["cnt"] if cand_count else 0,
-            "by_check_type": by_type,
-            "invoices": invoices,
-            "revet_items": revet_items,
-            "revet_total": round(revet_total, 2),
+            "services": services,
+            "total_cost": round(total_cost, 2),
+            "total_revenue": round(total_revenue, 2),
+            "total_margin": round(total_revenue - total_cost, 2),
         }
 
 

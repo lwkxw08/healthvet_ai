@@ -1410,7 +1410,16 @@ export default function AgencyDashboard() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><CreditCard className="text-blue-400" size={22} /> Credit Packs & Billing</h2>
-              <span className="text-xs px-3 py-1 rounded-full font-medium border bg-blue-500/20 text-blue-400 border-blue-500/30">12-Month Credit Pack Model</span>
+              <span className={`text-xs px-3 py-1 rounded-full font-medium border ${
+                billingMode === "manual_invoicing" ? "bg-slate-500/20 text-slate-400 border-slate-500/30" :
+                billingMode === "online_payment" ? "bg-green-500/20 text-green-400 border-green-500/30" :
+                "bg-blue-500/20 text-blue-400 border-blue-500/30"
+              }`}>{
+                billingMode === "manual_invoicing" ? "Manual Invoicing" :
+                billingMode === "online_payment" ? "Pay-As-You-Go" :
+                billingMode === "subscription" || billingMode === "credit_pack" ? "12-Month Credit Pack Model" :
+                billingMode.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
+              }</span>
             </div>
 
             {/* Active Credit Pack */}

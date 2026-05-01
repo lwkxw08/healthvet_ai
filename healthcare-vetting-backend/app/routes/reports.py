@@ -257,10 +257,66 @@ async def resolve_fraud_flag(flag_id: str, user=Depends(get_current_admin)):
 # ============================================================
 
 @router.get("/billing/tiers")
-async def get_subscription_tiers():
-    """Get available subscription tiers."""
+async def get_subscription_tiers(current_user: dict = Depends(get_current_user)):
+    """Get available subscription tiers.
+
+    For agency users, returns only industry-specific plans linked to the agency's
+    industry template (with custom pricing overrides).  Falls back to generic tiers
+    if no industry plans are configured.
+    """
     from app.services.billing import BillingService
-    return BillingService.get_tiers()
+
+    # If the caller is an agency, filter tiers by their industry
+    if current_user.get("type") == "agency":
+        agency_id = current_user["sub"]
+        with get_db() as db:
+            # Resolve agency's industry template
+            db.execute(
+                "SELECT industry_template_id FROM agencies WHERE id=%s", (agency_id,)
+            )
+            agency_row = db.fetchone()
+            template_id = dict(agency_row).get("industry_template_id") if agency_row else None
+
+            if template_id:
+                # Get industry plan links for this template
+                db.execute(
+                    """SELECT ipl.*, stc.name as tier_name, stc.monthly_price as base_price,
+                              stc.monthly_checks as base_credits, stc.per_worker_price
+                       FROM industry_plan_links ipl
+                       JOIN subscription_tier_config stc ON ipl.tier_key = stc.tier_key
+                       WHERE ipl.industry_template_id=%s AND stc.is_active=1
+                       ORDER BY COALESCE(ipl.custom_monthly_price, stc.monthly_price) ASC""",
+                    (template_id,),
+                )
+                links = db.fetchall()
+                if links:
+                    tiers = {}
+                    for row in links:
+                        r = dict(row)
+                        price = r["custom_monthly_price"] if r["custom_monthly_price"] is not None else r["base_price"]
+                        credits = r["custom_monthly_checks"] if r["custom_monthly_checks"] is not None else r["base_credits"]
+                        per_credit = round(float(price) / int(credits), 2) if credits and int(credits) > 0 else 0
+                        tiers[r["tier_key"]] = {
+                            "name": r["tier_name"],
+                            "tier_key": r["tier_key"],
+                            "pack_price": float(price),
+                            "credits_included": int(credits),
+                            "per_credit_cost": per_credit,
+                            "monthly_price": float(price),
+                            "monthly_checks": int(credits),
+                            "validity_months": 12,
+                        }
+                    return {"tiers": list(tiers.values())}
+
+    # Fallback: return all generic tiers
+    all_tiers = BillingService.get_tiers()
+    # Convert dict to array format for frontend
+    tiers_list = []
+    for key, val in all_tiers.items():
+        val["tier_key"] = key
+        val["credits_included"] = val.get("credits") or val.get("monthly_checks") or 0
+        tiers_list.append(val)
+    return {"tiers": tiers_list}
 
 
 @router.put("/billing/tiers/{tier_key}")
