@@ -411,12 +411,14 @@ class AuditPackService:
         if alerts:
             alert_cell = ParagraphStyle('AlertCell', parent=normal_style,
                                          fontSize=8, leading=10, wordWrap='CJK')
+            alert_hdr = ParagraphStyle('AlertHdr', parent=alert_cell,
+                                        textColor=colors.white)
             alert_data = [[
-                Paragraph("<b>Type</b>", alert_cell),
-                Paragraph("<b>Severity</b>", alert_cell),
-                Paragraph("<b>Message</b>", alert_cell),
-                Paragraph("<b>Resolved</b>", alert_cell),
-                Paragraph("<b>Date</b>", alert_cell),
+                Paragraph("<b>Type</b>", alert_hdr),
+                Paragraph("<b>Severity</b>", alert_hdr),
+                Paragraph("<b>Message</b>", alert_hdr),
+                Paragraph("<b>Resolved</b>", alert_hdr),
+                Paragraph("<b>Date</b>", alert_hdr),
             ]]
             for alert in alerts:
                 ad = dict(alert)
@@ -513,11 +515,13 @@ class AuditPackService:
             audit_style = ParagraphStyle('AuditCell', parent=normal_style,
                                           fontSize=7, leading=9,
                                           wordWrap='CJK')
+            audit_hdr = ParagraphStyle('AuditHdr', parent=audit_style,
+                                        textColor=colors.white)
             log_data = [[
-                Paragraph("<b>Action</b>", audit_style),
-                Paragraph("<b>Actor</b>", audit_style),
-                Paragraph("<b>Details</b>", audit_style),
-                Paragraph("<b>Timestamp</b>", audit_style),
+                Paragraph("<b>Action</b>", audit_hdr),
+                Paragraph("<b>Actor</b>", audit_hdr),
+                Paragraph("<b>Details</b>", audit_hdr),
+                Paragraph("<b>Timestamp</b>", audit_hdr),
             ]]
             for log in audit_logs[:50]:
                 ld = dict(log)
