@@ -291,7 +291,7 @@ class AuditPackService:
             for entry in emp_history:
                 e = dict(entry)
                 ver = emp_ver_map.get(e["id"])
-                verified = "Yes" if ver and ver.get("status") == "completed" else "No"
+                verified = "Yes" if ver and ver.get("status") in ("verified", "completed") else "No"
                 dates = f"{e.get('start_date', '?')} - {e.get('end_date', 'Present')}"
                 emp_table_data.append([
                     e.get("employer_name", "N/A"),
