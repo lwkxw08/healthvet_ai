@@ -34,10 +34,10 @@ def start_scheduler():
         name="Daily Monitoring Checks",
     )
 
-    # Run expiry warning checks every 6 hours
+    # Run expiry warning checks daily at 8 AM
     scheduler.add_job(
         run_expiry_warnings,
-        CronTrigger(hour="*/6"),
+        CronTrigger(hour=8, minute=0),
         id="expiry_warnings",
         replace_existing=True,
         name="Expiry Warning Checks",
@@ -102,17 +102,63 @@ def run_scheduled_monitoring():
         logger.error(f"Scheduled monitoring failed: {e}")
 
 
+def _should_send_expiry_warning(db, candidate_id: str, credential_type: str,
+                                credential_id: str, now: datetime,
+                                interval_days: int = 10) -> bool:
+    """Check if enough time has passed since the last expiry warning for this credential.
+    Returns True if no warning has been sent, or if >= interval_days since last warning."""
+    try:
+        db.execute(
+            """SELECT last_warned_at FROM expiry_warning_log
+               WHERE candidate_id=%s AND credential_type=%s
+               AND COALESCE(credential_id, '')=%s""",
+            (candidate_id, credential_type, credential_id or ""),
+        )
+        row = db.fetchone()
+        if not row:
+            return True
+        last_warned = datetime.fromisoformat(dict(row)["last_warned_at"])
+        return (now - last_warned).days >= interval_days
+    except Exception:
+        return True  # table may not exist yet; allow sending
+
+
+def _record_expiry_warning(db, candidate_id: str, credential_type: str,
+                           credential_id: str, now_str: str):
+    """Record that an expiry warning was sent for this credential."""
+    from app.utils.auth import generate_id
+    try:
+        db.execute(
+            """INSERT INTO expiry_warning_log
+               (id, candidate_id, credential_type, credential_id, last_warned_at, warning_count)
+               VALUES (%s, %s, %s, %s, %s, 1)
+               ON CONFLICT (candidate_id, credential_type, credential_id)
+               DO UPDATE SET last_warned_at=%s, warning_count = expiry_warning_log.warning_count + 1""",
+            (generate_id(), candidate_id, credential_type, credential_id or "",
+             now_str, now_str),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to record expiry warning: {e}")
+
+
 def run_expiry_warnings():
-    """Check for upcoming expiries and send warning emails."""
+    """Check for upcoming expiries and send warning emails.
+
+    Deduplication: each credential is only warned about once every 10 days.
+    Uses the expiry_warning_log table to track when the last warning was sent.
+    """
     from app.services.email_service import EmailService
     from app.database import get_db
 
     logger.info("Running expiry warning checks...")
     now = datetime.now(timezone.utc)
+    now_str = now.isoformat()
 
     try:
         with get_db() as db:
-            # Visa expiries in next 30 days
+            expiry_notifications = []
+
+            # ── Visa expiries (30-day window) ──
             db.execute(
                 """SELECT r.*, c.first_name, c.last_name, c.email as candidate_email,
                           a.email as agency_email, a.name as agency_name
@@ -123,17 +169,18 @@ def run_expiry_warnings():
                    WHERE r.visa_expiry IS NOT NULL AND r.verified = 1
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             )
-            visa_expiring = db.fetchall()
-
-            expiry_notifications = []
-            for row in visa_expiring:
+            for row in db.fetchall():
                 r = dict(row)
                 try:
                     expiry = datetime.fromisoformat(r["visa_expiry"])
                     days_left = (expiry - now).days
-                    if 0 < days_left <= 30:
+                    if 0 < days_left <= 30 and _should_send_expiry_warning(
+                        db, r["candidate_id"], "visa_expiry", r.get("id", ""), now
+                    ):
                         expiry_notifications.append({
                             "type": "visa_expiry",
+                            "candidate_id": r["candidate_id"],
+                            "credential_id": r.get("id", ""),
                             "candidate_name": f"{r['first_name']} {r['last_name']}",
                             "candidate_email": r["candidate_email"],
                             "agency_email": r.get("agency_email"),
@@ -144,7 +191,7 @@ def run_expiry_warnings():
                 except (ValueError, TypeError):
                     continue
 
-            # DBS renewal checks
+            # ── DBS renewal (60-day window) ──
             db.execute(
                 """SELECT d.*, c.first_name, c.last_name, c.email as candidate_email,
                           a.email as agency_email, a.name as agency_name
@@ -155,16 +202,18 @@ def run_expiry_warnings():
                    WHERE d.next_renewal IS NOT NULL
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             )
-            dbs_expiring = db.fetchall()
-
-            for row in dbs_expiring:
+            for row in db.fetchall():
                 r = dict(row)
                 try:
                     renewal = datetime.fromisoformat(r["next_renewal"])
                     days_left = (renewal - now).days
-                    if 0 < days_left <= 60:
+                    if 0 < days_left <= 60 and _should_send_expiry_warning(
+                        db, r["candidate_id"], "dbs_renewal", r.get("id", ""), now
+                    ):
                         expiry_notifications.append({
                             "type": "dbs_renewal",
+                            "candidate_id": r["candidate_id"],
+                            "credential_id": r.get("id", ""),
                             "candidate_name": f"{r['first_name']} {r['last_name']}",
                             "candidate_email": r["candidate_email"],
                             "agency_email": r.get("agency_email"),
@@ -175,7 +224,7 @@ def run_expiry_warnings():
                 except (ValueError, TypeError):
                     continue
 
-            # Registration renewals
+            # ── Registration renewals (30-day window) ──
             db.execute(
                 """SELECT r.*, c.first_name, c.last_name, c.email as candidate_email,
                           a.email as agency_email, a.name as agency_name
@@ -186,16 +235,18 @@ def run_expiry_warnings():
                    WHERE r.next_check IS NOT NULL AND r.is_active = 1
                    AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
             )
-            reg_expiring = db.fetchall()
-
-            for row in reg_expiring:
+            for row in db.fetchall():
                 r = dict(row)
                 try:
                     next_check = datetime.fromisoformat(r["next_check"])
                     days_left = (next_check - now).days
-                    if 0 < days_left <= 30:
+                    if 0 < days_left <= 30 and _should_send_expiry_warning(
+                        db, r["candidate_id"], "registration_renewal", r.get("id", ""), now
+                    ):
                         expiry_notifications.append({
                             "type": "registration_renewal",
+                            "candidate_id": r["candidate_id"],
+                            "credential_id": r.get("id", ""),
                             "candidate_name": f"{r['first_name']} {r['last_name']}",
                             "candidate_email": r["candidate_email"],
                             "agency_email": r.get("agency_email"),
@@ -207,7 +258,7 @@ def run_expiry_warnings():
                 except (ValueError, TypeError):
                     continue
 
-            # Training certificate expiries
+            # ── Training certificate expiries (30-day window) ──
             try:
                 db.execute(
                     """SELECT t.*, c.first_name, c.last_name, c.email as candidate_email,
@@ -219,16 +270,18 @@ def run_expiry_warnings():
                        WHERE t.expiry_date IS NOT NULL AND t.status = 'valid'
                        AND (ac.employment_status = 'hired' OR ac.employment_status IS NULL)""",
                 )
-                training_expiring = db.fetchall()
-
-                for row in training_expiring:
+                for row in db.fetchall():
                     r = dict(row)
                     try:
                         expiry = datetime.fromisoformat(r["expiry_date"])
                         days_left = (expiry - now).days
-                        if 0 < days_left <= 30:
+                        if 0 < days_left <= 30 and _should_send_expiry_warning(
+                            db, r["candidate_id"], "training_expiry", r.get("id", ""), now
+                        ):
                             expiry_notifications.append({
                                 "type": "training_expiry",
+                                "candidate_id": r["candidate_id"],
+                                "credential_id": r.get("id", ""),
                                 "candidate_name": f"{r['first_name']} {r['last_name']}",
                                 "candidate_email": r["candidate_email"],
                                 "agency_email": r.get("agency_email"),
@@ -244,9 +297,15 @@ def run_expiry_warnings():
 
             if expiry_notifications:
                 EmailService.send_expiry_warnings(expiry_notifications)
+                # Record that we sent warnings for these credentials
+                for n in expiry_notifications:
+                    _record_expiry_warning(
+                        db, n["candidate_id"], n["type"],
+                        n.get("credential_id", ""), now_str,
+                    )
                 logger.info(f"Sent {len(expiry_notifications)} expiry warning notifications")
             else:
-                logger.info("No expiry warnings to send")
+                logger.info("No expiry warnings to send (all within 10-day cooldown or none due)")
 
     except Exception as e:
         logger.error(f"Expiry warning check failed: {e}")

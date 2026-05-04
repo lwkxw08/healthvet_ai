@@ -1396,6 +1396,18 @@ def init_db():
             created_at TEXT DEFAULT (NOW()::text)
         );
 
+        -- Tracks when expiry warning emails were last sent per credential
+        -- to avoid sending duplicate warnings every scheduler run.
+        CREATE TABLE IF NOT EXISTS expiry_warning_log (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            credential_type TEXT NOT NULL,
+            credential_id TEXT,
+            last_warned_at TEXT NOT NULL,
+            warning_count INTEGER DEFAULT 1,
+            UNIQUE(candidate_id, credential_type, credential_id)
+        );
+
         CREATE TABLE IF NOT EXISTS training_certificates (
             id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,
@@ -1923,6 +1935,9 @@ def init_db():
         -- email_notifications
         CREATE INDEX IF NOT EXISTS idx_email_notif_recipient     ON email_notifications(recipient_email);
         CREATE INDEX IF NOT EXISTS idx_email_notif_status        ON email_notifications(status);
+
+        -- expiry_warning_log
+        CREATE INDEX IF NOT EXISTS idx_expiry_warn_candidate     ON expiry_warning_log(candidate_id, credential_type);
 
         -- training_certificates
         CREATE INDEX IF NOT EXISTS idx_training_certs_candidate  ON training_certificates(candidate_id);
