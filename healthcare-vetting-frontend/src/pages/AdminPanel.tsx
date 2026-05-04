@@ -363,11 +363,21 @@ export default function AdminPanel() {
     if (!token) return;
     try {
       const resp = await billingApi.getTiers(token) as Record<string, unknown>;
-      // API returns {tiers: [...]} — convert array to keyed Record by tier_key
-      const tiersArray = (resp.tiers || []) as Array<Record<string, unknown>>;
+      // Normalise: API may return {tiers:[...]} (array format) or {starter:{...}, standard:{...}} (keyed format)
+      let items: Array<[string, Record<string, unknown>]> = [];
+      if (Array.isArray(resp.tiers)) {
+        items = (resp.tiers as Array<Record<string, unknown>>).map(t => [
+          (t.tier_key as string) || (t.name as string || "").toLowerCase().replace(/\s+/g, "_"),
+          t,
+        ]);
+      } else {
+        // Legacy keyed format — each value is a tier object
+        items = Object.entries(resp)
+          .filter(([, v]) => v && typeof v === "object" && !Array.isArray(v) && (v as Record<string, unknown>).name)
+          .map(([k, v]) => [k, v as Record<string, unknown>]);
+      }
       const keyed: Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; overage_rate: number; allow_rollover: boolean; features: string[]}> = {};
-      for (const t of tiersArray) {
-        const key = (t.tier_key as string) || (t.name as string || "").toLowerCase().replace(/\s+/g, "_");
+      for (const [key, t] of items) {
         keyed[key] = {
           name: (t.name as string) || key,
           monthly_price: Number(t.monthly_price ?? t.pack_price ?? 0),
@@ -2213,7 +2223,7 @@ export default function AdminPanel() {
                             </div>
                           </div>
                           <p className="text-blue-400 text-xl font-bold mb-1">
-                            £{tier.monthly_price.toLocaleString()} per pack
+                            £{(Number(tier.monthly_price) || 0).toLocaleString()} per pack
                           </p>
                           <p className="text-green-400 text-sm font-medium mb-1">
                             {(tier.monthly_checks || 0) >= 999999 ? "Unlimited credits" : `${tier.monthly_checks || 0} credits per pack`}
@@ -2225,7 +2235,7 @@ export default function AdminPanel() {
                             {tier.allow_rollover ? "Unused credits roll over on top-up (50% cap)" : "Credits valid for 12 months from purchase"}
                           </p>
                           <div className="space-y-1">
-                            {tier.features.map((f: string, i: number) => (
+                            {(Array.isArray(tier.features) ? tier.features : []).map((f: string, i: number) => (
                               <p key={i} className="text-slate-300 text-xs flex items-center gap-1.5">
                                 <CheckCircle size={12} className="text-green-400" /> {f}
                               </p>
