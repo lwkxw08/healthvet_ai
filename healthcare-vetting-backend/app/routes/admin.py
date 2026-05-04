@@ -87,14 +87,14 @@ async def push_pricing_to_industries(check_type: str, current_user: dict = Depen
         matching_check_keys = list(set(matching_check_keys))
 
         # Update all matching industry_check_pricing rows
-        placeholders = ",".join("?" for _ in matching_check_keys)
-        result = db.execute(
+        placeholders = ",".join("%s" for _ in matching_check_keys)
+        db.execute(
             f"""UPDATE industry_check_pricing
                 SET third_party_cost=%s, sell_price=%s, updated_at=%s
                 WHERE check_type IN ({placeholders})""",
             [new_cost, new_sell, now] + matching_check_keys,
         )
-        updated_count = result.rowcount
+        updated_count = db.rowcount
 
         return {"updated": updated_count, "check_type": check_type, "new_cost_price": new_cost, "new_sell_price": new_sell}
 
