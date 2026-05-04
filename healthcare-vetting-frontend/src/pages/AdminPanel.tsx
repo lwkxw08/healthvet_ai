@@ -362,8 +362,24 @@ export default function AdminPanel() {
   const loadSubscriptionTiers = async () => {
     if (!token) return;
     try {
-      const tiers = await billingApi.getTiers(token);
-      setSubTiers(tiers as Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; overage_rate: number; allow_rollover: boolean; features: string[]}>);
+      const resp = await billingApi.getTiers(token) as Record<string, unknown>;
+      // API returns {tiers: [...]} — convert array to keyed Record by tier_key
+      const tiersArray = (resp.tiers || []) as Array<Record<string, unknown>>;
+      const keyed: Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; overage_rate: number; allow_rollover: boolean; features: string[]}> = {};
+      for (const t of tiersArray) {
+        const key = (t.tier_key as string) || (t.name as string || "").toLowerCase().replace(/\s+/g, "_");
+        keyed[key] = {
+          name: (t.name as string) || key,
+          monthly_price: Number(t.monthly_price ?? t.pack_price ?? 0),
+          per_worker_price: Number(t.per_worker_price ?? 0),
+          max_workers: Number(t.max_workers ?? 0),
+          monthly_checks: Number(t.monthly_checks ?? t.credits_included ?? t.credits ?? 0),
+          overage_rate: Number(t.overage_rate ?? 0),
+          allow_rollover: Boolean(t.allow_rollover),
+          features: Array.isArray(t.features) ? t.features as string[] : [],
+        };
+      }
+      setSubTiers(keyed);
     } catch { /* ignore */ }
   };
 
