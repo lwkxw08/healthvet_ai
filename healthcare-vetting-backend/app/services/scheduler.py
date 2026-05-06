@@ -70,8 +70,17 @@ def start_scheduler():
         name="Weekly Admin Analytics Report",
     )
 
+    # Run monitoring subscription expiry checks daily at 8:30 AM
+    scheduler.add_job(
+        run_monitoring_expiry_checks,
+        CronTrigger(hour=8, minute=30),
+        id="monitoring_expiry_checks",
+        replace_existing=True,
+        name="Monitoring Subscription Expiry Checks",
+    )
+
     scheduler.start()
-    logger.info("Monitoring scheduler started with 5 jobs")
+    logger.info("Monitoring scheduler started with 6 jobs")
 
 
 def stop_scheduler():
@@ -430,3 +439,80 @@ def run_weekly_admin_report():
 
     except Exception as e:
         logger.error(f"Weekly admin report generation failed: {e}")
+
+
+def run_monitoring_expiry_checks():
+    """Check for candidates whose monitoring subscription is expiring and:
+    1. Send reminders every 10 days until expiry (reuses the expiry_warning_log dedup)
+    2. On actual expiry, set monitoring_active=0 to halt monitoring
+    """
+    from app.services.email_service import EmailService
+    from app.database import get_db
+
+    logger.info("Running monitoring subscription expiry checks...")
+    now = datetime.now(timezone.utc)
+    now_str = now.isoformat()
+
+    try:
+        with get_db() as db:
+            # --- Part 1: Expire monitoring for candidates past their expiry date ---
+            db.execute(
+                """UPDATE agency_candidates
+                   SET monitoring_active = 0
+                   WHERE monitoring_active = 1
+                   AND monitoring_expires_at IS NOT NULL
+                   AND monitoring_expires_at <= %s""",
+                (now_str,),
+            )
+            expired_count = db.rowcount or 0
+            if expired_count > 0:
+                logger.info(f"Halted monitoring for {expired_count} expired candidate(s)")
+
+            # --- Part 2: Send expiry reminders (30-day lookahead, 10-day intervals) ---
+            db.execute(
+                """SELECT ac.agency_id, ac.candidate_id, ac.monitoring_expires_at,
+                          c.first_name, c.last_name, c.email AS candidate_email,
+                          a.email AS agency_email, a.name AS agency_name
+                   FROM agency_candidates ac
+                   JOIN candidates c ON ac.candidate_id = c.id
+                   JOIN agencies a ON ac.agency_id = a.id
+                   WHERE ac.monitoring_active = 1
+                   AND ac.monitoring_expires_at IS NOT NULL""",
+            )
+            expiry_notifications = []
+            for row in db.fetchall():
+                r = dict(row)
+                try:
+                    expiry = datetime.fromisoformat(r["monitoring_expires_at"])
+                    days_left = (expiry - now).days
+                    if 0 < days_left <= 30 and _should_send_expiry_warning(
+                        db, r["candidate_id"], "monitoring_expiry",
+                        f"monitoring_{r['agency_id']}", now
+                    ):
+                        expiry_notifications.append({
+                            "type": "monitoring_expiry",
+                            "candidate_id": r["candidate_id"],
+                            "credential_id": f"monitoring_{r['agency_id']}",
+                            "candidate_name": f"{r['first_name']} {r['last_name']}",
+                            "candidate_email": r["candidate_email"],
+                            "agency_email": r.get("agency_email"),
+                            "agency_name": r.get("agency_name"),
+                            "days_left": days_left,
+                            "expiry_date": r["monitoring_expires_at"],
+                        })
+                except (ValueError, TypeError):
+                    continue
+
+            if expiry_notifications:
+                EmailService.send_expiry_warnings(expiry_notifications)
+                for n in expiry_notifications:
+                    _record_expiry_warning(
+                        db, n["candidate_id"], n["type"],
+                        n.get("credential_id", ""), now_str,
+                    )
+                logger.info(f"Sent {len(expiry_notifications)} monitoring expiry warning(s)")
+            else:
+                logger.info("No monitoring expiry warnings to send")
+
+    except Exception as e:
+        logger.error(f"Monitoring expiry check failed: {e}")

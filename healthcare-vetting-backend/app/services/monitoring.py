@@ -34,8 +34,10 @@ class MonitoringService:
             db.execute(
                 """SELECT d.*, c.first_name, c.last_name FROM dbs_checks d
                    JOIN candidates c ON d.candidate_id = c.id
+                   LEFT JOIN agency_candidates ac ON c.id = ac.candidate_id
                    WHERE d.update_service_registered = 1
-                   AND d.certificate_number IS NOT NULL""",
+                   AND d.certificate_number IS NOT NULL
+                   AND (ac.monitoring_active = 1 OR ac.monitoring_active IS NULL)""",
             )
             checks = db.fetchall()
 
@@ -75,7 +77,9 @@ class MonitoringService:
             db.execute(
                 """SELECT r.*, c.first_name, c.last_name FROM right_to_work_checks r
                    JOIN candidates c ON r.candidate_id = c.id
-                   WHERE r.visa_expiry IS NOT NULL AND r.verified = 1""",
+                   LEFT JOIN agency_candidates ac ON c.id = ac.candidate_id
+                   WHERE r.visa_expiry IS NOT NULL AND r.verified = 1
+                   AND (ac.monitoring_active = 1 OR ac.monitoring_active IS NULL)""",
             )
             checks = db.fetchall()
 
@@ -142,7 +146,9 @@ class MonitoringService:
             db.execute(
                 """SELECT r.*, c.first_name, c.last_name FROM registration_checks r
                    JOIN candidates c ON r.candidate_id = c.id
-                   WHERE r.next_check IS NOT NULL AND r.is_active = 1""",
+                   LEFT JOIN agency_candidates ac ON c.id = ac.candidate_id
+                   WHERE r.next_check IS NOT NULL AND r.is_active = 1
+                   AND (ac.monitoring_active = 1 OR ac.monitoring_active IS NULL)""",
             )
             checks = db.fetchall()
 
@@ -188,7 +194,9 @@ class MonitoringService:
             db.execute(
                 """SELECT r.*, c.first_name, c.last_name FROM registration_checks r
                    JOIN candidates c ON r.candidate_id = c.id
-                   WHERE r.is_active = 1""",
+                   LEFT JOIN agency_candidates ac ON c.id = ac.candidate_id
+                   WHERE r.is_active = 1
+                   AND (ac.monitoring_active = 1 OR ac.monitoring_active IS NULL)""",
             )
             checks = db.fetchall()
 

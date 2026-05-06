@@ -292,6 +292,8 @@ export const monitoringApi = {
     apiRequest<Record<string, unknown>>(`/api/monitoring/alerts/${alertId}/resolve`, { method: "POST", token }),
   runChecks: (token: string) =>
     apiRequest<Record<string, unknown>>("/api/monitoring/run-checks", { method: "POST", token }),
+  renewMonitoring: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/agencies/monitoring/renew/${candidateId}`, { method: "POST", token }),
 };
 
 // Dashboard API
@@ -423,8 +425,8 @@ export const adminExtendedApi = {
     apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/retrigger-reference/${refId}`, { method: "POST", token }),
   retriggerEmployment: (token: string, candidateId: string, verId: string) =>
     apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/retrigger-employment/${verId}`, { method: "POST", token }),
-  retriggerCheck: (token: string, candidateId: string, checkType: string) =>
-    apiRequest<{ candidate_id: string; check_type: string; result: string; triggered_at: string }>(`/api/admin/candidates/${candidateId}/retrigger-check/${checkType}`, { method: "POST", token }),
+  retriggerCheck: (token: string, candidateId: string, checkType: string, chargeAgency: boolean = false) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/candidates/${candidateId}/retrigger-check/${checkType}?charge_agency=${chargeAgency}`, { method: "POST", token }),
 
   // Full candidate detail (admin view)
   getCandidateFullDetail: (token: string, candidateId: string) =>
@@ -853,6 +855,8 @@ export const subscriptionPlansApi = {
 
 // Agency Re-vet API
 export const agencyRevetApi = {
+  getRevetPricing: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/agencies/revet-pricing", { token }),
   requestRevet: (token: string, candidateId: string, sections: string[]) =>
     apiRequest<Record<string, unknown>>(`/api/agencies/candidates/${candidateId}/request-revet`, {
       method: "POST", body: { sections }, token,

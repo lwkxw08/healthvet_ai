@@ -165,6 +165,9 @@ def migrate_db():
     _add_column_if_missing(cursor, "agency_candidates", "annual_monitoring", "INTEGER DEFAULT 0")
     _add_column_if_missing(cursor, "agency_candidates", "vetting_cost_accepted", "REAL DEFAULT 0")
     _add_column_if_missing(cursor, "agency_candidates", "monitoring_cost_accepted", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_candidates", "monitoring_started_at", "TEXT")
+    _add_column_if_missing(cursor, "agency_candidates", "monitoring_expires_at", "TEXT")
+    _add_column_if_missing(cursor, "agency_candidates", "monitoring_active", "INTEGER DEFAULT 0")
     # Add include_monitoring and cost columns to agency_invites if missing
     _add_column_if_missing(cursor, "agency_invites", "include_monitoring", "INTEGER DEFAULT 0")
     _add_column_if_missing(cursor, "agency_invites", "vetting_cost", "REAL DEFAULT 0")
@@ -290,6 +293,7 @@ def migrate_db():
             ("reference_recheck", "Reference Re-chase (x1)", 0.12, 7.50),
             ("training_update", "Training Certificate Update", 0.08, 1.50),
             ("health_declaration", "Health Declaration Only", 0.05, 0.00),
+            ("monitoring_renewal", "Annual Monitoring Renewal", 0.25, 5.00),
         ]
         for ct, lbl, cv, cost in pcr_defaults:
             cursor.execute(

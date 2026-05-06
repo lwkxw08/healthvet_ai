@@ -52,7 +52,7 @@ export default function AgencyDashboard() {
   // Invite cost confirmation modal state
   const [inviteCostModalOpen, setInviteCostModalOpen] = useState(false);
   const [invitePricing, setInvitePricing] = useState<{ vetting_total: number; monitoring_annual_price: number } | null>(null);
-  const [includeMonitoring, setIncludeMonitoring] = useState(false);
+  const [includeMonitoring] = useState(true);
   const [invitePricingLoading, setInvitePricingLoading] = useState(false);
 
   // Remaining checks state (subscription credit)
@@ -77,6 +77,9 @@ export default function AgencyDashboard() {
   const [revetLoading, setRevetLoading] = useState(false);
   const [revetResult, setRevetResult] = useState<Record<string, unknown> | null>(null);
   const [revetRequests, setRevetRequests] = useState<Record<string, unknown>[]>([]);
+  const [revetPricing, setRevetPricing] = useState<{ key: string; label: string; price: number }[]>([]);
+  const [revetBillingMode, setRevetBillingMode] = useState("");
+  const [revetCreditInfo, setRevetCreditInfo] = useState<Record<string, unknown> | null>(null);
 
   // Bulk Import state
   const [bulkCsvText, setBulkCsvText] = useState("");
@@ -101,6 +104,9 @@ export default function AgencyDashboard() {
 
   // Shift Readiness state
   const [shiftOverview, setShiftOverview] = useState<Record<string, unknown> | null>(null);
+
+  // Monitoring renewal state
+  const [renewingMonitoring, setRenewingMonitoring] = useState<string | null>(null);
 
   // Credit pack tiers from DB
   const [creditPackTiers, setCreditPackTiers] = useState<Record<string, unknown>[]>([]);
@@ -233,11 +239,21 @@ export default function AgencyDashboard() {
     setImposterDocsVerified(prev => prev.includes(doc) ? prev.filter(d => d !== doc) : [...prev, doc]);
   };
 
-  const openRevetModal = (candidate: Record<string, unknown>) => {
+  const openRevetModal = async (candidate: Record<string, unknown>) => {
     setRevetCandidate(candidate);
     setRevetSections([]);
     setRevetResult(null);
     setRevetModalOpen(true);
+    // Fetch industry-specific pricing
+    if (token) {
+      try {
+        const pricing = await agencyRevetApi.getRevetPricing(token);
+        const sections = pricing.sections as { key: string; label: string; price: number }[] || [];
+        setRevetPricing(sections);
+        setRevetBillingMode((pricing.billing_mode as string) || "");
+        setRevetCreditInfo((pricing.credit_info as Record<string, unknown>) || null);
+      } catch { /* fallback to empty */ }
+    }
   };
 
   const toggleRevetSection = (section: string) => {
@@ -269,6 +285,27 @@ export default function AgencyDashboard() {
     }
   };
 
+  const renewMonitoring = async (candidateId: string) => {
+    if (!token) return;
+    setRenewingMonitoring(candidateId);
+    try {
+      const result = await monitoringApi.renewMonitoring(token, candidateId);
+      const payment = result.payment as Record<string, unknown> | undefined;
+      if (payment?.status === "paid_by_subscription") {
+        alert(`Monitoring renewed! Credits remaining: ${payment.credits_remaining}`);
+      } else if (payment?.payment_required) {
+        alert(`Monitoring renewal invoice created (£${(result.sell_price as number)?.toFixed(2)}). Check Billing History to pay.`);
+      } else {
+        alert(`Monitoring renewed successfully. Expires: ${new Date(result.monitoring_expires_at as string).toLocaleDateString()}`);
+      }
+      await loadData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to renew monitoring");
+    } finally {
+      setRenewingMonitoring(null);
+    }
+  };
+
   const openInviteCostModal = async () => {
     if (!token || !inviteEmail.trim()) return;
     setInvitePricingLoading(true);
@@ -276,7 +313,7 @@ export default function AgencyDashboard() {
     try {
       const pricing = await agencyInvitesApi.getVettingPricing(token);
       setInvitePricing(pricing);
-      setIncludeMonitoring(false);
+      // Monitoring is always included (first year free with full vetting)
       // Also refresh remaining checks
       try {
         const rc = await billingApi.getRemainingChecks(token, "me");
@@ -561,7 +598,8 @@ export default function AgencyDashboard() {
 
   // Filter candidates by status and RAG
 
-  const REVET_SECTION_OPTIONS = [
+  // Use dynamically fetched pricing from the industry matrix, with fallback defaults
+  const REVET_SECTION_OPTIONS = revetPricing.length > 0 ? revetPricing : [
     { key: "identity", label: "Identity Verification", price: 15.00 },
     { key: "rtw", label: "Right to Work", price: 10.00 },
     { key: "dbs", label: "DBS Check", price: 25.00 },
@@ -569,6 +607,7 @@ export default function AgencyDashboard() {
     { key: "registration", label: "Professional Registration", price: 12.00 },
     { key: "references", label: "References", price: 10.00 },
     { key: "training", label: "Training Certificates", price: 8.00 },
+    { key: "monitoring", label: "12 Month Continuous Monitoring", price: 50.00 },
   ];
 
   const revetTotalCost = revetSections.reduce((sum, sec) => {
@@ -1124,6 +1163,7 @@ export default function AgencyDashboard() {
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Shift Ready</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Compliance</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Employment Status</th>
+                      <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Monitoring</th>
                       <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Actions</th>
                     </tr>
                   </thead>
@@ -1131,6 +1171,9 @@ export default function AgencyDashboard() {
                     {filteredCandidates.map((c) => {
                       const cId = (c.id as string) || (c.candidate_id as string);
                       const empStatus = (c.employment_status as string) || "vetting";
+                      const monActive = c.monitoring_active as number;
+                      const monExpiry = c.monitoring_expires_at as string | null;
+                      const monDaysLeft = monExpiry ? Math.ceil((new Date(monExpiry).getTime() - Date.now()) / 86400000) : null;
                       return (
                         <tr key={cId} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                           <td className="px-4 py-3 text-sm text-white">{c.first_name as string} {c.last_name as string}</td>
@@ -1160,6 +1203,37 @@ export default function AgencyDashboard() {
                               <option value="rejected">Rejected</option>
                               <option value="left_business">Left Business</option>
                             </select>
+                          </td>
+                          <td className="px-4 py-3">
+                            {monActive ? (
+                              <div className="text-xs">
+                                {monDaysLeft !== null && monDaysLeft <= 30 ? (
+                                  <span className="text-amber-400 flex items-center gap-1">
+                                    <Clock size={12} /> {monDaysLeft}d left
+                                  </span>
+                                ) : (
+                                  <span className="text-green-400 flex items-center gap-1">
+                                    <Shield size={12} /> Active
+                                  </span>
+                                )}
+                                {monExpiry && <p className="text-slate-500 text-[10px] mt-0.5">Exp: {new Date(monExpiry).toLocaleDateString()}</p>}
+                              </div>
+                            ) : monExpiry ? (
+                              <div className="text-xs">
+                                <span className="text-red-400 flex items-center gap-1 mb-1">
+                                  <XCircle size={12} /> Expired
+                                </span>
+                                <button
+                                  onClick={() => renewMonitoring(cId)}
+                                  disabled={renewingMonitoring === cId}
+                                  className="text-[10px] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded px-2 py-0.5 border-none cursor-pointer"
+                                >
+                                  {renewingMonitoring === cId ? "..." : "Renew"}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500 text-xs">N/A</span>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
@@ -1914,17 +1988,17 @@ export default function AgencyDashboard() {
                       </div>
                     )}
 
-                    {/* Optional annual monitoring */}
-                    <label className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600 cursor-pointer hover:bg-slate-700/70 transition-colors">
+                    {/* First year monitoring included */}
+                    <div className="flex items-center justify-between p-4 bg-slate-700/30 rounded-lg border border-slate-600/50">
                       <div className="flex items-center gap-3">
-                        <input type="checkbox" checked={includeMonitoring} onChange={(e) => setIncludeMonitoring(e.target.checked)} className="w-5 h-5 rounded accent-blue-500" />
+                        <CheckCircle className="text-green-400" size={18} />
                         <div>
-                          <p className="text-white font-medium text-sm">Annual Monitoring Service</p>
-                          <p className="text-slate-400 text-xs mt-0.5">Continuous compliance monitoring for 12 months</p>
+                          <p className="text-white font-medium text-sm">12 Months Continuous Monitoring</p>
+                          <p className="text-slate-400 text-xs mt-0.5">Included with full vetting — no extra charge</p>
                         </div>
                       </div>
-                      <span className="text-blue-400 font-bold text-lg">£{invitePricing.monitoring_annual_price.toFixed(2)}</span>
-                    </label>
+                      <span className="text-green-400 font-semibold text-sm">Included</span>
+                    </div>
 
                     {/* Action buttons */}
                     <div className="flex gap-3">
@@ -1949,23 +2023,23 @@ export default function AgencyDashboard() {
                       <span className="text-green-400 font-bold text-xl">£{invitePricing.vetting_total.toFixed(2)}</span>
                     </div>
 
-                    {/* Optional annual monitoring */}
-                    <label className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600 cursor-pointer hover:bg-slate-700/70 transition-colors">
+                    {/* First year monitoring included */}
+                    <div className="flex items-center justify-between p-4 bg-slate-700/30 rounded-lg border border-slate-600/50">
                       <div className="flex items-center gap-3">
-                        <input type="checkbox" checked={includeMonitoring} onChange={(e) => setIncludeMonitoring(e.target.checked)} className="w-5 h-5 rounded accent-blue-500" />
+                        <CheckCircle className="text-green-400" size={18} />
                         <div>
-                          <p className="text-white font-medium text-sm">Annual Monitoring Service</p>
-                          <p className="text-slate-400 text-xs mt-0.5">Continuous compliance monitoring for 12 months</p>
+                          <p className="text-white font-medium text-sm">12 Months Continuous Monitoring</p>
+                          <p className="text-slate-400 text-xs mt-0.5">Included with full vetting — no extra charge</p>
                         </div>
                       </div>
-                      <span className="text-blue-400 font-bold text-lg">£{invitePricing.monitoring_annual_price.toFixed(2)}</span>
-                    </label>
+                      <span className="text-green-400 font-semibold text-sm">Included</span>
+                    </div>
 
                     {/* Total */}
                     <div className="flex justify-between items-center p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
                       <span className="text-green-300 font-semibold text-sm">Total Cost</span>
                       <span className="text-green-400 font-bold text-2xl">
-                        £{(invitePricing.vetting_total + (includeMonitoring ? invitePricing.monitoring_annual_price : 0)).toFixed(2)}
+                        £{invitePricing.vetting_total.toFixed(2)}
                       </span>
                     </div>
 
@@ -1998,15 +2072,27 @@ export default function AgencyDashboard() {
                 <p className="text-slate-300 text-sm mb-1">
                   Candidate: <span className="font-semibold text-white">{revetCandidate.first_name as string} {revetCandidate.last_name as string}</span>
                 </p>
-                <p className="text-slate-400 text-xs mb-4">Select the sections to re-vet. Each section will be billed separately.</p>
+                <p className="text-slate-400 text-xs mb-4">Select the sections to re-vet. Each section will be billed via your payment method.</p>
 
                 {revetResult ? (
                   <div className="space-y-3">
                     <div className="p-4 bg-green-500/20 border border-green-500/30 rounded-lg">
                       <p className="text-green-300 font-semibold mb-1">Re-vet request submitted successfully</p>
-                      <p className="text-green-200 text-sm">Token: <code className="bg-slate-700 px-2 py-0.5 rounded text-xs">{revetResult.token as string}</code></p>
-                      <p className="text-green-200 text-sm mt-1">Link will be emailed to {revetResult.candidate_email as string}</p>
                       <p className="text-green-200 text-sm mt-1">Total cost: <span className="font-bold">£{(revetResult.total_cost as number)?.toFixed(2)}</span></p>
+                      {(() => {
+                        const payment = revetResult.payment as Record<string, unknown> | undefined;
+                        if (!payment) return null;
+                        if (payment.status === "paid_by_subscription") return (
+                          <p className="text-green-200 text-sm mt-1">Deducted from credit balance. Credits remaining: <span className="font-bold">{String(payment.credits_remaining)}</span></p>
+                        );
+                        if (payment.status === "awaiting_payment") return (
+                          <p className="text-green-200 text-sm mt-1">Invoice created (£{(payment.amount as number)?.toFixed(2)}). Go to Billing to pay.</p>
+                        );
+                        if (payment.status === "invoice_created") return (
+                          <p className="text-green-200 text-sm mt-1">Manual invoice created for £{(payment.amount as number)?.toFixed(2)}.</p>
+                        );
+                        return null;
+                      })()}
                     </div>
                     <div className="space-y-1">
                       {(revetResult.section_costs as {section: string; label: string; cost: number}[])?.map((sc) => (
@@ -2042,6 +2128,22 @@ export default function AgencyDashboard() {
                     <div className="flex justify-between items-center p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
                       <span className="text-amber-300 font-semibold text-sm">Estimated Total</span>
                       <span className="text-amber-400 font-bold text-lg">£{revetTotalCost.toFixed(2)}</span>
+                    </div>
+
+                    {/* Billing method notification */}
+                    <div className="p-3 bg-slate-700/40 border border-slate-600/50 rounded-lg text-xs">
+                      {revetBillingMode === "subscription" || revetBillingMode === "credit_pack" ? (
+                        <div>
+                          <p className="text-blue-300 font-medium flex items-center gap-1"><CreditCard size={12} /> Will be deducted from your credit balance</p>
+                          {revetCreditInfo && (
+                            <p className="text-slate-400 mt-1">Current balance: <span className="text-white font-semibold">{String(revetCreditInfo.remaining_checks ?? revetCreditInfo.credits_remaining ?? 0)} credits</span></p>
+                          )}
+                        </div>
+                      ) : revetBillingMode === "online_payment" ? (
+                        <p className="text-green-300 font-medium flex items-center gap-1"><CreditCard size={12} /> An invoice will be created for online payment</p>
+                      ) : (
+                        <p className="text-slate-300 font-medium flex items-center gap-1"><FileText size={12} /> A manual invoice will be raised</p>
+                      )}
                     </div>
 
                     <button

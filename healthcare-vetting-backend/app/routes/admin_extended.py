@@ -2,7 +2,7 @@
 manage users, alert settings, audit log viewer, edit entry data, re-trigger verifications."""
 from datetime import datetime, timezone
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from app.database import get_db
 from app.utils.auth import get_current_user, generate_id, hash_password, create_access_token
@@ -628,11 +628,86 @@ async def admin_edit_check_data(
         return dict(updated)
 
 
+# ── Shared helper: bill agency for admin-triggered check ─────────
+
+_RETRIGGER_PRICING_MAP = {
+    "cv": "cv_analysis", "identity": "identity_verification",
+    "rtw": "right_to_work", "dbs": "enhanced_dbs",
+    "registration": "registration_check", "training": "training_verification",
+    "references": "references", "employment": "employment_verification",
+}
+
+_RETRIGGER_PCR_MAP = {
+    "dbs": "dbs_recheck", "rtw": "rtw_recheck",
+    "registration": "registration_check", "references": "reference_recheck",
+    "training": "training_update", "employment": "reference_recheck",
+}
+
+
+def _bill_agency_for_retrigger(candidate_id: str, check_type: str, now: str) -> dict | None:
+    """Resolve the candidate's agency and bill them for an admin re-triggered check."""
+    from datetime import timedelta
+    with get_db() as db:
+        db.execute("SELECT agency_id FROM agency_candidates WHERE candidate_id=%s LIMIT 1", (candidate_id,))
+        ac_row = db.fetchone()
+        if not ac_row:
+            return None
+        agency_id = dict(ac_row)["agency_id"]
+        db.execute("SELECT billing_mode, discount_percent FROM agencies WHERE id=%s", (agency_id,))
+        ag = db.fetchone()
+        ag_data = dict(ag) if ag else {}
+        billing_mode = ag_data.get("billing_mode") or "manual_invoicing"
+        discount_pct = float(ag_data.get("discount_percent") or 0)
+
+        pricing_key = _RETRIGGER_PRICING_MAP.get(check_type, check_type)
+        db.execute("SELECT sell_price, cost_price FROM pricing_settings WHERE check_type=%s", (pricing_key,))
+        pr = db.fetchone()
+        sell_price = float(dict(pr).get("sell_price") or 0) if pr else 0
+        cost_price = float(dict(pr).get("cost_price") or 0) if pr else 0
+        if discount_pct > 0:
+            sell_price = sell_price * (1 - discount_pct / 100)
+        if sell_price <= 0:
+            return None
+
+        due_date = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        description = f"Admin Re-Triggered: {check_type.replace('_', ' ').title()}"
+
+        if billing_mode in ("subscription", "credit_pack"):
+            pcr_key = _RETRIGGER_PCR_MAP.get(check_type, check_type)
+            from app.services.billing import BillingService
+            return BillingService.use_subscription_check(
+                agency_id, candidate_id, description,
+                round(sell_price, 2), round(cost_price, 2), pcr_key,
+            )
+        elif billing_mode == "online_payment":
+            inv_id = generate_id()
+            db.execute(
+                """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description,
+                   cost_amount, sell_amount, status, payment_method, due_date, created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,'pending','stripe',%s,%s)""",
+                (inv_id, agency_id, candidate_id, f"retrigger_{check_type}",
+                 description, round(cost_price, 2), round(sell_price, 2), due_date, now),
+            )
+            return {"invoice_id": inv_id, "status": "awaiting_payment", "amount": round(sell_price, 2)}
+        else:
+            inv_id = generate_id()
+            db.execute(
+                """INSERT INTO invoices (id, agency_id, candidate_id, check_type, description,
+                   cost_amount, sell_amount, status, payment_method, due_date, created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,'pending','manual',%s,%s)""",
+                (inv_id, agency_id, candidate_id, f"retrigger_{check_type}",
+                 description, round(cost_price, 2), round(sell_price, 2), due_date, now),
+            )
+            return {"invoice_id": inv_id, "status": "invoice_created", "amount": round(sell_price, 2)}
+
+
 # ── 8. Re-trigger Employment & Reference Verification Emails ─────
 
 @router.post("/candidates/{candidate_id}/retrigger-reference/{ref_id}")
 async def retrigger_reference_verification(
-    candidate_id: str, ref_id: str, current_user: dict = Depends(get_current_user)
+    candidate_id: str, ref_id: str,
+    charge_agency: bool = Query(False, description="Whether to bill the agency for this re-trigger"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Re-trigger a reference verification email."""
     require_admin(current_user)
@@ -694,6 +769,11 @@ async def retrigger_reference_verification(
         },
     )
 
+    # Phase 2b: Bill the agency if requested
+    billing_result = None
+    if charge_agency:
+        billing_result = _bill_agency_for_retrigger(candidate_id, "references", now)
+
     # Phase 3: Audit log (separate DB context)
     import json as _json
     log_id = generate_id()
@@ -704,6 +784,7 @@ async def retrigger_reference_verification(
         "reminder_number": reminder_count,
         "email_status": email_result.get("status", "unknown") if email_result else "error",
         "email_provider": email_result.get("provider", "none") if email_result else "none",
+        "charge_agency": charge_agency, "billing": billing_result,
     })
     with get_db() as db:
         db.execute(
@@ -713,12 +794,17 @@ async def retrigger_reference_verification(
 
         db.execute("SELECT * FROM references_ WHERE id=%s", (ref_id,))
         updated = db.fetchone()
-        return dict(updated)
+        resp = dict(updated)
+        if billing_result:
+            resp["billing"] = billing_result
+        return resp
 
 
 @router.post("/candidates/{candidate_id}/retrigger-employment/{ver_id}")
 async def retrigger_employment_verification(
-    candidate_id: str, ver_id: str, current_user: dict = Depends(get_current_user)
+    candidate_id: str, ver_id: str,
+    charge_agency: bool = Query(False, description="Whether to bill the agency for this re-trigger"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Re-trigger an employment verification email."""
     require_admin(current_user)
@@ -795,6 +881,11 @@ async def retrigger_employment_verification(
         },
     )
 
+    # Phase 2b: Bill the agency if requested
+    billing_result = None
+    if charge_agency:
+        billing_result = _bill_agency_for_retrigger(candidate_id, "employment", now)
+
     # Phase 3: Audit log (separate DB context)
     import json as _json
     log_id = generate_id()
@@ -806,6 +897,7 @@ async def retrigger_employment_verification(
         "reminder_number": reminder_count,
         "email_status": email_result.get("status", "unknown") if email_result else "error",
         "email_provider": email_result.get("provider", "none") if email_result else "none",
+        "charge_agency": charge_agency, "billing": billing_result,
     })
     with get_db() as db:
         db.execute(
@@ -815,7 +907,10 @@ async def retrigger_employment_verification(
 
         db.execute("SELECT * FROM employment_verifications WHERE id=%s", (ver_id,))
         updated = db.fetchone()
-        return dict(updated)
+        resp = dict(updated)
+        if billing_result:
+            resp["billing"] = billing_result
+        return resp
 
 
 # ── 9. Get Full Candidate Detail (all checks for admin view) ─────
@@ -829,12 +924,14 @@ _RETRIGGERABLE_CHECKS = {"cv", "identity", "rtw", "dbs", "registration", "traini
 async def retrigger_candidate_check(
     candidate_id: str,
     check_type: str,
+    charge_agency: bool = Query(False, description="Whether to bill the agency for this re-triggered check"),
     current_user: dict = Depends(get_current_user),
 ):
     """Admin re-trigger for any candidate check that may have stalled or failed.
 
     Loads the candidate's latest draft data for the given section (if any),
     invokes the relevant TriggerEngine._run_* method, then re-evaluates compliance.
+    If charge_agency=true, bills the agency via their configured payment method.
     Returns the check result string and an audit entry.
     """
     require_admin(current_user)
@@ -860,6 +957,8 @@ async def retrigger_candidate_check(
     }
     section_key = section_map.get(check_type)
     section_data: dict = {}
+    billing_result: dict | None = None
+
     with get_db() as db:
         db.execute("SELECT id FROM candidates WHERE id=%s", (candidate_id,))
         if not db.fetchone():
@@ -878,6 +977,10 @@ async def retrigger_candidate_check(
                     section_data = _json.loads(raw) if isinstance(raw, str) else (raw or {})
                 except Exception:
                     section_data = {}
+
+        # If charge_agency is true, resolve the agency and bill them
+        if charge_agency:
+            billing_result = _bill_agency_for_retrigger(candidate_id, check_type, now)
 
     # Dispatch to the relevant TriggerEngine method (outside DB context — each method manages its own)
     from app.services.trigger_engine import TriggerEngine
@@ -898,12 +1001,10 @@ async def retrigger_candidate_check(
         elif check_type == "training":
             result = TriggerEngine._run_training(candidate_id, section_data)
         elif check_type == "references":
-            # Also re-send any outstanding employment verification emails
             ref_result = TriggerEngine._run_references(candidate_id, section_data)
             emp_result = TriggerEngine._run_employment_verifications(candidate_id)
             result = f"references: {ref_result}; employment: {emp_result}"
         elif check_type == "compliance":
-            # Just re-evaluate compliance without re-running any individual check
             result = "compliance re-evaluation requested"
         else:
             result = "unsupported"
@@ -919,7 +1020,10 @@ async def retrigger_candidate_check(
     # Audit log
     import json as _json
     log_id = generate_id()
-    details = _json.dumps({"check_type": check_type, "result": result, "had_draft": bool(section_data)})
+    details = _json.dumps({
+        "check_type": check_type, "result": result, "had_draft": bool(section_data),
+        "charge_agency": charge_agency, "billing": billing_result,
+    })
     try:
         with get_db() as db:
             db.execute(
@@ -930,7 +1034,10 @@ async def retrigger_candidate_check(
     except Exception:
         pass
 
-    return {"candidate_id": candidate_id, "check_type": check_type, "result": result, "triggered_at": now}
+    resp = {"candidate_id": candidate_id, "check_type": check_type, "result": result, "triggered_at": now}
+    if billing_result:
+        resp["billing"] = billing_result
+    return resp
 
 
 @router.get("/candidates/{candidate_id}/full-detail")

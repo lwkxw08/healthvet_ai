@@ -759,11 +759,20 @@ export default function AdminPanel() {
   // Generic re-trigger for stallable checks (CV, Identity, RTW, DBS, Registration, Training, Compliance)
   const handleRetriggerCheck = async (candidateId: string, checkType: string, label: string) => {
     if (!token) return;
+    // Ask admin whether to charge the agency for this re-trigger
+    const chargeAgency = window.confirm(
+      `Re-trigger ${label}?\n\nClick OK to charge the agency for this check.\nClick Cancel to re-trigger without charging.`
+    );
     const key = `${checkType}:${candidateId}`;
     setRetriggeringId(key);
     try {
-      const res = await adminExtendedApi.retriggerCheck(token, candidateId, checkType);
-      showMessage(`${label} re-triggered: ${res.result}`);
+      const res = await adminExtendedApi.retriggerCheck(token, candidateId, checkType, chargeAgency);
+      const billing = res.billing as Record<string, unknown> | undefined;
+      if (billing) {
+        showMessage(`${label} re-triggered: ${res.result}. Agency charged — ${billing.status} (£${(billing.amount as number)?.toFixed(2) || "0.00"})`);
+      } else {
+        showMessage(`${label} re-triggered: ${res.result}${chargeAgency ? "" : " (no charge)"}`);
+      }
       await loadCandidateDetail(candidateId);
       await evaluateCandidate(candidateId);
     } catch (err) {
