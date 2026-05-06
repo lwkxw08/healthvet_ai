@@ -42,6 +42,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [auth]);
 
+  // Listen for session-expired events from the API client (401 + refresh failed)
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setAuth({ token: null, userType: null, userId: null });
+    };
+    const handleTokenRefreshed = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.access_token) {
+        setAuth(prev => ({ ...prev, token: detail.access_token }));
+      }
+    };
+    window.addEventListener("viperai:session-expired", handleSessionExpired);
+    window.addEventListener("viperai:token-refreshed", handleTokenRefreshed);
+    return () => {
+      window.removeEventListener("viperai:session-expired", handleSessionExpired);
+      window.removeEventListener("viperai:token-refreshed", handleTokenRefreshed);
+    };
+  }, []);
+
   const login = (token: string, userType: string, userId: string) => {
     setAuth({ token, userType, userId });
   };

@@ -45,6 +45,33 @@ interface RequestOptions {
   token?: string;
 }
 
+// Track whether a token refresh is already in-flight to avoid parallel refreshes
+let _refreshPromise: Promise<string | null> | null = null;
+
+async function _tryRefreshToken(): Promise<string | null> {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = (async () => {
+    try {
+      const csrfMatch = document.cookie.match(/(?:^|; )viperai_csrf=([^;]*)/);
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrfMatch) hdrs["X-CSRF-Token"] = decodeURIComponent(csrfMatch[1]);
+      const res = await fetch(`${API_URL}/api/auth/token/refresh-cookie`, {
+        method: "POST",
+        credentials: "include",
+        headers: hdrs,
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return (data.access_token as string) || null;
+    } catch {
+      return null;
+    } finally {
+      _refreshPromise = null;
+    }
+  })();
+  return _refreshPromise;
+}
+
 export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, token } = options;
   const headers: Record<string, string> = {
@@ -76,6 +103,34 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
     credentials: "include",  // send httpOnly cookies
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  // On 401, try to silently refresh the access token and retry once
+  if (response.status === 401 && token && !endpoint.includes("/auth/token/refresh")) {
+    const newToken = await _tryRefreshToken();
+    if (newToken) {
+      // Notify AuthContext of the new token
+      window.dispatchEvent(new CustomEvent("viperai:token-refreshed", { detail: { access_token: newToken } }));
+      // Retry the original request with the fresh token
+      const retryHeaders = { ...headers, "X-Auth-Token": newToken };
+      const retryResponse = await fetch(`${API_URL}${endpoint}`, {
+        method,
+        headers: retryHeaders,
+        credentials: "include",
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!retryResponse.ok) {
+        if (retryResponse.status === 401) {
+          window.dispatchEvent(new Event("viperai:session-expired"));
+        }
+        const error = await retryResponse.json().catch(() => ({ detail: "Request failed" }));
+        throw new Error(error.detail || `HTTP ${retryResponse.status}`);
+      }
+      return retryResponse.json();
+    }
+    // Refresh failed — session is truly expired
+    window.dispatchEvent(new Event("viperai:session-expired"));
+    throw new Error("Your session has expired. Please log in again.");
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Request failed" }));
