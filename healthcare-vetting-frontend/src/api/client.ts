@@ -123,7 +123,8 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
           window.dispatchEvent(new Event("viperai:session-expired"));
         }
         const error = await retryResponse.json().catch(() => ({ detail: "Request failed" }));
-        throw new Error(error.detail || `HTTP ${retryResponse.status}`);
+        const retryDetail = typeof error.detail === "string" ? error.detail : (Array.isArray(error.detail) ? error.detail.map((d: Record<string, unknown>) => d.msg || JSON.stringify(d)).join("; ") : JSON.stringify(error.detail));
+        throw new Error(retryDetail || `HTTP ${retryResponse.status}`);
       }
       return retryResponse.json();
     }
@@ -134,7 +135,8 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Request failed" }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
+    const detail = typeof error.detail === "string" ? error.detail : (Array.isArray(error.detail) ? error.detail.map((d: Record<string, unknown>) => d.msg || JSON.stringify(d)).join("; ") : JSON.stringify(error.detail));
+    throw new Error(detail || `HTTP ${response.status}`);
   }
 
   return response.json();
@@ -811,7 +813,8 @@ export const leadGenerationApi = {
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: "Export failed" }));
-      throw new Error(error.detail || `HTTP ${response.status}`);
+      const detail = typeof error.detail === "string" ? error.detail : (Array.isArray(error.detail) ? error.detail.map((d: Record<string, unknown>) => d.msg || JSON.stringify(d)).join("; ") : JSON.stringify(error.detail));
+      throw new Error(detail || `HTTP ${response.status}`);
     }
     const blob = await response.blob();
     const disposition = response.headers.get("Content-Disposition") || "";
