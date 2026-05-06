@@ -251,6 +251,15 @@ export default function AdminPanel() {
   const [candidateDetail, setCandidateDetail] = useState<Record<string, unknown> | null>(null);
   const [retriggeringId, setRetriggeringId] = useState("");
 
+  // Re-trigger charge decision modal
+  const [retriggerModal, setRetriggerModal] = useState<{
+    open: boolean;
+    candidateId: string;
+    checkType: string;
+    label: string;
+    price: number | null;
+  }>({ open: false, candidateId: "", checkType: "", label: "", price: null });
+
 
   // Monitoring revenue state
   const [monRevenuePeriod, setMonRevenuePeriod] = useState("ytd");
@@ -787,12 +796,23 @@ export default function AdminPanel() {
   };
 
   // Generic re-trigger for stallable checks (CV, Identity, RTW, DBS, Registration, Training, Compliance)
-  const handleRetriggerCheck = async (candidateId: string, checkType: string, label: string) => {
+  const handleRetriggerCheck = (candidateId: string, checkType: string, label: string) => {
     if (!token) return;
-    // Ask admin whether to charge the agency for this re-trigger
-    const chargeAgency = window.confirm(
-      `Re-trigger ${label}?\n\nClick OK to charge the agency for this check.\nClick Cancel to re-trigger without charging.`
-    );
+    // Look up the check price from industry pricing if available
+    const checkPriceMap: Record<string, number> = {};
+    if (selectedCandidate) {
+      const agency = selectedCandidate.agency_id;
+      if (agency) {
+        // Price will be shown as "industry pricing" — use a placeholder that the modal can fetch
+      }
+    }
+    setRetriggerModal({ open: true, candidateId, checkType, label, price: checkPriceMap[checkType] ?? null });
+  };
+
+  const executeRetrigger = async (chargeAgency: boolean) => {
+    if (!token) return;
+    const { candidateId, checkType, label } = retriggerModal;
+    setRetriggerModal(prev => ({ ...prev, open: false }));
     const key = `${checkType}:${candidateId}`;
     setRetriggeringId(key);
     try {
@@ -4188,6 +4208,50 @@ export default function AdminPanel() {
           </div>
         )}
       </main>
+
+      {/* Re-trigger Charge Decision Modal */}
+      {retriggerModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-3">
+              <div className="flex items-center gap-2">
+                <Send size={18} className="text-amber-400" />
+                <h2 className="text-lg font-bold text-white">Re-trigger Check</h2>
+              </div>
+              <button onClick={() => setRetriggerModal(prev => ({ ...prev, open: false }))}
+                className="text-slate-500 hover:text-white transition-colors text-xl leading-none">&times;</button>
+            </div>
+
+            {/* Content */}
+            <div className="px-6 pb-2">
+              <p className="text-slate-300 text-sm">
+                You are about to re-trigger <span className="text-white font-semibold">{retriggerModal.label}</span>
+                {selectedCandidate ? <> for candidate <span className="text-white font-semibold">{String(selectedCandidate.first_name || "")} {String(selectedCandidate.last_name || "")}</span></> : ""}.
+              </p>
+              <p className="text-slate-400 text-xs mt-2">
+                Choose whether to charge the agency for this re-triggered check or waive the charge.
+              </p>
+            </div>
+
+            {/* Action buttons */}
+            <div className="px-6 pt-4 pb-5 space-y-2.5">
+              <button onClick={() => executeRetrigger(true)}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">
+                <DollarSign size={16} /> Charge Agency for Re-trigger
+              </button>
+              <button onClick={() => executeRetrigger(false)}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-slate-700 hover:bg-slate-600 text-white border border-slate-600 transition-colors">
+                <XCircle size={16} /> Waive Charge — Re-trigger for Free
+              </button>
+              <button onClick={() => setRetriggerModal(prev => ({ ...prev, open: false }))}
+                className="w-full py-2.5 rounded-xl text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
