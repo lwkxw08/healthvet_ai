@@ -893,10 +893,19 @@ async def get_revet_pricing(current_user: dict = Depends(get_current_user)):
                 ip = dict(ipr)
                 industry_pricing[ip["check_type"]] = ip
 
+        # Map re-vet section keys to industry_check_pricing check_type keys
+        # Industry pricing uses status-based keys like identity_verified, dbs_valid, etc.
         section_to_industry_key = {
-            "identity": "identity_verification", "rtw": "right_to_work",
+            "identity": "identity_verified", "rtw": "right_to_work_valid",
+            "dbs": "dbs_valid", "cv": "cv_validated",
+            "registration": "registration_active", "references": "references_verified",
+            "training": "training_compliant", "monitoring": "monitoring",
+        }
+        # Fallback keys for pricing_settings table
+        section_to_pricing_key = {
+            "identity": "identity", "rtw": "right_to_work",
             "dbs": "enhanced_dbs", "cv": "cv_analysis",
-            "registration": "registration_check", "references": "references",
+            "registration": "registration", "references": "references",
             "training": "training_verification", "monitoring": "monitoring",
         }
 
@@ -907,7 +916,8 @@ async def get_revet_pricing(current_user: dict = Depends(get_current_user)):
                 price = float(ip.get("sell_price") or 0)
                 label = ip.get("label") or industry_key.replace("_", " ").title()
             else:
-                db.execute("SELECT sell_price, label FROM pricing_settings WHERE check_type=%s", (industry_key,))
+                fallback_key = section_to_pricing_key.get(section_key, section_key)
+                db.execute("SELECT sell_price, label FROM pricing_settings WHERE check_type=%s", (fallback_key,))
                 pr = db.fetchone()
                 if pr:
                     pd = dict(pr)
@@ -989,10 +999,17 @@ async def request_revet(
                 industry_pricing[ip["check_type"]] = ip
 
         # Map re-vet section keys to industry_check_pricing check_type keys
+        # Industry pricing uses status-based keys like identity_verified, dbs_valid, etc.
         section_to_industry_key = {
-            "identity": "identity_verification", "rtw": "right_to_work",
+            "identity": "identity_verified", "rtw": "right_to_work_valid",
+            "dbs": "dbs_valid", "cv": "cv_validated",
+            "registration": "registration_active", "references": "references_verified",
+            "training": "training_compliant", "monitoring": "monitoring",
+        }
+        section_to_pricing_key = {
+            "identity": "identity", "rtw": "right_to_work",
             "dbs": "enhanced_dbs", "cv": "cv_analysis",
-            "registration": "registration_check", "references": "references",
+            "registration": "registration", "references": "references",
             "training": "training_verification", "monitoring": "monitoring",
         }
 
@@ -1006,8 +1023,9 @@ async def request_revet(
                 price = float(ip.get("sell_price") or 0)
                 label = ip.get("label") or section.replace("_", " ").title()
             else:
+                fallback_key = section_to_pricing_key.get(section, section)
                 db.execute(
-                    "SELECT sell_price, label FROM pricing_settings WHERE check_type=%s", (section,)
+                    "SELECT sell_price, label FROM pricing_settings WHERE check_type=%s", (fallback_key,)
                 )
                 price_row = db.fetchone()
                 if price_row:
