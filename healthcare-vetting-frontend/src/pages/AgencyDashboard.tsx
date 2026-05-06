@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
@@ -6,6 +6,7 @@ import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
   DollarSign, FileText, Briefcase, CreditCard, Download, Upload, UserPlus, Activity,
+  Menu, X as XIcon, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
@@ -22,6 +23,35 @@ export default function AgencyDashboard() {
   const [candidateAlerts, setCandidateAlerts] = useState<Record<string, unknown>[]>([]);
   const [invites, setInvites] = useState<Record<string, unknown>[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
+
+  // Mobile nav state
+  const [agencyMobileMenuOpen, setAgencyMobileMenuOpen] = useState(false);
+  const agencyNavScrollRef = useRef<HTMLDivElement>(null);
+  const [agencyCanScrollLeft, setAgencyCanScrollLeft] = useState(false);
+  const [agencyCanScrollRight, setAgencyCanScrollRight] = useState(false);
+
+  const checkAgencyNavScroll = useCallback(() => {
+    const el = agencyNavScrollRef.current;
+    if (!el) return;
+    setAgencyCanScrollLeft(el.scrollLeft > 4);
+    setAgencyCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  useEffect(() => {
+    const el = agencyNavScrollRef.current;
+    if (!el) return;
+    checkAgencyNavScroll();
+    el.addEventListener("scroll", checkAgencyNavScroll, { passive: true });
+    const ro = new ResizeObserver(checkAgencyNavScroll);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", checkAgencyNavScroll); ro.disconnect(); };
+  }, [checkAgencyNavScroll]);
+
+  const scrollAgencyNav = (dir: "left" | "right") => {
+    const el = agencyNavScrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === "left" ? -200 : 200, behavior: "smooth" });
+  };
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [inviteError, setInviteError] = useState("");
@@ -779,29 +809,72 @@ export default function AgencyDashboard() {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <div className="bg-slate-800/50 border-b border-slate-700 px-4 sm:px-6">
-        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-          {[
-            { key: "dashboard" as Tab, label: "Dashboard", icon: <BarChart3 size={16} /> },
-            { key: "candidates" as Tab, label: "Candidates", icon: <Users size={16} /> },
-            { key: "invites" as Tab, label: `Invites (${invites.length})`, icon: <Mail size={16} /> },
-            { key: "bulk-import" as Tab, label: "Bulk Import", icon: <Upload size={16} /> },
-            { key: "sub-accounts" as Tab, label: "Team", icon: <UserPlus size={16} /> },
-            { key: "notifications" as Tab, label: `Notifications${unreadCount > 0 ? ` (${unreadCount})` : ""}`, icon: <Activity size={16} /> },
-            { key: "alerts" as Tab, label: `Alerts (${alerts.length})`, icon: <Bell size={16} /> },
-            { key: "audit" as Tab, label: "CQC Audit", icon: <FileText size={16} /> },
-            { key: "billing" as Tab, label: "Billing", icon: <CreditCard size={16} /> },
-          ].map((item) => (
-            <button key={item.key} onClick={() => setTab(item.key)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
-                tab === item.key ? "text-blue-400 border-blue-400" : "text-slate-400 border-transparent hover:text-white"
-              }`}>
-              {item.icon} {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Navigation Tabs — responsive */}
+      {(() => {
+        const agencyNavItems = [
+          { key: "dashboard" as Tab, label: "Dashboard", icon: <BarChart3 size={16} /> },
+          { key: "candidates" as Tab, label: "Candidates", icon: <Users size={16} /> },
+          { key: "invites" as Tab, label: `Invites (${invites.length})`, icon: <Mail size={16} /> },
+          { key: "bulk-import" as Tab, label: "Bulk Import", icon: <Upload size={16} /> },
+          { key: "sub-accounts" as Tab, label: "Team", icon: <UserPlus size={16} /> },
+          { key: "notifications" as Tab, label: `Notifications${unreadCount > 0 ? ` (${unreadCount})` : ""}`, icon: <Activity size={16} /> },
+          { key: "alerts" as Tab, label: `Alerts (${alerts.length})`, icon: <Bell size={16} /> },
+          { key: "audit" as Tab, label: "CQC Audit", icon: <FileText size={16} /> },
+          { key: "billing" as Tab, label: "Billing", icon: <CreditCard size={16} /> },
+        ];
+        const activeAgencyItem = agencyNavItems.find(i => i.key === tab);
+        return (
+          <div className="bg-slate-800/50 border-b border-slate-700">
+            {/* Mobile: current tab + hamburger */}
+            <div className="flex md:hidden items-center justify-between px-4 py-2">
+              <button onClick={() => setAgencyMobileMenuOpen(!agencyMobileMenuOpen)}
+                className="flex items-center gap-2 text-sm font-medium text-blue-400">
+                {activeAgencyItem?.icon} {activeAgencyItem?.label}
+              </button>
+              <button onClick={() => setAgencyMobileMenuOpen(!agencyMobileMenuOpen)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors">
+                {agencyMobileMenuOpen ? <XIcon size={20} /> : <Menu size={20} />}
+              </button>
+            </div>
+            {/* Mobile dropdown */}
+            {agencyMobileMenuOpen && (
+              <div className="md:hidden border-t border-slate-700/50 bg-slate-800/90 backdrop-blur-sm max-h-80 overflow-y-auto">
+                {agencyNavItems.map((item) => (
+                  <button key={item.key} onClick={() => { setTab(item.key); setAgencyMobileMenuOpen(false); }}
+                    className={`flex items-center gap-3 w-full px-5 py-3 text-sm font-medium transition-colors ${tab === item.key ? "text-blue-400 bg-blue-500/10" : "text-slate-400 hover:text-white hover:bg-slate-700/30"}`}>
+                    {item.icon} {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* Desktop: scrollable tabs with arrow indicators */}
+            <div className="hidden md:flex items-center relative px-4 sm:px-6">
+              {agencyCanScrollLeft && (
+                <button onClick={() => scrollAgencyNav("left")}
+                  className="absolute left-0 z-10 h-full px-1 bg-gradient-to-r from-slate-800 via-slate-800/90 to-transparent text-slate-400 hover:text-white">
+                  <ChevronLeft size={18} />
+                </button>
+              )}
+              <div ref={agencyNavScrollRef} className="flex gap-1 overflow-x-auto scrollbar-hide">
+                {agencyNavItems.map((item) => (
+                  <button key={item.key} onClick={() => setTab(item.key)}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+                      tab === item.key ? "text-blue-400 border-blue-400" : "text-slate-400 border-transparent hover:text-white"
+                    }`}>
+                    {item.icon} {item.label}
+                  </button>
+                ))}
+              </div>
+              {agencyCanScrollRight && (
+                <button onClick={() => scrollAgencyNav("right")}
+                  className="absolute right-0 z-10 h-full px-1 bg-gradient-to-l from-slate-800 via-slate-800/90 to-transparent text-slate-400 hover:text-white">
+                  <ChevronRight size={18} />
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       <main className="p-4 sm:p-6">
         {/* Dashboard Tab */}

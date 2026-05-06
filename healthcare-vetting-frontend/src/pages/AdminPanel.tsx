@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi, documentsApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
@@ -20,6 +20,7 @@ import {
   BarChart3, Bell, LogOut, RefreshCw, Eye, Play, Settings,
   DollarSign, FileText, TrendingUp, ShieldAlert, Zap, Download, CreditCard,
   Edit, Trash2, UserPlus, Ban, History, Send, PlusCircle, Building2, Brain,
+  Menu, X as XIcon, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
@@ -95,6 +96,35 @@ export default function AdminPanel() {
   const [monitoringResults, setMonitoringResults] = useState<Record<string, unknown> | null>(null);
   const [runningMonitoring, setRunningMonitoring] = useState(false);
   const [message, setMessage] = useState("");
+
+  // Mobile nav state
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkNavScroll = useCallback(() => {
+    const el = navScrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  useEffect(() => {
+    const el = navScrollRef.current;
+    if (!el) return;
+    checkNavScroll();
+    el.addEventListener("scroll", checkNavScroll, { passive: true });
+    const ro = new ResizeObserver(checkNavScroll);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", checkNavScroll); ro.disconnect(); };
+  }, [checkNavScroll]);
+
+  const scrollNav = (dir: "left" | "right") => {
+    const el = navScrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === "left" ? -200 : 200, behavior: "smooth" });
+  };
 
   // Settings state
   const [pricing, setPricing] = useState<Record<string, unknown>[]>([]);
@@ -1232,28 +1262,71 @@ export default function AdminPanel() {
         <div className={`mx-6 mt-4 p-3 rounded-lg text-sm ${message.startsWith("Error") ? "bg-red-500/20 text-red-300 border border-red-500/30" : "bg-green-500/20 text-green-300 border border-green-500/30"}`}>{message}</div>
       )}
 
-      {/* Main Navigation — 7 tabs */}
-      <div className="bg-slate-800/50 border-b border-slate-700 px-4 sm:px-6">
-        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-          {([
-            { key: "overview" as MainTab, label: "Overview", icon: <BarChart3 size={16} /> },
-            { key: "candidates" as MainTab, label: "Candidates", icon: <Users size={16} /> },
-            { key: "agencies" as MainTab, label: "Agencies & Billing", icon: <DollarSign size={16} /> },
-            { key: "compliance" as MainTab, label: "Compliance", icon: <ShieldAlert size={16} /> },
-            { key: "trustid-queue" as MainTab, label: `TrustID Queue${(trustidSummary.pending_admin as number) > 0 ? ` (${trustidSummary.pending_admin})` : ""}`, icon: <Shield size={16} /> },
-            { key: "user-management" as MainTab, label: "User Management", icon: <UserPlus size={16} /> },
-            { key: "audit-logs" as MainTab, label: "Audit Logs", icon: <History size={16} /> },
-            { key: "operations" as MainTab, label: "Operations", icon: <Play size={16} /> },
-            { key: "lead-generation" as MainTab, label: "Lead Generation", icon: <Zap size={16} /> },
-            { key: "settings" as MainTab, label: "Settings", icon: <Settings size={16} /> },
-          ]).map((item) => (
-            <button key={item.key} onClick={() => switchMainTab(item.key)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${mainTab === item.key ? "text-blue-400 border-blue-400" : "text-slate-400 border-transparent hover:text-white"}`}>
-              {item.icon} {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Main Navigation — responsive: scroll arrows on desktop, hamburger on mobile */}
+      {(() => {
+        const navItems = [
+          { key: "overview" as MainTab, label: "Overview", icon: <BarChart3 size={16} /> },
+          { key: "candidates" as MainTab, label: "Candidates", icon: <Users size={16} /> },
+          { key: "agencies" as MainTab, label: "Agencies & Billing", icon: <DollarSign size={16} /> },
+          { key: "compliance" as MainTab, label: "Compliance", icon: <ShieldAlert size={16} /> },
+          { key: "trustid-queue" as MainTab, label: `TrustID Queue${(trustidSummary.pending_admin as number) > 0 ? ` (${trustidSummary.pending_admin})` : ""}`, icon: <Shield size={16} /> },
+          { key: "user-management" as MainTab, label: "User Management", icon: <UserPlus size={16} /> },
+          { key: "audit-logs" as MainTab, label: "Audit Logs", icon: <History size={16} /> },
+          { key: "operations" as MainTab, label: "Operations", icon: <Play size={16} /> },
+          { key: "lead-generation" as MainTab, label: "Lead Generation", icon: <Zap size={16} /> },
+          { key: "settings" as MainTab, label: "Settings", icon: <Settings size={16} /> },
+        ];
+        const activeItem = navItems.find(i => i.key === mainTab);
+        return (
+          <div className="bg-slate-800/50 border-b border-slate-700">
+            {/* Mobile: current tab + hamburger */}
+            <div className="flex md:hidden items-center justify-between px-4 py-2">
+              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="flex items-center gap-2 text-sm font-medium text-blue-400">
+                {activeItem?.icon} {activeItem?.label}
+              </button>
+              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors">
+                {mobileMenuOpen ? <XIcon size={20} /> : <Menu size={20} />}
+              </button>
+            </div>
+            {/* Mobile dropdown */}
+            {mobileMenuOpen && (
+              <div className="md:hidden border-t border-slate-700/50 bg-slate-800/90 backdrop-blur-sm max-h-80 overflow-y-auto">
+                {navItems.map((item) => (
+                  <button key={item.key} onClick={() => { switchMainTab(item.key); setMobileMenuOpen(false); }}
+                    className={`flex items-center gap-3 w-full px-5 py-3 text-sm font-medium transition-colors ${mainTab === item.key ? "text-blue-400 bg-blue-500/10" : "text-slate-400 hover:text-white hover:bg-slate-700/30"}`}>
+                    {item.icon} {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* Desktop: scrollable tabs with arrow indicators */}
+            <div className="hidden md:flex items-center relative px-4 sm:px-6">
+              {canScrollLeft && (
+                <button onClick={() => scrollNav("left")}
+                  className="absolute left-0 z-10 h-full px-1 bg-gradient-to-r from-slate-800 via-slate-800/90 to-transparent text-slate-400 hover:text-white">
+                  <ChevronLeft size={18} />
+                </button>
+              )}
+              <div ref={navScrollRef} className="flex gap-1 overflow-x-auto scrollbar-hide">
+                {navItems.map((item) => (
+                  <button key={item.key} onClick={() => switchMainTab(item.key)}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${mainTab === item.key ? "text-blue-400 border-blue-400" : "text-slate-400 border-transparent hover:text-white"}`}>
+                    {item.icon} {item.label}
+                  </button>
+                ))}
+              </div>
+              {canScrollRight && (
+                <button onClick={() => scrollNav("right")}
+                  className="absolute right-0 z-10 h-full px-1 bg-gradient-to-l from-slate-800 via-slate-800/90 to-transparent text-slate-400 hover:text-white">
+                  <ChevronRight size={18} />
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Sub-tab navigation — contextual per main tab */}
       {mainTab === "overview" && (
