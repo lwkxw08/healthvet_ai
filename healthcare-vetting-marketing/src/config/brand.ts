@@ -307,9 +307,9 @@ export const brand = {
     {
       quote:
         "We cut our onboarding time from 3 weeks to 4 days. The automated reference chasing alone saved us 15 hours a week.",
-      name: "Sarah Mitchell",
+      name: "Sarah",
       role: "Compliance Manager",
-      company: "MedStaff Solutions",
+      company: "",
     },
     {
       quote:
