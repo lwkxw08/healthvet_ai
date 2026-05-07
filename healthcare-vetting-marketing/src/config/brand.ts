@@ -119,14 +119,14 @@ export const brand = {
         icon: "Heart",
         color: "rose",
         checks: [
-          { label: "Enhanced DBS with Barred List", icon: "Shield" },
+          { label: "Enhanced DBS", icon: "Shield" },
           { label: "NMC / GMC / HCPC Registration", icon: "Award" },
           { label: "Right to Work Verification", icon: "FileCheck" },
-          { label: "CQC Compliance Ready", icon: "ClipboardCheck" },
-          { label: "Occupational Health Clearance", icon: "UserCheck" },
+          { label: "Employment History Verification", icon: "ClipboardCheck" },
+          { label: "ID Verification", icon: "UserCheck" },
           { label: "Mandatory Training Records", icon: "FileSearch" },
           { label: "Reference Verification (2+ refs)", icon: "UserCheck" },
-          { label: "Hepatitis B / Immunisation Status", icon: "Heart" },
+          { label: "CV Validation & Analysis", icon: "Heart" },
         ],
       },
       {
