@@ -1402,6 +1402,16 @@ def init_db():
 
         -- Tracks when expiry warning emails were last sent per credential
         -- to avoid sending duplicate warnings every scheduler run.
+        CREATE TABLE IF NOT EXISTS demo_requests (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            company TEXT NOT NULL,
+            candidates_per_month TEXT DEFAULT '',
+            message TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS expiry_warning_log (
             id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,

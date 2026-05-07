@@ -33,7 +33,6 @@ export const brand = {
       { label: "Features", href: "#features" },
       { label: "Industries", href: "#industries" },
       { label: "How It Works", href: "#how-it-works" },
-      { label: "Pricing", href: "#pricing" },
       { label: "Contact", href: "#contact" },
     ],
     ctaLabel: "Get Started",
@@ -333,8 +332,7 @@ export const brand = {
     headline: "Ready to Streamline Your Compliance?",
     subheadline:
       "Book a 15-minute demo and see how we can cut your vetting time by 80%.",
-    email: "hello@viperai.io",
-    phone: "+44 (0) 20 1234 5678",
+    email: "enquiries@viperai.io",
     formFields: ["name", "email", "company", "industry", "message"],
   },
 
@@ -348,7 +346,6 @@ export const brand = {
         title: "Product",
         links: [
           { label: "Features", href: "#features" },
-          { label: "Pricing", href: "#pricing" },
           { label: "How It Works", href: "#how-it-works" },
           { label: "API Docs", href: "#" },
         ],
@@ -365,10 +362,10 @@ export const brand = {
       {
         title: "Legal",
         links: [
-          { label: "Privacy Policy", href: "#" },
-          { label: "Terms of Service", href: "#" },
-          { label: "Cookie Policy", href: "#" },
-          { label: "GDPR", href: "#" },
+          { label: "Privacy Policy", href: "/privacy-policy.html" },
+          { label: "Terms of Service", href: "/terms-of-service.html" },
+          { label: "Cookie Policy", href: "/cookie-policy.html" },
+          { label: "GDPR", href: "/gdpr.html" },
         ],
       },
     ],

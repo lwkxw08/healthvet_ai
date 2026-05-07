@@ -430,3 +430,56 @@ async def refresh_token_cookie(request: Request):
     response = JSONResponse(content=body.model_dump())
     _set_auth_cookies(response, user_id, user_type)
     return response
+
+
+# ── Demo Request (public, no auth) ─────────────────────────────────
+
+class DemoRequest(BaseModel):
+    name: str
+    email: str
+    company: str
+    candidates_per_month: Optional[str] = None
+    message: Optional[str] = None
+
+
+@router.post("/demo-request")
+@limiter.limit("5/minute")
+async def submit_demo_request(request: Request, data: DemoRequest):
+    """Public endpoint for marketing site demo request form.
+    Sends notification email to enquiries@viperai.io."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Store in database
+    with get_db() as db:
+        req_id = generate_id()
+        db.execute(
+            """INSERT INTO demo_requests (id, name, email, company, candidates_per_month, message, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (req_id, data.name, data.email, data.company, data.candidates_per_month or "", data.message or "", now),
+        )
+
+    # Send notification email to enquiries@viperai.io
+    try:
+        from app.services.email_service import EmailService
+        subject = f"New Demo Request from {data.name} at {data.company}"
+        body = (
+            f"New demo request received:\n\n"
+            f"Name: {data.name}\n"
+            f"Email: {data.email}\n"
+            f"Company: {data.company}\n"
+            f"Candidates/month: {data.candidates_per_month or 'Not specified'}\n"
+            f"Message: {data.message or 'None'}\n\n"
+            f"Submitted at: {now}\n"
+        )
+        EmailService._store_notification(
+            "enquiries@viperai.io", "Viper AI Sales",
+            subject, body, "demo_request", req_id,
+        )
+        logger.info(f"Demo request stored from {data.email}")
+    except Exception as e:
+        logger.warning(f"Failed to queue demo request email: {e}")
+
+    return {"status": "ok", "message": "Demo request submitted successfully"}

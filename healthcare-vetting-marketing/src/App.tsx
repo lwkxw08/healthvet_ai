@@ -3,7 +3,7 @@ import { brand, APP_URL } from './config/brand'
 import {
   Shield, UserCheck, FileCheck, Award, BarChart3, Brain,
   Lock, Building2, ClipboardCheck, Heart, FileSearch, Download,
-  Menu, X, ChevronRight, ArrowRight, Check, Star, Phone, Mail,
+  Menu, X, ChevronRight, ArrowRight, Check, Star, Mail,
   Zap, Clock, ChevronLeft, GraduationCap, Users, HardHat, Landmark, ShieldCheck
 } from 'lucide-react'
 import { useState } from 'react'
@@ -339,81 +339,9 @@ function IndustryCarousel() {
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  Pricing                                                           */
-/* ------------------------------------------------------------------ */
-function Pricing() {
-  return (
-    <section id="pricing" className="py-20 lg:py-28 bg-gradient-to-br from-slate-900 to-slate-800">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="inline-block text-sm font-semibold text-blue-400 uppercase tracking-wider mb-3">Pricing</span>
-          <h2 className="text-3xl sm:text-4xl font-bold text-white">
-            {brand.pricing.headline}
-          </h2>
-          <p className="mt-4 text-lg text-slate-400">
-            {brand.pricing.subheadline}
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-          {brand.pricing.plans.map((plan, i) => (
-            <div
-              key={i}
-              className={`relative rounded-2xl p-8 transition-all ${
-                plan.highlighted
-                  ? 'bg-white ring-2 ring-blue-500 shadow-2xl shadow-blue-500/10 md:scale-105'
-                  : 'bg-slate-800/50 border border-slate-700 hover:border-slate-600'
-              }`}
-            >
-              {plan.highlighted && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-xs font-bold px-4 py-1.5 rounded-full uppercase tracking-wider">
-                  Most Popular
-                </div>
-              )}
-              <h3 className={`text-lg font-semibold ${plan.highlighted ? 'text-slate-900' : 'text-white'}`}>
-                {plan.name}
-              </h3>
-              <div className="mt-4 flex items-baseline gap-1">
-                <span className={`text-4xl font-bold ${plan.highlighted ? 'text-slate-900' : 'text-white'}`}>
-                  {plan.price}
-                </span>
-                {plan.period && (
-                  <span className={`text-sm ${plan.highlighted ? 'text-slate-500' : 'text-slate-400'}`}>
-                    /{plan.period}
-                  </span>
-                )}
-              </div>
-              <p className={`mt-2 text-sm ${plan.highlighted ? 'text-slate-600' : 'text-slate-400'}`}>
-                {plan.description}
-              </p>
-
-              <ul className="mt-8 space-y-3">
-                {plan.features.map((f, j) => (
-                  <li key={j} className="flex items-start gap-2">
-                    <Check size={16} className={`mt-0.5 shrink-0 ${plan.highlighted ? 'text-blue-600' : 'text-blue-400'}`} />
-                    <span className={`text-sm ${plan.highlighted ? 'text-slate-600' : 'text-slate-300'}`}>{f}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <a
-                href="#contact"
-                className={`mt-8 block text-center rounded-xl px-6 py-3 text-sm font-semibold transition-colors ${
-                  plan.highlighted
-                    ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/25'
-                    : 'bg-slate-700 text-white hover:bg-slate-600 border border-slate-600'
-                }`}
-              >
-                {plan.cta}
-              </a>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
+/* Pricing section hidden — uncomment when ready to display
+function Pricing() { ... }
+*/
 
 /* ------------------------------------------------------------------ */
 /*  Testimonials                                                      */
@@ -462,6 +390,33 @@ function Testimonials() {
 /* ------------------------------------------------------------------ */
 function Contact() {
   const [submitted, setSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [formData, setFormData] = useState({ name: '', email: '', company: '', candidates_per_month: '1-25', message: '' })
+
+  const API_URL = import.meta.env.VITE_API_URL || 'https://api.viperai.io'
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+    setError('')
+    try {
+      const res = await fetch(`${API_URL}/api/auth/demo-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Request failed' }))
+        throw new Error(typeof err.detail === 'string' ? err.detail : 'Request failed')
+      }
+      setSubmitted(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <section id="contact" className="py-20 lg:py-28 bg-white">
@@ -488,17 +443,7 @@ function Contact() {
                   </a>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <Phone size={20} className="text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-500">Call us</p>
-                  <a href={`tel:${brand.contact.phone}`} className="text-blue-600 font-medium hover:underline">
-                    {brand.contact.phone}
-                  </a>
-                </div>
-              </div>
+
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
                   <Clock size={20} className="text-blue-600" />
@@ -522,25 +467,26 @@ function Contact() {
                 <p className="text-slate-600">We&apos;ll be in touch within 2 business hours.</p>
               </div>
             ) : (
-              <form onSubmit={e => { e.preventDefault(); setSubmitted(true) }} className="space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-5">
                 <h3 className="text-lg font-semibold text-slate-900 mb-2">Request a Demo</h3>
+                {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 border border-red-200">{error}</p>}
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Full Name</label>
-                    <input type="text" required placeholder="John Smith" className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    <input type="text" required placeholder="John Smith" value={formData.name} onChange={e => setFormData(f => ({ ...f, name: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Work Email</label>
-                    <input type="email" required placeholder="john@agency.co.uk" className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    <input type="email" required placeholder="john@agency.co.uk" value={formData.email} onChange={e => setFormData(f => ({ ...f, email: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                   </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Company Name</label>
-                  <input type="text" required placeholder="Acme Staffing Ltd" className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                  <input type="text" required placeholder="Acme Staffing Ltd" value={formData.company} onChange={e => setFormData(f => ({ ...f, company: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">How many candidates do you process per month?</label>
-                  <select className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
+                  <select value={formData.candidates_per_month} onChange={e => setFormData(f => ({ ...f, candidates_per_month: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
                     <option>1-25</option>
                     <option>26-50</option>
                     <option>51-200</option>
@@ -549,13 +495,13 @@ function Contact() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Message (optional)</label>
-                  <textarea rows={3} placeholder="Tell us about your compliance challenges..." className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none" />
+                  <textarea rows={3} placeholder="Tell us about your compliance challenges..." value={formData.message} onChange={e => setFormData(f => ({ ...f, message: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none" />
                 </div>
-                <button type="submit" className="w-full rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 hover:bg-blue-700 transition-colors">
-                  Request a Demo <ArrowRight size={16} className="inline ml-1" />
+                <button type="submit" disabled={submitting} className="w-full rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                  {submitting ? 'Submitting...' : 'Request a Demo'} {!submitting && <ArrowRight size={16} className="inline ml-1" />}
                 </button>
                 <p className="text-xs text-slate-500 text-center">
-                  By submitting, you agree to our Privacy Policy. We&apos;ll never share your data.
+                  By submitting, you agree to our <a href="/privacy-policy.html" className="underline hover:text-blue-600">Privacy Policy</a>. We&apos;ll never share your data.
                 </p>
               </form>
             )}
@@ -635,9 +581,9 @@ function Footer() {
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-sm text-slate-500">&copy; {brand.footer.copyright}</p>
           <div className="flex items-center gap-6">
-            <a href="#" className="text-sm text-slate-500 hover:text-white transition-colors">Privacy</a>
-            <a href="#" className="text-sm text-slate-500 hover:text-white transition-colors">Terms</a>
-            <a href="#" className="text-sm text-slate-500 hover:text-white transition-colors">Cookies</a>
+            <a href="/privacy-policy.html" className="text-sm text-slate-500 hover:text-white transition-colors">Privacy</a>
+            <a href="/terms-of-service.html" className="text-sm text-slate-500 hover:text-white transition-colors">Terms</a>
+            <a href="/cookie-policy.html" className="text-sm text-slate-500 hover:text-white transition-colors">Cookies</a>
           </div>
         </div>
       </div>
@@ -657,7 +603,7 @@ function App() {
       <Features />
       <HowItWorks />
       <IndustryCarousel />
-      <Pricing />
+      {/* <Pricing /> */}
       <Testimonials />
       <Contact />
       <CtaBanner />
