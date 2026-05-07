@@ -7,7 +7,7 @@
 
 export const brand = {
   // ── Core Identity ──────────────────────────────────────────────
-  name: "AI",
+  name: "Viper AI",
   tagline: "Vetting Intelligence Platform for Enterprise Risk",
   description:
     "VIPER — Vetting Intelligence Platform for Enterprise Risk. Streamline background checks, identity verification, right-to-work validation, and professional registration — all from one intelligent platform built for any regulated industry.",
