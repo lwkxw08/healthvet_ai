@@ -207,9 +207,9 @@ export const brand = {
     ],
     globalBadges: [
       { label: "GDPR Compliant", icon: "Lock" },
-      { label: "ICO Registered", icon: "Building2" },
+      { label: "Registered", icon: "Building2" },
       { label: "Tamper-Evident Audit Trail", icon: "FileSearch" },
-      { label: "Data Portability (Art. 20)", icon: "Download" },
+      { label: "Data Portability", icon: "Download" },
     ],
   },
 
@@ -339,8 +339,8 @@ export const brand = {
   // ── Footer ─────────────────────────────────────────────────────
   footer: {
     copyright: `${new Date().getFullYear()} Viper AI. All rights reserved.`,
-    companyReg: "Company Reg: 12345678",
-    icoRef: "ICO Registration: ZA123456",
+    companyReg: "Company Reg: 15822421",
+    icoRef: "",
     columns: [
       {
         title: "Product",
