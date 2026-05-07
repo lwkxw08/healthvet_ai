@@ -7,7 +7,7 @@
 
 export const brand = {
   // ── Core Identity ──────────────────────────────────────────────
-  name: "Viper AI",
+  name: "AI",
   tagline: "Vetting Intelligence Platform for Enterprise Risk",
   description:
     "VIPER — Vetting Intelligence Platform for Enterprise Risk. Streamline background checks, identity verification, right-to-work validation, and professional registration — all from one intelligent platform built for any regulated industry.",
@@ -314,16 +314,16 @@ export const brand = {
     {
       quote:
         "The compliance dashboard gives us instant visibility across 200+ active candidates. No more spreadsheets.",
-      name: "James Okafor",
+      name: "James",
       role: "Operations Director",
-      company: "CareLink Recruitment",
+      company: "",
     },
     {
       quote:
         "Being able to configure industry-specific templates means we use one platform for healthcare AND education placements.",
-      name: "Emma Richardson",
+      name: "Emma",
       role: "Managing Director",
-      company: "Apex Staffing Group",
+      company: "",
     },
   ],
 
