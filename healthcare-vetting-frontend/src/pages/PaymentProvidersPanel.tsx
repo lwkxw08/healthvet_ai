@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { paymentProvidersApi } from "../api/client";
+import { fmtDate } from "../lib/utils";
 import { CreditCard, CheckCircle, XCircle, RefreshCw, Trash2, Zap, AlertTriangle, Eye, EyeOff } from "lucide-react";
 
 interface ProviderConfig {
@@ -241,7 +242,7 @@ export default function PaymentProvidersPanel() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Last Tested</span>
-                    <span className="text-slate-300">{prov.last_tested_at ? new Date(prov.last_tested_at).toLocaleString() : "—"}</span>
+                    <span className="text-slate-300">{prov.last_tested_at ? fmtDate(prov.last_tested_at) : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Status</span>

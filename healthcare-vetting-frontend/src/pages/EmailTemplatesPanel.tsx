@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { emailTemplatesApi } from "../api/client";
+import { fmtDate } from "../lib/utils";
 import {
   Mail, Eye, Edit, RotateCcw, Send, CheckCircle, XCircle,
   Clock, AlertTriangle, FileText, Settings, ChevronDown, ChevronUp,
@@ -619,7 +620,7 @@ export default function EmailTemplatesPanel() {
                   <div className="flex gap-6 text-xs text-slate-500">
                     <span>Key: <code className="text-slate-400">{selectedTemplate.template_key}</code></span>
                     <span>Category: <span className={`${categoryColors[selectedTemplate.category]?.split(" ")[0] || "text-slate-400"}`}>{selectedTemplate.category}</span></span>
-                    <span>Updated: {new Date(selectedTemplate.updated_at).toLocaleDateString()}</span>
+                    <span>Updated: {fmtDate(selectedTemplate.updated_at)}</span>
                   </div>
                 </div>
               </div>
@@ -667,7 +668,7 @@ export default function EmailTemplatesPanel() {
                         {entry.template_key?.replace(/_/g, " ")}
                       </span>
                       <span className="text-slate-600 text-xs">
-                        {new Date(entry.created_at).toLocaleString()}
+                        {fmtDate(entry.created_at)}
                       </span>
                       {expandedLog === entry.id ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
                     </div>
@@ -680,7 +681,7 @@ export default function EmailTemplatesPanel() {
                         </div>
                       )}
                       {entry.sent_at && (
-                        <p className="text-slate-500 text-xs">Sent at: {new Date(entry.sent_at).toLocaleString()}</p>
+                        <p className="text-slate-500 text-xs">Sent at: {fmtDate(entry.sent_at)}</p>
                       )}
                     </div>
                   )}

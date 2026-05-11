@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { analyticsApi } from "../api/client";
+import { fmtDate } from "../lib/utils";
 import {
   BarChart3, TrendingUp, Clock, AlertTriangle, Download, Calendar,
   Users, CheckCircle, XCircle, RefreshCw, Plus, Trash2,
@@ -358,7 +359,7 @@ export default function AnalyticsDashboard({ agencyId }: AnalyticsDashboardProps
                             <tr key={i} className="hover:bg-gray-50">
                               <td className="px-3 py-2 capitalize">{String(f.type ?? "").replace(/_/g, " ")}</td>
                               <td className="px-3 py-2">{String(f.name ?? f.candidate_id ?? "").slice(0, 30)}</td>
-                              <td className="px-3 py-2">{expiryStr ? new Date(expiryStr).toLocaleDateString() : ""}</td>
+                              <td className="px-3 py-2">{expiryStr ? fmtDate(expiryStr, { dateOnly: true }) : ""}</td>
                               <td className="px-3 py-2">
                                 <span className={`font-medium ${daysLeft <= 14 ? "text-red-600" : daysLeft <= 30 ? "text-orange-600" : "text-green-600"}`}>
                                   {daysLeft}

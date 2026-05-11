@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { candidatesApi, checksApi, complianceApi, monitoringApi, agencyInvitesApi, trainingApi, trustidApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
+import { fmtDate } from "../lib/utils";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Upload,
   FileText, UserCheck, Fingerprint, Search, Send, LogOut, RefreshCw, ChevronRight,
@@ -568,7 +569,7 @@ export default function CandidatePortal() {
                           <span className="text-white font-medium text-sm">{agency.name as string}</span>
                           {typeof agency.contact_name === "string" && agency.contact_name && <span className="text-slate-400 text-xs ml-3">Contact: {agency.contact_name}</span>}
                         </div>
-                        <span className="text-xs text-slate-500">Joined {(agency.assigned_at as string)?.split("T")[0]}</span>
+                        <span className="text-xs text-slate-500">Joined {fmtDate(agency.assigned_at)}</span>
                       </div>
                     ))}
                   </div>
@@ -698,7 +699,7 @@ export default function CandidatePortal() {
                         <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
                           <div className="flex items-center justify-between">
                             <StatusBadge status={check.status as string} />
-                            <span className="text-xs text-slate-500">{(check.created_at as string)?.split("T")[0]}</span>
+                            <span className="text-xs text-slate-500">{fmtDate(check.created_at)}</span>
                           </div>
                           {Boolean(check.result) && (
                             <div className="mt-2 text-sm">
@@ -1132,7 +1133,7 @@ export default function CandidatePortal() {
                         <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
                           <div className="flex items-center justify-between">
                             <StatusBadge status={check.status as string} />
-                            <span className="text-xs text-slate-500">{(check.created_at as string)?.split("T")[0]}</span>
+                            <span className="text-xs text-slate-500">{fmtDate(check.created_at)}</span>
                           </div>
                           {Boolean(check.result) && (
                             <div className="mt-2 text-sm">
@@ -1363,7 +1364,7 @@ export default function CandidatePortal() {
                         <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
                           <div className="flex items-center justify-between">
                             <StatusBadge status={check.status as string} />
-                            <span className="text-xs text-slate-500">{(check.created_at as string)?.split("T")[0]}</span>
+                            <span className="text-xs text-slate-500">{fmtDate(check.created_at)}</span>
                           </div>
                           {Boolean(check.result) && (
                             <div className="mt-2 text-sm">
@@ -1427,7 +1428,7 @@ export default function CandidatePortal() {
                         <div><span className="text-slate-400">Certificate:</span> <span className="text-white">{(check.certificate_number as string) || "Pending"}</span></div>
                         <div><span className="text-slate-400">Ref:</span> <span className="text-white">{check.application_ref as string}</span></div>
                         <div><span className="text-slate-400">Type:</span> <span className="text-white">{check.check_type as string}</span></div>
-                        <div><span className="text-slate-400">Renewal:</span> <span className="text-white">{(check.next_renewal as string)?.split("T")[0] || "N/A"}</span></div>
+                        <div><span className="text-slate-400">Renewal:</span> <span className="text-white">{fmtDate(check.next_renewal, { dateOnly: true }) || "N/A"}</span></div>
                       </div>
                     </div>
                   ))}
@@ -1785,7 +1786,7 @@ export default function CandidatePortal() {
                         <div><span className="text-slate-400">Body:</span> <span className="text-white">{check.body as string}</span></div>
                         <div><span className="text-slate-400">Active:</span> <span className="text-white">{check.is_active ? "Yes" : "No"}</span></div>
                         <div><span className="text-slate-400">Sanctions:</span> <span className="text-white">{(check.sanctions as string) || "None"}</span></div>
-                        <div><span className="text-slate-400">Next Check:</span> <span className="text-white">{(check.next_check as string)?.split("T")[0] || "N/A"}</span></div>
+                        <div><span className="text-slate-400">Next Check:</span> <span className="text-white">{fmtDate(check.next_check, { dateOnly: true }) || "N/A"}</span></div>
                       </div>
                     </div>
                   ))}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { leadGenerationApi } from "../api/client";
+import { fmtDate } from "../lib/utils";
 import {
   Search, Play, RefreshCw, Trash2, Download, Eye, Globe, Mail, Phone,
   Building2, MapPin, Clock, CheckCircle, XCircle, Filter,
@@ -323,8 +324,8 @@ export default function LeadGenerationPanel() {
                         }`}>{String(job.status)}</span>
                       </td>
                       <td className="py-3 px-4 text-center text-emerald-400 font-medium">{String(job.results_count || 0)}</td>
-                      <td className="py-3 px-4 text-slate-400 text-xs">{job.started_at ? new Date(String(job.started_at)).toLocaleString() : "-"}</td>
-                      <td className="py-3 px-4 text-slate-400 text-xs">{job.completed_at ? new Date(String(job.completed_at)).toLocaleString() : "-"}</td>
+                      <td className="py-3 px-4 text-slate-400 text-xs">{job.started_at ? fmtDate(job.started_at) : "-"}</td>
+                      <td className="py-3 px-4 text-slate-400 text-xs">{job.completed_at ? fmtDate(job.completed_at) : "-"}</td>
                       <td className="py-3 px-4 text-center">
                         {(job.status === "failed" || job.status === "pending") && (
                           <button onClick={() => retryJob(String(job.id))}

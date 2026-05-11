@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi, trainingApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
+import { fmtDate } from "../lib/utils";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
@@ -396,7 +397,7 @@ export default function AgencyDashboard() {
       } else if (payment?.payment_required) {
         alert(`Monitoring renewal invoice created (£${(result.sell_price as number)?.toFixed(2)}). Check Billing History to pay.`);
       } else {
-        alert(`Monitoring renewed successfully. Expires: ${new Date(result.monitoring_expires_at as string).toLocaleDateString()}`);
+        alert(`Monitoring renewed successfully. Expires: ${fmtDate(result.monitoring_expires_at, { dateOnly: true })}`);
       }
       await loadData();
     } catch (err) {
@@ -1359,7 +1360,7 @@ export default function AgencyDashboard() {
                                     <Shield size={12} /> Active
                                   </span>
                                 )}
-                                {monExpiry && <p className="text-slate-500 text-[10px] mt-0.5">Exp: {new Date(monExpiry).toLocaleDateString()}</p>}
+                                {monExpiry && <p className="text-slate-500 text-[10px] mt-0.5">Exp: {fmtDate(monExpiry, { dateOnly: true })}</p>}
                               </div>
                             ) : monExpiry ? (
                               <div className="text-xs">
@@ -1427,7 +1428,7 @@ export default function AgencyDashboard() {
                           </div>
                         </td>
                         <td className="px-4 py-3"><StatusBadge status={rr.status as string} /></td>
-                        <td className="px-4 py-3 text-sm text-slate-400">{(rr.created_at as string)?.split("T")[0]}</td>
+                        <td className="px-4 py-3 text-sm text-slate-400">{fmtDate(rr.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1518,7 +1519,7 @@ export default function AgencyDashboard() {
                           <code className="text-xs bg-slate-700 text-blue-300 px-2 py-1 rounded">{inv.invite_code as string}</code>
                         </td>
                         <td className="px-4 py-3"><StatusBadge status={inv.status as string} /></td>
-                        <td className="px-4 py-3 text-sm text-slate-400">{(inv.created_at as string)?.split("T")[0]}</td>
+                        <td className="px-4 py-3 text-sm text-slate-400">{fmtDate(inv.created_at)}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <button
@@ -1661,7 +1662,7 @@ export default function AgencyDashboard() {
                   </div>
                   <div className="p-4 bg-slate-700/50 rounded-lg text-center">
                     <p className="text-slate-400 text-xs mb-1">Expires</p>
-                    <p className="text-lg font-bold text-white">{remainingChecks.expires_at ? String(remainingChecks.expires_at).split("T")[0] : "N/A"}</p>
+                    <p className="text-lg font-bold text-white">{remainingChecks.expires_at ? fmtDate(remainingChecks.expires_at, { dateOnly: true }) : "N/A"}</p>
                   </div>
                   <div className="p-4 bg-slate-700/50 rounded-lg text-center">
                     <p className="text-slate-400 text-xs mb-1">Days Left</p>
@@ -1791,7 +1792,7 @@ export default function AgencyDashboard() {
                         <td className="px-4 py-3 text-sm text-white">{String(item.description || item.tier || "Invoice")}</td>
                         <td className="px-4 py-3 text-sm text-green-400">£{Number(item.amount || item.sell_amount || item.monthly_amount || 0).toFixed(2)}</td>
                         <td className="px-4 py-3"><StatusBadge status={String(item.status || "pending")} /></td>
-                        <td className="px-4 py-3 text-sm text-slate-400">{String(item.created_at || item.date || "").split("T")[0]}</td>
+                        <td className="px-4 py-3 text-sm text-slate-400">{fmtDate(item.created_at || item.date)}</td>
                         <td className="px-4 py-3">
                           {item.status === "pending" && item.id && billingMode !== "manual_invoicing" ? (
                             <button
@@ -1841,7 +1842,7 @@ export default function AgencyDashboard() {
                         <span className="text-white text-sm">{alert.message as string}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-xs text-slate-500">{(alert.created_at as string)?.split("T")[0]}</span>
+                        <span className="text-xs text-slate-500">{fmtDate(alert.created_at)}</span>
                         <button onClick={() => resolveAlert(alert.id as string)}
                           className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-3 py-1 rounded-full hover:bg-green-600/30">
                           Resolve
@@ -1879,7 +1880,7 @@ export default function AgencyDashboard() {
                 <div><span className="text-slate-400">Profession:</span> <span className="text-white">{(selectedCandidate.profession as string) || "N/A"}</span></div>
                 <div><span className="text-slate-400">Registration:</span> <span className="text-white">{selectedCandidate.registration_body as string} {selectedCandidate.registration_number as string}</span></div>
                 <div><span className="text-slate-400">Score:</span> <span className="text-white font-bold">{Number(selectedCandidate.compliance_score ?? 0).toFixed(1)}%</span></div>
-                <div><span className="text-slate-400">Joined:</span> <span className="text-white">{(selectedCandidate.created_at as string)?.split("T")[0]}</span></div>
+                <div><span className="text-slate-400">Joined:</span> <span className="text-white">{fmtDate(selectedCandidate.created_at)}</span></div>
               </div>
             </div>
 
@@ -1941,7 +1942,7 @@ export default function AgencyDashboard() {
                                         </span>
                                       )}
                                     </div>
-                                    <span className="text-xs text-slate-500">{(check.started_at as string)?.split("T")[0]}</span>
+                                    <span className="text-xs text-slate-500">{fmtDate(check.started_at)}</span>
                                   </div>
                                   <div className="grid grid-cols-2 gap-2 text-sm">
                                     <div><span className="text-slate-400">Document:</span> <span className="text-white">{check.document_authenticity as string || "N/A"}</span></div>
@@ -1986,13 +1987,13 @@ export default function AgencyDashboard() {
                               <div key={check.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
                                 <div className="flex items-center justify-between mb-2">
                                   <StatusBadge status={check.result as string} />
-                                  <span className="text-xs text-slate-500">{(check.submitted_at as string)?.split("T")[0]}</span>
+                                  <span className="text-xs text-slate-500">{fmtDate(check.submitted_at)}</span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                   <div><span className="text-slate-400">Certificate:</span> <span className="text-white">{(check.certificate_number as string) || "Pending"}</span></div>
                                   <div><span className="text-slate-400">Ref:</span> <span className="text-white">{check.application_ref as string}</span></div>
                                   <div><span className="text-slate-400">Type:</span> <span className="text-white">{check.check_type as string}</span></div>
-                                  <div><span className="text-slate-400">Renewal:</span> <span className="text-white">{(check.next_renewal as string)?.split("T")[0] || "N/A"}</span></div>
+                                  <div><span className="text-slate-400">Renewal:</span> <span className="text-white">{fmtDate(check.next_renewal, { dateOnly: true }) || "N/A"}</span></div>
                                 </div>
                               </div>
                             ))}
@@ -2002,13 +2003,13 @@ export default function AgencyDashboard() {
                               <div key={check.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
                                 <div className="flex items-center justify-between mb-2">
                                   <StatusBadge status={check.result as string} />
-                                  <span className="text-xs text-slate-500">{(check.last_checked as string)?.split("T")[0]}</span>
+                                  <span className="text-xs text-slate-500">{fmtDate(check.last_checked)}</span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                   <div><span className="text-slate-400">Body:</span> <span className="text-white">{check.body as string}</span></div>
                                   <div><span className="text-slate-400">Active:</span> <span className="text-white">{check.is_active ? "Yes" : "No"}</span></div>
                                   <div><span className="text-slate-400">Sanctions:</span> <span className="text-white">{(check.sanctions as string) || "None"}</span></div>
-                                  <div><span className="text-slate-400">Next Check:</span> <span className="text-white">{(check.next_check as string)?.split("T")[0] || "N/A"}</span></div>
+                                  <div><span className="text-slate-400">Next Check:</span> <span className="text-white">{fmtDate(check.next_check, { dateOnly: true }) || "N/A"}</span></div>
                                 </div>
                               </div>
                             ))}
@@ -2061,7 +2062,7 @@ export default function AgencyDashboard() {
                                         (analysis.fraud_risk_score as number) < 0.6 ? "text-amber-400" : "text-red-400"
                                       }`}>{((analysis.fraud_risk_score as number) * 100).toFixed(0)}%</span>
                                     </div>
-                                    <span className="text-xs text-slate-500">{(analysis.analysed_at as string)?.split("T")[0]}</span>
+                                    <span className="text-xs text-slate-500">{fmtDate(analysis.analysed_at)}</span>
                                   </div>
                                   {typeof analysis.ai_summary === "string" && analysis.ai_summary && <p className="text-slate-300 text-sm mb-2">{analysis.ai_summary}</p>}
                                   <div className="space-y-1 text-sm">
@@ -2170,7 +2171,7 @@ export default function AgencyDashboard() {
                             </div>
                             {imposterDeclaration && (
                               <div className="ml-5 text-slate-500">
-                                Declared by {imposterDeclaration.declared_by_email as string} on {(imposterDeclaration.created_at as string)?.split("T")[0]}
+                                Declared by {imposterDeclaration.declared_by_email as string} on {fmtDate(imposterDeclaration.created_at)}
                               </div>
                             )}
                           </div>
@@ -2199,7 +2200,7 @@ export default function AgencyDashboard() {
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-xs text-slate-500">{(check.checked_at as string)?.split("T")[0]}</span>
+                                  <span className="text-xs text-slate-500">{fmtDate(check.checked_at)}</span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                   <div><span className="text-slate-400">Status:</span> <span className="text-white">{(check.visa_type as string) || "N/A"}</span></div>
@@ -2776,7 +2777,7 @@ export default function AgencyDashboard() {
                             </div>
                             <p className="text-xs text-slate-400 mt-1">{String(n.message)}</p>
                             <div className="flex items-center gap-3 mt-2">
-                              <span className="text-xs text-slate-500">{new Date(String(n.created_at)).toLocaleString()}</span>
+                              <span className="text-xs text-slate-500">{fmtDate(n.created_at)}</span>
                               <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700/50 text-slate-400">{String(n.category || "general").replace(/_/g, " ")}</span>
                             </div>
                           </div>

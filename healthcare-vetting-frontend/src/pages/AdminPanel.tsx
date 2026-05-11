@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi, documentsApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
+import { fmtDate } from "../lib/utils";
 import LeadGenerationPanel from "./LeadGenerationPanel";
 import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
 import TrainingMatrixPanel from "./TrainingMatrixPanel";
@@ -1501,7 +1502,7 @@ export default function AdminPanel() {
                           <StatusBadge status={task.status as string} />
                           <span className="text-white font-medium text-sm">{(task.check_type as string)?.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}</span>
                         </div>
-                        <span className="text-xs text-slate-500">{(task.created_at as string)?.split("T")[0]}</span>
+                        <span className="text-xs text-slate-500">{fmtDate(task.created_at)}</span>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs mb-3">
                         <div><span className="text-slate-400">Candidate:</span> <span className="text-white">{task.candidate_name as string || `${task.first_name || ""} ${task.last_name || ""}`.trim() || "N/A"}</span></div>
@@ -1811,7 +1812,7 @@ export default function AdminPanel() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3"><StatusBadge status={alert.severity as string} /><StatusBadge status={alert.alert_type as string} /><span className="text-white text-sm">{alert.message as string}</span></div>
                       <div className="flex items-center gap-3">
-                        <span className="text-xs text-slate-500">{(alert.created_at as string)?.split("T")[0]}</span>
+                        <span className="text-xs text-slate-500">{fmtDate(alert.created_at)}</span>
                         <button onClick={() => resolveAlert(alert.id as string)} className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-3 py-1 rounded-full hover:bg-green-600/30">Resolve</button>
                       </div>
                     </div>
@@ -2074,7 +2075,7 @@ export default function AdminPanel() {
                       <td className="px-3 py-2 text-xs text-slate-400 capitalize">{((inv.check_type as string) || "").replace(/_/g, " ")}</td>
                       <td className="px-3 py-2 text-sm font-medium">{inv.adjusted_amount != null ? (<><span className="text-amber-400">{"\u00A3"}{(Number(inv.adjusted_amount) || 0).toFixed(2)}</span><span className="text-slate-500 text-xs ml-1 line-through">{"\u00A3"}{(Number(inv.sell_amount) || 0).toFixed(2)}</span></>) : (<span className="text-green-400">{"\u00A3"}{(Number(inv.sell_amount) || 0).toFixed(2)}</span>)}</td>
                       <td className="px-3 py-2"><StatusBadge status={inv.status as string} /></td>
-                      <td className="px-3 py-2 text-xs text-slate-400">{(inv.created_at as string)?.split("T")[0]}</td>
+                      <td className="px-3 py-2 text-xs text-slate-400">{fmtDate(inv.created_at)}</td>
                       <td className="px-3 py-2">{inv.status === "pending" && <button onClick={() => markInvoicePaid(inv.id as string)} className="text-xs text-green-400 hover:text-green-300">Mark Paid</button>}</td>
                     </tr>
                   ))}
@@ -3056,7 +3057,7 @@ export default function AdminPanel() {
                   {refundRequests.map((row) => {
                     const id = String(row.id || "");
                     const amount = row.sell_amount != null ? Number(row.sell_amount) : (Number(row.amount) || 0);
-                    const requestedAt = row.refund_requested_at ? new Date(String(row.refund_requested_at)).toLocaleString() : "-";
+                    const requestedAt = row.refund_requested_at ? fmtDate(row.refund_requested_at) : "-";
                     const pi = String(row.stripe_payment_intent_id || row.stripe_session_id || "");
                     const decide = async (action: "approve" | "decline") => {
                       if (!token) return;
@@ -3566,7 +3567,7 @@ export default function AdminPanel() {
                             </span>
                           )}
                         </div>
-                        <span className="text-xs text-slate-500">{check.started_at as string}</span>
+                        <span className="text-xs text-slate-500">{fmtDate(check.started_at)}</span>
                       </div>
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div><span className="text-slate-400">Document:</span> <span className="text-white">{check.document_authenticity as string}</span></div>
@@ -3641,7 +3642,7 @@ export default function AdminPanel() {
                           </span>
                         )}
                       </div>
-                      <span className="text-xs text-slate-500">{check.checked_at as string}</span>
+                      <span className="text-xs text-slate-500">{fmtDate(check.checked_at)}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div><span className="text-slate-400">Status:</span> <span className="text-white">{(check.visa_type as string) || "N/A"}</span></div>
@@ -3674,13 +3675,13 @@ export default function AdminPanel() {
                   <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
                     <div className="flex items-center justify-between mb-2">
                       <StatusBadge status={check.result as string} />
-                      <span className="text-xs text-slate-500">{check.submitted_at as string}</span>
+                      <span className="text-xs text-slate-500">{fmtDate(check.submitted_at)}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div><span className="text-slate-400">Certificate:</span> <span className="text-white">{(check.certificate_number as string) || "Pending"}</span></div>
                       <div><span className="text-slate-400">Ref:</span> <span className="text-white">{check.application_ref as string}</span></div>
                       <div><span className="text-slate-400">Type:</span> <span className="text-white">{check.check_type as string}</span></div>
-                      <div><span className="text-slate-400">Renewal:</span> <span className="text-white">{(check.next_renewal as string)?.split("T")[0] || "N/A"}</span></div>
+                      <div><span className="text-slate-400">Renewal:</span> <span className="text-white">{fmtDate(check.next_renewal, { dateOnly: true }) || "N/A"}</span></div>
                     </div>
                   </div>
                 ))}
@@ -3701,7 +3702,7 @@ export default function AdminPanel() {
                       </div>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={ver.status as string} />
-                        <span className="text-xs text-slate-500">{(ver.sent_at as string || "")}</span>
+                        <span className="text-xs text-slate-500">{fmtDate(ver.sent_at)}</span>
                         <button onClick={() => handleRetriggerEmployment(selectedCandidate.id as string, ver.id as string)}
                           disabled={retriggeringId === (ver.id as string)}
                           className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-0.5 rounded hover:bg-blue-600/30 ml-2">
@@ -3757,7 +3758,7 @@ export default function AdminPanel() {
                             (analysis.fraud_risk_score as number) < 0.6 ? "text-amber-400" : "text-red-400"
                           }`}>{((analysis.fraud_risk_score as number) * 100).toFixed(0)}%</span>
                         </div>
-                        <span className="text-xs text-slate-500">{analysis.analysed_at as string}</span>
+                        <span className="text-xs text-slate-500">{fmtDate(analysis.analysed_at)}</span>
                       </div>
                       <p className="text-slate-300 text-sm mb-3">{analysis.ai_summary as string}</p>
                       <div className="grid grid-cols-1 gap-2 text-sm">
@@ -3882,13 +3883,13 @@ export default function AdminPanel() {
                   <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
                     <div className="flex items-center justify-between mb-2">
                       <StatusBadge status={check.result as string} />
-                      <span className="text-xs text-slate-500">{check.last_checked as string}</span>
+                      <span className="text-xs text-slate-500">{fmtDate(check.last_checked)}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div><span className="text-slate-400">Body:</span> <span className="text-white">{check.body as string}</span></div>
                       <div><span className="text-slate-400">Active:</span> <span className="text-white">{check.is_active ? "Yes" : "No"}</span></div>
                       <div><span className="text-slate-400">Sanctions:</span> <span className="text-white">{(check.sanctions as string) || "None"}</span></div>
-                      <div><span className="text-slate-400">Next Check:</span> <span className="text-white">{(check.next_check as string)?.split("T")[0] || "N/A"}</span></div>
+                      <div><span className="text-slate-400">Next Check:</span> <span className="text-white">{fmtDate(check.next_check, { dateOnly: true }) || "N/A"}</span></div>
                     </div>
                   </div>
                 ))}
