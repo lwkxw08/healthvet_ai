@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi, trainingApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
   DollarSign, FileText, Briefcase, CreditCard, Download, Upload, UserPlus, Activity,
-  Menu, X as XIcon, ChevronLeft, ChevronRight,
+  Menu, X as XIcon, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
@@ -23,6 +23,11 @@ export default function AgencyDashboard() {
   const [candidateAlerts, setCandidateAlerts] = useState<Record<string, unknown>[]>([]);
   const [invites, setInvites] = useState<Record<string, unknown>[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
+
+  // Expandable compliance section state
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [sectionData, setSectionData] = useState<Record<string, Record<string, unknown>[]>>({});
+  const [sectionLoading, setSectionLoading] = useState<Set<string>>(new Set());
 
   // Mobile nav state
   const [agencyMobileMenuOpen, setAgencyMobileMenuOpen] = useState(false);
@@ -219,6 +224,9 @@ export default function AgencyDashboard() {
   const viewCandidate = async (candidate: Record<string, unknown>) => {
     setSelectedCandidate(candidate);
     setTab("candidate-detail");
+    setExpandedSections(new Set());
+    setSectionData({});
+    setSectionLoading(new Set());
     if (token) {
       try {
         const [comp, alts] = await Promise.all([
@@ -238,6 +246,68 @@ export default function AgencyDashboard() {
       setImposterDeclConfirmed(false);
       setImposterDocsVerified([]);
     }
+  };
+
+  const toggleComplianceSection = async (sectionKey: string) => {
+    const next = new Set(expandedSections);
+    if (next.has(sectionKey)) {
+      next.delete(sectionKey);
+      setExpandedSections(next);
+      return;
+    }
+    next.add(sectionKey);
+    setExpandedSections(next);
+
+    if (sectionData[sectionKey] || !token || !selectedCandidate) return;
+
+    const loading = new Set(sectionLoading);
+    loading.add(sectionKey);
+    setSectionLoading(loading);
+
+    const cid = selectedCandidate.id as string;
+    try {
+      let data: Record<string, unknown>[] = [];
+      switch (sectionKey) {
+        case "identity_verified":
+          data = await checksApi.getIdentityChecks(token, cid).catch(() => []);
+          break;
+        case "dbs_valid":
+          data = await checksApi.getDBSChecks(token, cid).catch(() => []);
+          break;
+        case "registration_active":
+          data = await checksApi.getRegistrationChecks(token, cid).catch(() => []);
+          break;
+        case "references_verified":
+          data = await checksApi.getReferences(token, cid).catch(() => []);
+          break;
+        case "cv_validated":
+          data = await checksApi.getCVAnalyses(token, cid).catch(() => []);
+          break;
+        case "employment_verified": {
+          const [history, verifications] = await Promise.all([
+            checksApi.getEmploymentHistory(token, cid).catch(() => []),
+            checksApi.getEmploymentVerifications(token, cid).catch(() => []),
+          ]);
+          data = history.map((entry: Record<string, unknown>) => ({
+            ...entry,
+            _verification: verifications.find((v: Record<string, unknown>) => v.employment_id === entry.id),
+          }));
+          break;
+        }
+        case "training_compliant":
+          data = await trainingApi.getCertificates(token, cid).catch(() => []);
+          break;
+        case "right_to_work_valid":
+          data = await checksApi.getRightToWorkChecks(token, cid).catch(() => []);
+          break;
+      }
+      setSectionData(prev => ({ ...prev, [sectionKey]: data }));
+    } catch { /* ignore */ }
+    setSectionLoading(prev => {
+      const s = new Set(prev);
+      s.delete(sectionKey);
+      return s;
+    });
   };
 
   const submitImposterDeclaration = async () => {
@@ -1813,10 +1883,11 @@ export default function AgencyDashboard() {
               </div>
             </div>
 
-            {/* Compliance Breakdown */}
+            {/* Compliance Breakdown — Expandable Sections */}
             {candidateCompliance && (
               <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
                 <h3 className="text-md font-semibold text-white mb-3">Compliance Breakdown</h3>
+                <p className="text-xs text-slate-500 mb-3">Click any section to view detailed check information</p>
                 <div className="space-y-2">
                   {[
                     { label: "Identity Verification", key: "identity_verified" },
@@ -1826,43 +1897,325 @@ export default function AgencyDashboard() {
                     { label: "CV Validation", key: "cv_validated" },
                     { label: "Employment Verification", key: "employment_verified" },
                     { label: "Mandatory Training", key: "training_compliant" },
-                  ].map((item) => (
-                    <div key={item.key} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <CheckIcon passed={candidateCompliance[item.key] as boolean} />
-                        <span className="text-slate-200 text-sm">{item.label}</span>
+                  ].map((item) => {
+                    const isExpanded = expandedSections.has(item.key);
+                    const isLoading = sectionLoading.has(item.key);
+                    const data = sectionData[item.key];
+                    return (
+                      <div key={item.key} className="bg-slate-700/50 rounded-lg overflow-hidden">
+                        <button
+                          onClick={() => toggleComplianceSection(item.key)}
+                          className="w-full flex items-center justify-between p-3 hover:bg-slate-700/70 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3">
+                            <CheckIcon passed={candidateCompliance[item.key] as boolean} />
+                            <span className="text-slate-200 text-sm">{item.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isLoading && <Loader2 size={14} className="text-blue-400 animate-spin" />}
+                            {isExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="px-3 pb-3 border-t border-slate-600/50">
+                            {isLoading && !data && (
+                              <div className="py-4 text-center text-slate-500 text-sm">Loading details...</div>
+                            )}
+                            {data && data.length === 0 && (
+                              <div className="py-3 text-slate-500 text-sm">No records found</div>
+                            )}
+
+                            {/* Identity Verification Details */}
+                            {item.key === "identity_verified" && data && data.length > 0 && data.map((check) => {
+                              let details: Record<string, unknown> = {};
+                              try { details = JSON.parse(check.details as string || "{}"); } catch { /* ignore */ }
+                              const reports = details.reports as Record<string, Record<string, unknown>> | undefined;
+                              return (
+                                <div key={check.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <StatusBadge status={check.result as string} />
+                                      {typeof check.document_type === "string" && check.document_type && (
+                                        <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/30">
+                                          {(details.document_type_label as string) || (check.document_type as string).replace(/_/g, " ")}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-xs text-slate-500">{(check.started_at as string)?.split("T")[0]}</span>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div><span className="text-slate-400">Document:</span> <span className="text-white">{check.document_authenticity as string || "N/A"}</span></div>
+                                    <div><span className="text-slate-400">Facial Match:</span> <span className="text-white">{check.facial_match_score != null ? `${((check.facial_match_score as number) * 100).toFixed(0)}%` : "N/A"}</span></div>
+                                    <div><span className="text-slate-400">Liveness:</span> <span className="text-white">{check.liveness_check as string || "N/A"}</span></div>
+                                    <div><span className="text-slate-400">Address:</span> <span className="text-white">{check.address_verified ? "Verified" : "Not Verified"}</span></div>
+                                  </div>
+                                  {reports && (
+                                    <div className="mt-2 pt-2 border-t border-slate-600/30 grid grid-cols-3 gap-2 text-xs">
+                                      {reports.document && (
+                                        <div className="bg-slate-700/50 rounded p-2">
+                                          <span className="text-slate-400 block mb-1">Document</span>
+                                          <span className={`font-medium ${(reports.document as Record<string, unknown>).mrz_check === "clear" ? "text-green-400" : "text-amber-400"}`}>
+                                            MRZ: {(reports.document as Record<string, unknown>).mrz_check as string}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {reports.facial_similarity && (
+                                        <div className="bg-slate-700/50 rounded p-2">
+                                          <span className="text-slate-400 block mb-1">Facial</span>
+                                          <span className={`font-medium ${(reports.facial_similarity as Record<string, unknown>).face_match_result === "clear" ? "text-green-400" : "text-amber-400"}`}>
+                                            {(reports.facial_similarity as Record<string, unknown>).face_match_result as string}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {reports.liveness && (
+                                        <div className="bg-slate-700/50 rounded p-2">
+                                          <span className="text-slate-400 block mb-1">Liveness</span>
+                                          <span className={`font-medium ${(reports.liveness as Record<string, unknown>).liveness_result === "clear" ? "text-green-400" : "text-amber-400"}`}>
+                                            {(reports.liveness as Record<string, unknown>).liveness_result as string}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+
+                            {/* DBS Check Details */}
+                            {item.key === "dbs_valid" && data && data.length > 0 && data.map((check) => (
+                              <div key={check.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
+                                <div className="flex items-center justify-between mb-2">
+                                  <StatusBadge status={check.result as string} />
+                                  <span className="text-xs text-slate-500">{(check.submitted_at as string)?.split("T")[0]}</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div><span className="text-slate-400">Certificate:</span> <span className="text-white">{(check.certificate_number as string) || "Pending"}</span></div>
+                                  <div><span className="text-slate-400">Ref:</span> <span className="text-white">{check.application_ref as string}</span></div>
+                                  <div><span className="text-slate-400">Type:</span> <span className="text-white">{check.check_type as string}</span></div>
+                                  <div><span className="text-slate-400">Renewal:</span> <span className="text-white">{(check.next_renewal as string)?.split("T")[0] || "N/A"}</span></div>
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Registration Check Details */}
+                            {item.key === "registration_active" && data && data.length > 0 && data.map((check) => (
+                              <div key={check.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
+                                <div className="flex items-center justify-between mb-2">
+                                  <StatusBadge status={check.result as string} />
+                                  <span className="text-xs text-slate-500">{(check.last_checked as string)?.split("T")[0]}</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div><span className="text-slate-400">Body:</span> <span className="text-white">{check.body as string}</span></div>
+                                  <div><span className="text-slate-400">Active:</span> <span className="text-white">{check.is_active ? "Yes" : "No"}</span></div>
+                                  <div><span className="text-slate-400">Sanctions:</span> <span className="text-white">{(check.sanctions as string) || "None"}</span></div>
+                                  <div><span className="text-slate-400">Next Check:</span> <span className="text-white">{(check.next_check as string)?.split("T")[0] || "N/A"}</span></div>
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* References Details */}
+                            {item.key === "references_verified" && data && data.length > 0 && data.map((ref) => (
+                              <div key={ref.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-white text-sm font-medium">{ref.referee_name as string}</span>
+                                  <StatusBadge status={ref.status as string} />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div><span className="text-slate-400">Email:</span> <span className="text-slate-300">{ref.referee_email as string}</span></div>
+                                  <div><span className="text-slate-400">Domain Verified:</span> <span className={ref.domain_verified ? "text-green-400" : "text-red-400"}>{ref.domain_verified ? "Yes" : "No"}</span></div>
+                                  <div><span className="text-slate-400">Reminders Sent:</span> <span className="text-slate-300">{String(ref.reminder_count ?? 0)}</span></div>
+                                  {ref.sentiment_score != null && (
+                                    <div><span className="text-slate-400">Sentiment:</span> <span className={`font-medium ${(ref.sentiment_score as number) > 0.7 ? "text-green-400" : (ref.sentiment_score as number) > 0.4 ? "text-amber-400" : "text-red-400"}`}>{((ref.sentiment_score as number) * 100).toFixed(0)}%</span></div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* CV Analysis Details */}
+                            {item.key === "cv_validated" && data && data.length > 0 && data.map((analysis) => {
+                              let gapDisplay = analysis.gap_analysis as string;
+                              let qualDisplay = analysis.qualification_flags as string;
+                              try {
+                                const gapParsed = typeof gapDisplay === "string" ? JSON.parse(gapDisplay) : gapDisplay;
+                                if (Array.isArray(gapParsed)) {
+                                  gapDisplay = gapParsed.length === 0 ? "No gaps detected" : gapParsed.map((g: Record<string, unknown>) =>
+                                    `${g.from_year || "?"}-${g.to_year || "?"}: ${g.gap_months || "?"}mo gap${g.note ? ` (${g.note})` : ""}`
+                                  ).join("; ");
+                                }
+                              } catch { /* keep as-is */ }
+                              try {
+                                const qualParsed = typeof qualDisplay === "string" ? JSON.parse(qualDisplay) : qualDisplay;
+                                if (Array.isArray(qualParsed)) {
+                                  qualDisplay = qualParsed.map((q: Record<string, unknown>) =>
+                                    `${q.qualification || q.note || "Unknown"} (${q.status || q.severity || "unknown"})`
+                                  ).join("; ");
+                                }
+                              } catch { /* keep as-is */ }
+                              return (
+                                <div key={analysis.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-slate-300 text-sm">Fraud Risk:</span>
+                                      <span className={`text-sm font-bold ${
+                                        (analysis.fraud_risk_score as number) < 0.3 ? "text-green-400" :
+                                        (analysis.fraud_risk_score as number) < 0.6 ? "text-amber-400" : "text-red-400"
+                                      }`}>{((analysis.fraud_risk_score as number) * 100).toFixed(0)}%</span>
+                                    </div>
+                                    <span className="text-xs text-slate-500">{(analysis.analysed_at as string)?.split("T")[0]}</span>
+                                  </div>
+                                  {typeof analysis.ai_summary === "string" && analysis.ai_summary && <p className="text-slate-300 text-sm mb-2">{analysis.ai_summary}</p>}
+                                  <div className="space-y-1 text-sm">
+                                    <div className="p-2 bg-slate-700/50 rounded"><span className="text-slate-400">Gaps:</span> <span className="text-slate-200">{gapDisplay || "None"}</span></div>
+                                    <div className="p-2 bg-slate-700/50 rounded"><span className="text-slate-400">Qualifications:</span> <span className="text-slate-200">{qualDisplay || "None"}</span></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {/* Employment Verification Details */}
+                            {item.key === "employment_verified" && data && data.length > 0 && data.map((entry) => {
+                              const ver = entry._verification as Record<string, unknown> | undefined;
+                              return (
+                                <div key={entry.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
+                                  <div className="flex items-start justify-between mb-1">
+                                    <div>
+                                      <h4 className="text-white font-medium text-sm">{entry.employer_name as string}</h4>
+                                      <p className="text-blue-400 text-sm">{entry.job_title as string}</p>
+                                      <p className="text-slate-400 text-xs">
+                                        {entry.start_date as string || "?"} — {entry.is_current ? "Present" : (entry.end_date as string || "?")}
+                                        {entry.source === "cv_extracted" && (
+                                          <span className="ml-2 bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0 rounded text-xs">CV Extracted</span>
+                                        )}
+                                      </p>
+                                    </div>
+                                    {ver && <StatusBadge status={ver.status as string} />}
+                                  </div>
+                                  {ver && (
+                                    <div className="mt-2 pt-2 border-t border-slate-600/30">
+                                      <div className="flex items-center gap-2 mb-1 text-sm">
+                                        <span className="text-slate-400">Verified by:</span>
+                                        <span className="text-white">{ver.verifier_name as string}</span>
+                                        {ver.domain_verified
+                                          ? <span className="text-xs bg-green-500/20 text-green-400 border border-green-500/30 px-1.5 py-0 rounded">Domain OK</span>
+                                          : <span className="text-xs bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0 rounded">Domain Mismatch</span>
+                                        }
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-1 text-xs">
+                                        <div><span className="text-slate-400">Job Title:</span> <span className={ver.job_title_confirmed ? "text-green-400" : "text-red-400"}>{ver.job_title_confirmed ? "Confirmed" : "Not confirmed"}</span></div>
+                                        <div><span className="text-slate-400">Dates:</span> <span className={ver.dates_confirmed ? "text-green-400" : "text-red-400"}>{ver.dates_confirmed ? "Confirmed" : "Not confirmed"}</span></div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {!ver && <p className="text-slate-500 text-xs mt-1">Verification not yet completed</p>}
+                                </div>
+                              );
+                            })}
+
+                            {/* Training Certificate Details */}
+                            {item.key === "training_compliant" && data && data.length > 0 && data.map((cert) => (
+                              <div key={cert.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-white text-sm font-medium">{cert.certificate_name as string}</span>
+                                  <StatusBadge status={cert.status as string || "pending"} />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div><span className="text-slate-400">Category:</span> <span className="text-slate-300">{(cert.category as string) || "N/A"}</span></div>
+                                  <div><span className="text-slate-400">Provider:</span> <span className="text-slate-300">{(cert.provider as string) || "N/A"}</span></div>
+                                  <div><span className="text-slate-400">Issued:</span> <span className="text-slate-300">{(cert.issue_date as string) || "N/A"}</span></div>
+                                  <div><span className="text-slate-400">Expires:</span> <span className={cert.expiry_date ? "text-slate-300" : "text-slate-500"}>{(cert.expiry_date as string) || "No expiry"}</span></div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+
                   {/* Right to Work - dual requirement: RTW check + Imposter Declaration */}
-                  <div className="p-3 bg-slate-700/50 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <CheckIcon passed={candidateCompliance.right_to_work_valid as boolean} />
-                        <span className="text-slate-200 text-sm font-medium">Right to Work</span>
+                  {(() => {
+                    const rtwKey = "right_to_work_valid";
+                    const isRtwExpanded = expandedSections.has(rtwKey);
+                    const isRtwLoading = sectionLoading.has(rtwKey);
+                    const rtwData = sectionData[rtwKey];
+                    return (
+                      <div className="bg-slate-700/50 rounded-lg overflow-hidden">
+                        <button
+                          onClick={() => toggleComplianceSection(rtwKey)}
+                          className="w-full p-3 hover:bg-slate-700/70 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <CheckIcon passed={candidateCompliance.right_to_work_valid as boolean} />
+                              <span className="text-slate-200 text-sm font-medium">Right to Work</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {candidateCompliance.right_to_work_valid
+                                ? <span className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-0.5 rounded-full">Compliant</span>
+                                : <span className="text-xs bg-amber-600/20 text-amber-400 border border-amber-600/30 px-2 py-0.5 rounded-full">Pending</span>
+                              }
+                              {isRtwLoading && <Loader2 size={14} className="text-blue-400 animate-spin" />}
+                              {isRtwExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                            </div>
+                          </div>
+                          <div className="mt-2 ml-8 space-y-1 text-xs text-left">
+                            <div className="flex items-center gap-2">
+                              {imposterDeclaration
+                                ? <CheckCircle size={14} className="text-green-400" />
+                                : <Clock size={14} className="text-amber-400" />
+                              }
+                              <span className={imposterDeclaration ? "text-green-300" : "text-amber-300"}>
+                                Imposter Check Declaration: {imposterDeclaration ? "Confirmed" : "Pending"}
+                              </span>
+                            </div>
+                            {imposterDeclaration && (
+                              <div className="ml-5 text-slate-500">
+                                Declared by {imposterDeclaration.declared_by_email as string} on {(imposterDeclaration.created_at as string)?.split("T")[0]}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                        {isRtwExpanded && (
+                          <div className="px-3 pb-3 border-t border-slate-600/50">
+                            {isRtwLoading && !rtwData && (
+                              <div className="py-4 text-center text-slate-500 text-sm">Loading details...</div>
+                            )}
+                            {rtwData && rtwData.length === 0 && (
+                              <div className="py-3 text-slate-500 text-sm">No right to work checks found</div>
+                            )}
+                            {rtwData && rtwData.length > 0 && rtwData.map((check) => (
+                              <div key={check.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <StatusBadge status={check.result as string} />
+                                    {(check.verification_method as string) === "uk_citizen" && (
+                                      <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                                        {(check.nationality as string) === "irish" ? "Irish" : "UK"} Citizen
+                                      </span>
+                                    )}
+                                    {(check.verification_method as string) === "share_code" && (
+                                      <span className="text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full">
+                                        Share Code
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-slate-500">{(check.checked_at as string)?.split("T")[0]}</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div><span className="text-slate-400">Status:</span> <span className="text-white">{(check.visa_type as string) || "N/A"}</span></div>
+                                  <div><span className="text-slate-400">Expiry:</span> <span className="text-white">{(check.visa_expiry as string) || "No expiry"}</span></div>
+                                  <div><span className="text-slate-400">Restrictions:</span> <span className="text-white">{(check.work_restrictions as string) || "None"}</span></div>
+                                  {(check.verification_method as string) === "uk_citizen" && (check.document_type as string) && (
+                                    <div><span className="text-slate-400">Document:</span> <span className="text-white">{(check.document_type as string).replace(/_/g, " ")}</span></div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      {candidateCompliance.right_to_work_valid
-                        ? <span className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-0.5 rounded-full">Compliant</span>
-                        : <span className="text-xs bg-amber-600/20 text-amber-400 border border-amber-600/30 px-2 py-0.5 rounded-full">Pending</span>
-                      }
-                    </div>
-                    <div className="mt-2 ml-8 space-y-1 text-xs">
-                      <div className="flex items-center gap-2">
-                        {imposterDeclaration
-                          ? <CheckCircle size={14} className="text-green-400" />
-                          : <Clock size={14} className="text-amber-400" />
-                        }
-                        <span className={imposterDeclaration ? "text-green-300" : "text-amber-300"}>
-                          Imposter Check Declaration: {imposterDeclaration ? "Confirmed" : "Pending"}
-                        </span>
-                      </div>
-                      {imposterDeclaration && (
-                        <div className="ml-5 text-slate-500">
-                          Declared by {imposterDeclaration.declared_by_email as string} on {(imposterDeclaration.created_at as string)?.split("T")[0]}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
                 {candidateCompliance.flags ? (() => {
                   let flagList: string[] = [];
