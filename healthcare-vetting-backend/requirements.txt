@@ -51,3 +51,4 @@ Pillow==11.2.1
 beautifulsoup4==4.12.3
 lxml==5.3.1
 requests==2.32.3
+stripe==12.2.0
