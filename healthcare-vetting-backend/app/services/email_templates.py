@@ -895,6 +895,113 @@ Viper AI Team""",
             {"key": "imposter_check_link", "description": "Direct link to complete the imposter declaration"},
         ]),
     },
+    {
+        "template_key": "vetting_complete_candidate",
+        "name": "Vetting Complete — Candidate Notification",
+        "description": "Sent to the candidate when all compliance checks have been completed and they are fully vetted.",
+        "category": "compliance",
+        "subject": "Your Compliance Vetting Is Complete",
+        "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+<div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">Viper AI</h1>
+    <p style="color: #22c55e; margin: 5px 0 0; font-size: 14px;">Vetting Complete</p>
+</div>
+<div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
+    <p>Dear {{candidate_name}},</p>
+    <p>Great news — your compliance vetting has been <strong>completed successfully</strong>.</p>
+    <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 15px; margin: 20px 0; text-align: center;">
+        <p style="margin: 0; color: #166534; font-size: 18px; font-weight: 600;">✓ Fully Compliant</p>
+        <p style="margin: 5px 0 0; color: #166534; font-size: 14px;">Compliance Score: {{compliance_score}}%</p>
+    </div>
+    <p>All required checks have been verified:</p>
+    <ul style="color: #334155; padding-left: 20px;">
+        <li>Identity Verification</li>
+        <li>Right to Work</li>
+        <li>DBS Check</li>
+        <li>Professional References</li>
+        <li>CV & Employment History</li>
+        <li>Professional Registration</li>
+    </ul>
+    <p>Your compliance status is now visible to <strong>{{agency_name}}</strong>. No further action is required from you at this time.</p>
+    <p style="color: #64748b; font-size: 13px;">Some checks (such as DBS, professional registration, and visa status) have expiry dates. You will be notified in advance if any renewals are needed.</p>
+    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+    <p style="color: #64748b; font-size: 11px;">Viper AI — Vetting Intelligence Platform for Enterprise Risk</p>
+</div>
+</div>""",
+        "body_text": """Your Compliance Vetting Is Complete
+
+Dear {{candidate_name}},
+
+Great news — your compliance vetting has been completed successfully.
+
+Compliance Score: {{compliance_score}}%
+
+All required checks have been verified. Your compliance status is now visible to {{agency_name}}.
+
+No further action is required from you at this time. You will be notified in advance if any renewals are needed.
+
+Best regards,
+Viper AI Team""",
+        "variables": json.dumps([
+            {"key": "candidate_name", "description": "Full name of the candidate"},
+            {"key": "agency_name", "description": "Name of the agency that initiated vetting"},
+            {"key": "compliance_score", "description": "Compliance score percentage"},
+        ]),
+    },
+    {
+        "template_key": "vetting_complete_agency",
+        "name": "Vetting Complete — Agency Notification",
+        "description": "Sent to the agency when a candidate's compliance vetting is fully complete.",
+        "category": "compliance",
+        "subject": "Vetting Complete — {{candidate_name}}",
+        "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+<div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">Viper AI</h1>
+    <p style="color: #22c55e; margin: 5px 0 0; font-size: 14px;">Candidate Vetting Complete</p>
+</div>
+<div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
+    <p>Dear {{agency_name}},</p>
+    <p>The compliance vetting for <strong>{{candidate_name}}</strong> has been <strong>completed successfully</strong>.</p>
+    <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 15px; margin: 20px 0;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 8px 0; color: #64748b; width: 40%;">Candidate:</td><td style="padding: 8px 0; font-weight: 600;">{{candidate_name}}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Email:</td><td style="padding: 8px 0;">{{candidate_email}}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Compliance Score:</td><td style="padding: 8px 0; font-weight: 600; color: #166534;">{{compliance_score}}%</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Status:</td><td style="padding: 8px 0; font-weight: 600; color: #166534;">Fully Compliant</td></tr>
+        </table>
+    </div>
+    <p>This candidate is now cleared for deployment. You can view the full compliance breakdown in your dashboard.</p>
+    <div style="text-align: center; margin: 20px 0;">
+        <a href="{{dashboard_link}}" style="background: #22c55e; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">View Candidate</a>
+    </div>
+    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+    <p style="color: #64748b; font-size: 11px;">Viper AI — Vetting Intelligence Platform for Enterprise Risk</p>
+</div>
+</div>""",
+        "body_text": """Vetting Complete — {{candidate_name}}
+
+Dear {{agency_name}},
+
+The compliance vetting for {{candidate_name}} has been completed successfully.
+
+Candidate: {{candidate_name}}
+Email: {{candidate_email}}
+Compliance Score: {{compliance_score}}%
+Status: Fully Compliant
+
+This candidate is now cleared for deployment. View the full compliance breakdown at:
+{{dashboard_link}}
+
+Best regards,
+Viper AI Team""",
+        "variables": json.dumps([
+            {"key": "agency_name", "description": "Name of the agency"},
+            {"key": "candidate_name", "description": "Full name of the candidate"},
+            {"key": "candidate_email", "description": "Candidate's email address"},
+            {"key": "compliance_score", "description": "Compliance score percentage"},
+            {"key": "dashboard_link", "description": "Link to the agency dashboard"},
+        ]),
+    },
 ]
 
 

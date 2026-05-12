@@ -3,9 +3,12 @@ Compliance Engine - The Core
 Rule-based compliance scoring with industry-configurable templates and audit logs.
 """
 import json
+import logging
 from datetime import datetime, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
+
+logger = logging.getLogger(__name__)
 
 
 class ComplianceEngine:
@@ -615,11 +618,80 @@ class ComplianceEngine:
                     ),
                 )
 
+            # Check previous status to detect transition to compliant
+            db.execute(
+                "SELECT compliance_status, email, first_name, last_name FROM candidates WHERE id=%s",
+                (candidate_id,),
+            )
+            cand_row = db.fetchone()
+            prev_status = dict(cand_row).get("compliance_status") if cand_row else None
+            cand_data = dict(cand_row) if cand_row else {}
+
             # Update candidate's compliance status
             db.execute(
                 "UPDATE candidates SET compliance_score=%s, compliance_status=%s, updated_at=%s WHERE id=%s",
                 (score, overall_status, now, candidate_id),
             )
+
+            # Send vetting-complete emails when status transitions to compliant
+            if overall_status == "compliant" and prev_status != "compliant":
+                try:
+                    from app.services.email_service import EmailService
+                    cand_name = f"{cand_data.get('first_name', '')} {cand_data.get('last_name', '')}".strip() or "Candidate"
+                    cand_email = cand_data.get("email", "")
+
+                    # Get the agency(s) linked to this candidate
+                    db.execute(
+                        """SELECT a.email, a.name FROM agencies a
+                           JOIN agency_candidates ac ON a.id = ac.agency_id
+                           WHERE ac.candidate_id=%s""",
+                        (candidate_id,),
+                    )
+                    agencies = [dict(r) for r in db.fetchall()]
+
+                    agency_name = agencies[0]["name"] if agencies else "Your Agency"
+
+                    # Email the candidate
+                    if cand_email:
+                        EmailService.send_vetting_complete_candidate(
+                            cand_email, cand_name, agency_name, score,
+                        )
+
+                    # Email each linked agency
+                    for ag in agencies:
+                        if ag.get("email"):
+                            EmailService.send_vetting_complete_agency(
+                                ag["email"], ag["name"], cand_name, cand_email, score,
+                            )
+
+                    # In-app notifications
+                    db.execute(
+                        """INSERT INTO in_app_notifications
+                           (id, user_id, user_type, title, message, notification_type, created_at)
+                           VALUES (%s, %s, 'candidate', %s, %s, 'vetting_complete', %s)""",
+                        (generate_id(), candidate_id,
+                         "Vetting Complete",
+                         "Your compliance vetting has been completed successfully. All checks are verified.",
+                         now),
+                    )
+                    for ag in agencies:
+                        db.execute(
+                            """SELECT id FROM agencies WHERE email=%s""",
+                            (ag["email"],),
+                        )
+                        ag_row = db.fetchone()
+                        if ag_row:
+                            db.execute(
+                                """INSERT INTO in_app_notifications
+                                   (id, user_id, user_type, title, message, notification_type, created_at)
+                                   VALUES (%s, %s, 'agency', %s, %s, 'vetting_complete', %s)""",
+                                (generate_id(), dict(ag_row)["id"],
+                                 f"Vetting Complete — {cand_name}",
+                                 f"All compliance checks for {cand_name} are now verified. Score: {score}%.",
+                                 now),
+                            )
+                except Exception as e:
+                    logger.warning("Failed to send vetting-complete emails for %s: %s", candidate_id, e)
 
             # Audit log
             db.execute(

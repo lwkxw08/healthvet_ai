@@ -349,6 +349,68 @@ class EmailService:
         )
 
     @staticmethod
+    def send_vetting_complete_candidate(candidate_email: str, candidate_name: str,
+                                         agency_name: str, compliance_score: int):
+        """Notify candidate that their vetting is complete."""
+        variables = {
+            "candidate_name": candidate_name,
+            "agency_name": agency_name,
+            "compliance_score": str(compliance_score),
+        }
+
+        fallback_subject = "Your Compliance Vetting Is Complete"
+        fallback_body = (
+            f"Dear {candidate_name},\n\n"
+            f"Your compliance vetting has been completed successfully.\n"
+            f"Compliance Score: {compliance_score}%\n\n"
+            f"Your compliance status is now visible to {agency_name}.\n\n"
+            f"Best regards,\nViper AI Team"
+        )
+
+        resolved_key = EmailService._resolve_template_key(
+            "vetting_completed", "vetting_complete_candidate",
+            recipient_type="candidate",
+        )
+        EmailService._send_via_template(
+            resolved_key, candidate_email, candidate_name,
+            variables, fallback_subject, fallback_body,
+            "vetting_complete",
+        )
+
+    @staticmethod
+    def send_vetting_complete_agency(agency_email: str, agency_name: str,
+                                      candidate_name: str, candidate_email: str,
+                                      compliance_score: int):
+        """Notify agency that a candidate's vetting is complete."""
+        variables = {
+            "agency_name": agency_name,
+            "candidate_name": candidate_name,
+            "candidate_email": candidate_email,
+            "compliance_score": str(compliance_score),
+            "dashboard_link": f"{DASHBOARD_URL}/agency/dashboard",
+        }
+
+        fallback_subject = f"Vetting Complete — {candidate_name}"
+        fallback_body = (
+            f"Dear {agency_name},\n\n"
+            f"The compliance vetting for {candidate_name} ({candidate_email}) "
+            f"has been completed successfully.\n"
+            f"Compliance Score: {compliance_score}%\n\n"
+            f"This candidate is now cleared for deployment.\n\n"
+            f"Best regards,\nViper AI Team"
+        )
+
+        resolved_key = EmailService._resolve_template_key(
+            "vetting_completed", "vetting_complete_agency",
+            recipient_type="agency",
+        )
+        EmailService._send_via_template(
+            resolved_key, agency_email, agency_name,
+            variables, fallback_subject, fallback_body,
+            "vetting_complete",
+        )
+
+    @staticmethod
     def get_notifications(recipient_email: str = None, notification_type: str = None,
                           limit: int = 50) -> list:
         """Get stored notifications."""
