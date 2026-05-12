@@ -1026,7 +1026,7 @@ export default function AdminPanel() {
           check_label: c.check_label,
           is_required: c.is_required ?? true,
           is_enabled: c.is_enabled ?? true,
-          weight: Number(c.weight) || 10,
+          weight: c.weight != null ? Number(c.weight) : 10,
           config: typeof c.config === "string" ? JSON.parse(c.config as string || "{}") : (c.config || {}),
           sort_order: Number(c.sort_order) || 0,
         })),

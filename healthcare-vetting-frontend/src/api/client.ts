@@ -572,6 +572,8 @@ export const trainingCatalogueApi = {
 export const trainingApi = {
   getStandards: () =>
     apiRequest<Record<string, unknown>[]>("/api/training/standards", {}),
+  getIndustryCourses: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/training-courses/self", { token }),
   getCertificates: (token: string, candidateId: string) =>
     apiRequest<Record<string, unknown>[]>(`/api/training/${candidateId}`, { token }),
   addCertificate: (token: string, candidateId: string, data: Record<string, unknown>) =>

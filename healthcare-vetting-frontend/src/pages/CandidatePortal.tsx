@@ -117,14 +117,26 @@ export default function CandidatePortal() {
     if (!token || !userId || tab !== "training") return;
     const loadTraining = async () => {
       try {
-        const [certs, standards, comp] = await Promise.all([
+        const [certs, comp] = await Promise.all([
           trainingApi.getCertificates(token, userId),
-          trainingApi.getStandards(),
           trainingApi.getCompliance(token, userId),
         ]);
         setTrainingCerts(certs);
-        setTrainingStandards(standards);
         setTrainingCompliance(comp);
+        // Load industry-specific training courses from the training matrix
+        try {
+          const courseData = await trainingApi.getIndustryCourses(token);
+          const courses = (courseData as Record<string, unknown>).courses as Record<string, unknown>[];
+          if (courses && courses.length > 0) {
+            setTrainingStandards(courses);
+          } else {
+            const fallback = await trainingApi.getStandards();
+            setTrainingStandards(fallback);
+          }
+        } catch {
+          const fallback = await trainingApi.getStandards();
+          setTrainingStandards(fallback);
+        }
       } catch (err) { console.error("Failed to load training data", err); }
     };
     loadTraining();
@@ -419,6 +431,8 @@ export default function CandidatePortal() {
     if (!token || !userId || !newCertName) return;
     setLoading(true);
     try {
+      // Find matching course from training matrix to include course_id
+      const matchedCourse = trainingStandards.find((s) => (s.name as string) === newCertName);
       await trainingApi.addCertificate(token, userId, {
         certificate_name: newCertName,
         category: newCertCategory,
@@ -426,6 +440,7 @@ export default function CandidatePortal() {
         issue_date: newCertIssueDate || undefined,
         expiry_date: newCertExpiryDate || undefined,
         certificate_ref: newCertRef || undefined,
+        course_id: matchedCourse?.id || undefined,
       });
       setNewCertName(""); setNewCertProvider(""); setNewCertIssueDate(""); setNewCertExpiryDate(""); setNewCertRef("");
       showMessage("Training certificate added");
@@ -1907,7 +1922,9 @@ export default function CandidatePortal() {
                     className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Select certificate...</option>
                     {trainingStandards.map((s) => (
-                      <option key={s.name as string} value={s.name as string}>{s.name as string} ({s.category as string})</option>
+                      <option key={s.name as string} value={s.name as string}>
+                        {s.name as string} ({s.is_mandatory ? "mandatory" : (s.category as string || "optional")})
+                      </option>
                     ))}
                     <option value="__custom">Other (custom)</option>
                   </select>
