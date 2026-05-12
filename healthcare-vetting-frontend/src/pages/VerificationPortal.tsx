@@ -346,8 +346,8 @@ function EmploymentForm({
   setJobTitleConfirmed,
   datesConfirmed,
   setDatesConfirmed,
-  reasonForLeaving,
-  setReasonForLeaving,
+  reasonForLeaving: _reasonForLeaving,
+  setReasonForLeaving: _setReasonForLeaving,
   comments,
   setComments,
   responderName,
@@ -364,8 +364,8 @@ function EmploymentForm({
   setJobTitleConfirmed: (v: boolean) => void;
   datesConfirmed: boolean | null;
   setDatesConfirmed: (v: boolean) => void;
-  reasonForLeaving: string;
-  setReasonForLeaving: (v: string) => void;
+  reasonForLeaving: string;  // suppressed pre-launch
+  setReasonForLeaving: (v: string) => void;  // suppressed pre-launch
   comments: string;
   setComments: (v: string) => void;
   responderName: string;
@@ -550,6 +550,7 @@ function EmploymentForm({
 
 // ── Reference Form ───────────────────────────────────────────────────────────
 
+/* StarRating — SUPPRESSED pre-launch, reinstate post go-live with ratings
 function StarRating({
   label,
   value,
@@ -594,26 +595,26 @@ function StarRating({
       </div>
     </div>
   );
-}
+} */
 
 function ReferenceForm({
   formData,
-  performance,
-  setPerformance,
-  conduct,
-  setConduct,
-  reliability,
-  setReliability,
-  wouldRehire,
-  setWouldRehire,
+  performance: _performance,
+  setPerformance: _setPerformance,
+  conduct: _conduct,
+  setConduct: _setConduct,
+  reliability: _reliability,
+  setReliability: _setReliability,
+  wouldRehire: _wouldRehire,
+  setWouldRehire: _setWouldRehire,
   relationship,
   setRelationship,
   knownSince,
   setKnownSince,
   strengths,
   setStrengths,
-  improvements,
-  setImprovements,
+  improvements: _improvements,
+  setImprovements: _setImprovements,
   comments,
   setComments,
   responderName,
