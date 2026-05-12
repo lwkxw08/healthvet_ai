@@ -411,6 +411,13 @@ class TriggerEngine:
             if cv_text or cv_file_bytes:
                 CVAnalysisService.analyse_cv(candidate_id, cv_text or "", cv_file_name, cv_file_bytes)
                 result = "completed"
+                # Run AI-powered CV gap analysis (OpenAI if key configured, else rule-based)
+                try:
+                    from app.services.ai_cv_analysis import analyse_cv as ai_analyse_cv
+                    ai_analyse_cv(candidate_id, cv_text or "")
+                    logger.info("AI CV gap analysis completed for candidate %s", candidate_id)
+                except Exception as e:
+                    logger.warning("AI CV gap analysis failed for candidate %s: %s", candidate_id, e)
             else:
                 # If we still have no CV data at all, log it clearly and mark as skipped
                 logger.warning("CV check skipped for candidate %s: no cv_text in submission data, no draft data, and no uploaded file found", candidate_id)

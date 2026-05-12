@@ -378,6 +378,15 @@ async def submit_reference_verification(body: ReferenceSubmission, request: Requ
     except Exception as e:
         logger.warning(f"Failed to re-evaluate compliance after reference submission: {e}")
 
+    # Run AI-powered reference sentiment analysis (OpenAI if key configured, else rule-based)
+    try:
+        from app.services.ai_reference_sentiment import analyse_reference
+        ref_data = {**responses, "candidate_id": record.get("candidate_id", "")}
+        analyse_reference(record["id"], ref_data)
+        logger.info("AI reference sentiment analysis completed for reference %s", record["id"])
+    except Exception as e:
+        logger.warning("AI reference sentiment analysis failed for reference %s: %s", record["id"], e)
+
     return {
         "success": True,
         "status": status,
