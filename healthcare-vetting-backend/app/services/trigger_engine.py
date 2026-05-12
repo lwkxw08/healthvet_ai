@@ -268,8 +268,8 @@ class TriggerEngine:
                 # Create in-app notification
                 now = datetime.now(timezone.utc).isoformat()
                 db.execute(
-                    """INSERT INTO notifications (id, user_id, user_type, category, title, message, link, created_at, read)
-                       VALUES (%s, %s, 'agency', 'compliance', %s, %s, %s, %s, 0)""",
+                    """INSERT INTO in_app_notifications (id, user_id, user_type, title, message, category, severity, link, is_read, created_at)
+                       VALUES (%s, %s, 'agency', %s, %s, 'action_required', 'warning', %s, 0, %s)""",
                     (
                         generate_id(),
                         agency_data["id"],

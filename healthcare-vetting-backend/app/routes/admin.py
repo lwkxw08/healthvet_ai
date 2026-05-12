@@ -452,8 +452,8 @@ async def create_invoice(data: InvoiceCreate, current_user: dict = Depends(get_c
         try:
             notif_id = generate_id()
             db.execute(
-                """INSERT INTO notifications (id, user_id, user_type, category, title, message, is_read, created_at)
-                   VALUES (%s, %s, 'agency', 'billing', %s, %s, 0, %s)""",
+                """INSERT INTO in_app_notifications (id, user_id, user_type, title, message, category, severity, is_read, created_at)
+                   VALUES (%s, %s, 'agency', %s, %s, 'payment', 'info', 0, %s)""",
                 (notif_id, data.agency_id, f"New Invoice: £{data.sell_amount:.2f}",
                  f"{data.description} - Please review and pay in your Billing tab.", now),
             )

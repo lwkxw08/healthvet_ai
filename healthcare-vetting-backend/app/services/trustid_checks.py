@@ -151,7 +151,7 @@ class TrustIDService:
             # Create admin notifications for manual tasks requiring attention
             if status == "pending_admin":
                 pretty_type = check_type.replace("_", " ").title()
-                display_name = candidate_name or "Unknown"
+                display_name = candidate_name or candidate_email or "Unknown"
                 # Notify all active admin users
                 db.execute("SELECT id FROM admin_users WHERE is_active=1")
                 admin_rows = db.fetchall()
