@@ -39,13 +39,15 @@ class EmploymentSubmission(BaseModel):
 
 class ReferenceSubmission(BaseModel):
     code: str
-    performance_rating: int = Field(..., ge=1, le=5, description="1-5 rating")
-    conduct_rating: int = Field(..., ge=1, le=5)
-    reliability_rating: int = Field(..., ge=1, le=5)
-    would_rehire: bool
+    # Ratings & would_rehire suppressed pre-launch — made optional, reinstate as required post go-live
+    performance_rating: Optional[int] = Field(None, ge=1, le=5, description="1-5 rating")
+    conduct_rating: Optional[int] = Field(None, ge=1, le=5)
+    reliability_rating: Optional[int] = Field(None, ge=1, le=5)
+    would_rehire: Optional[bool] = None
     relationship_to_candidate: Optional[str] = None
     known_since: Optional[str] = None
     strengths: Optional[str] = None
+    # areas_for_improvement suppressed pre-launch — reinstate post go-live
     areas_for_improvement: Optional[str] = None
     additional_comments: Optional[str] = None
     responder_name: Optional[str] = None
@@ -439,11 +441,11 @@ def _get_employment_dates(employment_id: str, field: str) -> str:
 def _simple_sentiment(responses: dict) -> float:
     """Simple sentiment scoring from reference responses. Returns 0.0-1.0."""
     score = 0.5
-    avg_rating = (
-        responses.get("performance_rating", 3)
-        + responses.get("conduct_rating", 3)
-        + responses.get("reliability_rating", 3)
-    ) / 3.0
+    # Ratings may be None when suppressed pre-launch — default to neutral (3)
+    perf = responses.get("performance_rating") or 3
+    cond = responses.get("conduct_rating") or 3
+    reli = responses.get("reliability_rating") or 3
+    avg_rating = (perf + cond + reli) / 3.0
 
     # Map 1-5 average to score adjustment
     score += (avg_rating - 3) * 0.15

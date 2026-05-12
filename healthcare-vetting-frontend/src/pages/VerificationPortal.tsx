@@ -133,14 +133,15 @@ export default function VerificationPortal() {
   };
 
   const handleSubmitReference = async () => {
-    if (refPerformance === 0 || refConduct === 0 || refReliability === 0) {
-      setError("Please provide all three ratings");
-      return;
-    }
-    if (refWouldRehire === null) {
-      setError("Please indicate whether you would rehire this candidate");
-      return;
-    }
+    // Ratings & would_rehire suppressed pre-launch — skip validation for now
+    // if (refPerformance === 0 || refConduct === 0 || refReliability === 0) {
+    //   setError("Please provide all three ratings");
+    //   return;
+    // }
+    // if (refWouldRehire === null) {
+    //   setError("Please indicate whether you would rehire this candidate");
+    //   return;
+    // }
     setLoading(true);
     setError("");
     try {
@@ -474,8 +475,8 @@ function EmploymentForm({
           </div>
         </div>
 
-        {/* Reason for Leaving */}
-        <div>
+        {/* Reason for Leaving — SUPPRESSED: hidden pre-launch, reinstate post go-live if needed */}
+        {/* <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Reason for Leaving</label>
           <input
             type="text"
@@ -484,7 +485,7 @@ function EmploymentForm({
             placeholder="e.g. Career progression, end of contract, relocated"
             className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm"
           />
-        </div>
+        </div> */}
 
         {/* Additional Comments */}
         <div>
@@ -669,13 +670,13 @@ function ReferenceForm({
       </div>
 
       <div className="space-y-6">
-        {/* Ratings */}
-        <StarRating label="Performance" value={performance} onChange={setPerformance} required />
+        {/* Ratings — SUPPRESSED: hidden pre-launch, reinstate post go-live if needed */}
+        {/* <StarRating label="Performance" value={performance} onChange={setPerformance} required />
         <StarRating label="Professional Conduct" value={conduct} onChange={setConduct} required />
-        <StarRating label="Reliability & Attendance" value={reliability} onChange={setReliability} required />
+        <StarRating label="Reliability & Attendance" value={reliability} onChange={setReliability} required /> */}
 
-        {/* Would Rehire */}
-        <div>
+        {/* Would Rehire — SUPPRESSED: hidden pre-launch, reinstate post go-live if needed */}
+        {/* <div>
           <label className="block text-sm font-medium text-slate-700 mb-2">
             Would you re-employ or recommend this candidate? <span className="text-red-500">*</span>
           </label>
@@ -701,7 +702,7 @@ function ReferenceForm({
               No
             </button>
           </div>
-        </div>
+        </div> */}
 
         {/* Relationship */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -745,8 +746,8 @@ function ReferenceForm({
           />
         </div>
 
-        {/* Areas for Improvement */}
-        <div>
+        {/* Areas for Improvement — SUPPRESSED: hidden pre-launch, reinstate post go-live if needed */}
+        {/* <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Areas for Improvement</label>
           <textarea
             value={improvements}
@@ -755,7 +756,7 @@ function ReferenceForm({
             rows={2}
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none resize-none"
           />
-        </div>
+        </div> */
 
         {/* Additional Comments */}
         <div>
