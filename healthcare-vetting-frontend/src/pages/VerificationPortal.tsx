@@ -149,9 +149,10 @@ export default function VerificationPortal() {
         method: "POST",
         body: {
           code: code.trim(),
-          performance_rating: refPerformance,
-          conduct_rating: refConduct,
-          reliability_rating: refReliability,
+          // Ratings & would_rehire suppressed pre-launch — send null so backend skips validation
+          performance_rating: refPerformance || null,
+          conduct_rating: refConduct || null,
+          reliability_rating: refReliability || null,
           would_rehire: refWouldRehire,
           relationship_to_candidate: refRelationship || null,
           known_since: refKnownSince || null,
