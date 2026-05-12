@@ -17,6 +17,7 @@ from app.utils.auth import CSRF_COOKIE_NAME, REFRESH_COOKIE_NAME
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _EXEMPT_PATHS = (
     "/api/auth/",
+    "/api/verify/",
     "/api/webhooks/",
     "/healthz",
 )
