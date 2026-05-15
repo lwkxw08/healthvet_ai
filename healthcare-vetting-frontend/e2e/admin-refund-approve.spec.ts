@@ -17,7 +17,7 @@ test.describe("Admin Refund Approve", () => {
   let adminToken: string;
   let adminId: string;
   let agencyToken: string;
-  let agencyId: string;
+  let _agencyId: string;
 
   test.beforeAll(async ({ request }) => {
     // Login as admin
@@ -42,7 +42,7 @@ test.describe("Admin Refund Approve", () => {
     expect(agencyResp.ok()).toBeTruthy();
     const agencyBody = await agencyResp.json();
     agencyToken = agencyBody.access_token;
-    agencyId = agencyBody.user_id;
+    _agencyId = agencyBody.user_id;
 
     // Subscribe to starter plan
     await request.post(`${API_URL}/api/billing/subscribe`, {

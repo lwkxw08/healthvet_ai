@@ -131,7 +131,7 @@ export default function EmailTemplatesPanel() {
       setEditMode(false);
       showMessage("Template saved successfully");
       await loadTemplates();
-    } catch (e) {
+    } catch (_e) {
       showMessage("Failed to save template");
     } finally {
       setSaving(false);
