@@ -226,8 +226,10 @@ class AuditPackService:
         if dbs:
             for check in dbs:
                 cd = dict(check)
+                is_candidate_supplied = cd.get("dbs_mode") == "candidate_supplied"
                 data = [
-                    ["Provider:", cd.get("provider", "N/A")],
+                    ["Provider:", "Candidate Supplied" if is_candidate_supplied else cd.get("provider", "N/A")],
+                    ["DBS Mode:", "Candidate Supplied" if is_candidate_supplied else "Viper AI Managed"],
                     ["Check Type:", cd.get("check_type", "enhanced")],
                     ["Status:", cd.get("status", "N/A")],
                     ["Result:", _s(cd.get("result")).upper()],
@@ -237,6 +239,16 @@ class AuditPackService:
                     ["Next Renewal:", cd.get("next_renewal", "N/A")],
                     ["Submitted:", cd.get("submitted_at", "N/A")],
                 ]
+                if is_candidate_supplied:
+                    data.append(["Validation Status:", cd.get("validation_status", "N/A")])
+                    try:
+                        vd = json.loads(cd.get("validation_details") or "{}")
+                        if vd.get("age_warning"):
+                            data.append(["Age Warning:", vd["age_warning"]])
+                        if vd.get("update_service_status"):
+                            data.append(["Update Service Check:", vd["update_service_status"]])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
                 t = Table(data, colWidths=[40*mm, 125*mm])
                 t.setStyle(TableStyle([
                     ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
@@ -247,6 +259,47 @@ class AuditPackService:
                 elements.append(Spacer(1, 3*mm))
         else:
             elements.append(Paragraph("No DBS checks on record.", normal_style))
+        elements.append(Spacer(1, 3*mm))
+
+        # Section 3a: DBS Verification Consent/Authority Record
+        dbs_consents = []
+        try:
+            db.execute(
+                "SELECT * FROM dbs_consent_records WHERE candidate_id=%s ORDER BY consent_timestamp DESC",
+                (candidate_id,),
+            )
+            dbs_consents = db.fetchall()
+        except Exception:
+            pass
+
+        if dbs_consents:
+            elements.append(Paragraph("3a. DBS Verification Authority & Consent", heading_style))
+            elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+            elements.append(Spacer(1, 3*mm))
+            for consent in dbs_consents:
+                ccd = dict(consent)
+                consent_data = [
+                    ["Consent Given:", "Yes" if ccd.get("consent_given") else "No"],
+                    ["Consent Timestamp:", ccd.get("consent_timestamp", "N/A")],
+                    ["IP Address:", ccd.get("consent_ip_address", "N/A")],
+                    ["Consent Version:", ccd.get("consent_version", "1.0")],
+                ]
+                ct = Table(consent_data, colWidths=[40*mm, 125*mm])
+                ct.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ]))
+                elements.append(ct)
+                elements.append(Spacer(1, 2*mm))
+                # Add the full consent text
+                consent_text = ccd.get("consent_text", "")
+                if consent_text:
+                    elements.append(Paragraph(
+                        f"<i>{consent_text}</i>",
+                        ParagraphStyle("ConsentText", parent=normal_style, fontSize=7, leading=9, textColor=colors.grey),
+                    ))
+                elements.append(Spacer(1, 3*mm))
         elements.append(Spacer(1, 5*mm))
 
         # Section 4: CV Analysis

@@ -237,6 +237,7 @@ class ComplianceEngine:
             if dbs_check_key:
                 dbs_config = template_config.get(dbs_check_key, {})
                 dbs_level = dbs_config.get("level", "enhanced_barred")
+                dbs_mode = dbs_config.get("dbs_mode", "viper_managed")
 
                 if dbs_level == "none":
                     checks[dbs_check_key] = True
@@ -244,6 +245,45 @@ class ComplianceEngine:
                         "check": "dbs_check", "result": "passed",
                         "timestamp": now, "details": "not_required_for_industry",
                     })
+                elif dbs_mode == "candidate_supplied":
+                    # Candidate-supplied DBS — check for validated candidate certificate
+                    dbs_dict = dict(dbs) if dbs else {}
+                    is_candidate_supplied = dbs_dict.get("dbs_mode") == "candidate_supplied"
+                    validation_ok = dbs_dict.get("validation_status") == "validated"
+                    result_clear = dbs_dict.get("result") in ("clear", "requires_review")
+
+                    # Also check consent was given
+                    has_consent = False
+                    try:
+                        db.execute(
+                            "SELECT 1 FROM dbs_consent_records WHERE candidate_id=%s AND consent_given=1 LIMIT 1",
+                            (candidate_id,),
+                        )
+                        has_consent = db.fetchone() is not None
+                    except Exception:
+                        pass
+
+                    dbs_pass = is_candidate_supplied and validation_ok and result_clear and has_consent
+                    checks[dbs_check_key] = dbs_pass
+                    audit_entries.append({
+                        "check": "dbs_check",
+                        "result": "passed" if dbs_pass else "failed",
+                        "timestamp": now,
+                        "details": "candidate_supplied" if is_candidate_supplied else "not_submitted",
+                        "dbs_mode": "candidate_supplied",
+                        "validation_status": dbs_dict.get("validation_status", "none"),
+                        "consent_recorded": has_consent,
+                        "required_level": dbs_level,
+                    })
+                    if not dbs_pass:
+                        if not is_candidate_supplied:
+                            flags.append("Candidate-supplied DBS certificate not yet submitted")
+                        elif not has_consent:
+                            flags.append("DBS verification consent/authority not recorded")
+                        elif not validation_ok:
+                            flags.append(f"Candidate-supplied DBS requires review (validation: {dbs_dict.get('validation_status', 'pending')})")
+                        else:
+                            flags.append("Candidate-supplied DBS check incomplete")
                 else:
                     dbs_pass = dbs and dict(dbs).get("result") == "clear"
                     checks[dbs_check_key] = dbs_pass

@@ -230,6 +230,15 @@ export const checksApi = {
     apiRequest<Record<string, unknown>>("/api/checks/dbs", { method: "POST", body: { candidate_id: candidateId, check_type: checkType }, token }),
   getDBSChecks: (token: string, candidateId: string) =>
     apiRequest<Record<string, unknown>[]>(`/api/checks/dbs/${candidateId}`, { token }),
+  submitCandidateSuppliedDBS: (token: string, data: {
+    certificate_number: string; issue_date: string; dbs_type: string;
+    workforce?: string; update_service_ref?: string; consent_given: boolean;
+  }) =>
+    apiRequest<Record<string, unknown>>("/api/checks/dbs/candidate-supplied", { method: "POST", body: data, token }),
+  getDBSConsentRecords: (token: string, candidateId: string) =>
+    apiRequest<Record<string, unknown>[]>(`/api/checks/dbs/consent/${candidateId}`, { token }),
+  getDBSMode: (token: string, candidateId: string) =>
+    apiRequest<{ dbs_mode: string }>(`/api/checks/dbs/mode/${candidateId}`, { token }),
 
   cvAnalysis: (token: string, candidateId: string, cvText: string, cvFileName?: string) =>
     apiRequest<Record<string, unknown>>("/api/checks/cv-analysis", { method: "POST", body: { candidate_id: candidateId, cv_text: cvText, cv_file_name: cvFileName || null }, token }),

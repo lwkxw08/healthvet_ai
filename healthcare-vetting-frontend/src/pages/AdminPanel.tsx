@@ -3249,8 +3249,13 @@ export default function AdminPanel() {
                   ) : <p className="text-xs text-slate-500 mb-2">All available check types are already included.</p>;
                 })()}
                 <div className="space-y-2">
-                  {templateChecks.map((check, idx) => (
-                    <div key={idx} className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg border border-slate-600/30">
+                  {templateChecks.map((check, idx) => {
+                    const isDbs = String(check.check_key).startsWith("dbs");
+                    const checkConfig = (typeof check.config === "string" ? JSON.parse(check.config as string || "{}") : (check.config || {})) as Record<string, unknown>;
+                    const dbsMode = String(checkConfig.dbs_mode || "viper_managed");
+                    return (
+                    <div key={idx} className="p-3 bg-slate-700/50 rounded-lg border border-slate-600/30">
+                      <div className="flex items-center gap-3">
                       <div className="flex items-center gap-2 w-8">
                         <input type="checkbox" checked={Boolean(check.is_enabled)} onChange={(e) => {
                           const updated = [...templateChecks]; updated[idx] = { ...updated[idx], is_enabled: e.target.checked }; setTemplateChecks(updated);
@@ -3274,8 +3279,25 @@ export default function AdminPanel() {
                           const updated = [...templateChecks]; updated[idx] = { ...updated[idx], weight: Number(e.target.value) }; setTemplateChecks(updated);
                         }} className="w-16 bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs text-center" />
                       </div>
+                      </div>
+                      {isDbs && Boolean(check.is_enabled) && (
+                        <div className="mt-2 ml-10 flex items-center gap-2">
+                          <label className="text-xs text-slate-400">DBS Mode:</label>
+                          <select value={dbsMode} onChange={(e) => {
+                            const newConfig = { ...checkConfig, dbs_mode: e.target.value };
+                            const updated = [...templateChecks]; updated[idx] = { ...updated[idx], config: newConfig }; setTemplateChecks(updated);
+                          }} className="bg-slate-600 border border-slate-500 rounded px-2 py-1 text-white text-xs">
+                            <option value="viper_managed">Viper AI Managed</option>
+                            <option value="candidate_supplied">Candidate Supplied</option>
+                          </select>
+                          {dbsMode === "candidate_supplied" && (
+                            <span className="text-xs text-amber-400 ml-2">Candidate provides their own DBS certificate for validation</span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="flex gap-3 mt-4">
                   <button onClick={handleSaveTemplate} disabled={savingTemplate}

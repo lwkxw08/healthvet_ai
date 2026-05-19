@@ -6,7 +6,7 @@ import { fmtDate } from "../lib/utils";
 import {
   Shield, CheckCircle, XCircle, Clock, AlertTriangle, Upload,
   FileText, UserCheck, Fingerprint, Search, Send, LogOut, RefreshCw, ChevronRight,
-  Camera, ScanFace, Loader2, ArrowRight, ArrowLeft, Eye, Briefcase, Plus, Trash2, Edit3, Building2, GraduationCap, FolderOpen,
+  Camera, ScanFace, Loader2, ArrowRight, ArrowLeft, Eye, Briefcase, Plus, Trash2, Edit3, Building2, GraduationCap, FolderOpen, FileCheck,
 } from "lucide-react";
 import DocumentUploadPanel from "./DocumentUploadPanel";
 
@@ -69,6 +69,16 @@ export default function CandidatePortal() {
   const [trustidChecks, setTrustidChecks] = useState<Record<string, unknown>[]>([]);
   const [trustidSubmitted, setTrustidSubmitted] = useState(false);
   const [submittingTrustid, setSubmittingTrustid] = useState(false);
+
+  // Candidate-supplied DBS state
+  const [dbsMode, setDbsMode] = useState<string>("viper_managed");
+  const [candidateDbsCert, setCandidateDbsCert] = useState("");
+  const [candidateDbsIssueDate, setCandidateDbsIssueDate] = useState("");
+  const [candidateDbsType, setCandidateDbsType] = useState("enhanced");
+  const [candidateDbsWorkforce, setCandidateDbsWorkforce] = useState("");
+  const [candidateDbsUpdateRef, setCandidateDbsUpdateRef] = useState("");
+  const [candidateDbsConsent, setCandidateDbsConsent] = useState(false);
+  const [submittingCandidateDbs, setSubmittingCandidateDbs] = useState(false);
 
   // Employment history states
   const [employmentEntries, setEmploymentEntries] = useState<Record<string, unknown>[]>([]);
@@ -145,7 +155,7 @@ export default function CandidatePortal() {
   const loadCheckData = useCallback(async () => {
     if (!token || !userId) return;
     try {
-      const [id, rtw, dbs, cv, reg, refs, emp, empVer] = await Promise.all([
+      const [id, rtw, dbs, cv, reg, refs, emp, empVer, modeRes] = await Promise.all([
         checksApi.getIdentityChecks(token, userId),
         checksApi.getRightToWorkChecks(token, userId),
         checksApi.getDBSChecks(token, userId),
@@ -154,6 +164,7 @@ export default function CandidatePortal() {
         checksApi.getReferences(token, userId),
         checksApi.getEmploymentHistory(token, userId),
         checksApi.getEmploymentVerifications(token, userId),
+        checksApi.getDBSMode(token, userId).catch(() => ({ dbs_mode: "viper_managed" })),
       ]);
       setIdentityChecks(id);
       setRtwChecks(rtw);
@@ -163,6 +174,7 @@ export default function CandidatePortal() {
       setReferences(refs);
       setEmploymentEntries(emp);
       setEmploymentVerifications(empVer);
+      setDbsMode((modeRes as { dbs_mode: string }).dbs_mode || "viper_managed");
     } catch {
       // Some may 404 if no checks yet
     }
@@ -302,6 +314,37 @@ export default function CandidatePortal() {
     } catch (err) {
       showMessage(`Error: ${err instanceof Error ? err.message : "Failed"}`);
     } finally { setLoading(false); }
+  };
+
+  const submitCandidateSuppliedDBS = async () => {
+    if (!token || !userId) return;
+    if (!candidateDbsCert || !candidateDbsIssueDate) {
+      showMessage("Please enter your DBS certificate number and issue date");
+      return;
+    }
+    if (!candidateDbsConsent) {
+      showMessage("You must provide consent for the agency and Viper AI to verify your DBS");
+      return;
+    }
+    setSubmittingCandidateDbs(true);
+    try {
+      await checksApi.submitCandidateSuppliedDBS(token, {
+        certificate_number: candidateDbsCert,
+        issue_date: candidateDbsIssueDate,
+        dbs_type: candidateDbsType,
+        workforce: candidateDbsWorkforce || undefined,
+        update_service_ref: candidateDbsUpdateRef || undefined,
+        consent_given: true,
+      });
+      showMessage("DBS certificate submitted for validation!");
+      setCandidateDbsCert("");
+      setCandidateDbsIssueDate("");
+      setCandidateDbsConsent(false);
+      setCandidateDbsUpdateRef("");
+      await Promise.all([loadData(), loadCheckData()]);
+    } catch (err) {
+      showMessage(`Error: ${err instanceof Error ? err.message : "Failed to submit DBS"}`);
+    } finally { setSubmittingCandidateDbs(false); }
   };
 
   const runCVAnalysis = async () => {
@@ -1345,8 +1388,127 @@ export default function CandidatePortal() {
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-white">Enhanced DBS Check</h2>
 
-              {/* Manual mode: TrustID partner notice */}
-              {isManualMode("dbs_check") ? (
+              {/* Candidate-supplied DBS mode */}
+              {dbsMode === "candidate_supplied" ? (
+                <div className="space-y-6">
+                  <div className="bg-blue-500/10 rounded-xl border border-blue-500/30 p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-blue-600/20 rounded-lg p-3">
+                        <FileCheck size={28} className="text-blue-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-white mb-2">Submit Your DBS Certificate</h3>
+                        <p className="text-slate-300 text-sm mb-3">
+                          Your agency requires you to provide your own DBS certificate details. Please enter the
+                          information from your DBS certificate below. Viper AI will validate the certificate
+                          and run checks against the DBS Update Service.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Candidate-supplied DBS submission form */}
+                  <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6 space-y-4">
+                    <h3 className="text-md font-semibold text-white mb-2">DBS Certificate Details</h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Certificate Number <span className="text-red-400">*</span></label>
+                        <input type="text" value={candidateDbsCert} onChange={(e) => setCandidateDbsCert(e.target.value)}
+                          placeholder="12-digit certificate number" maxLength={12}
+                          className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm" />
+                        <span className="text-xs text-slate-500 mt-1 block">Found on the top-right of your DBS certificate</span>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Issue Date <span className="text-red-400">*</span></label>
+                        <input type="date" value={candidateDbsIssueDate} onChange={(e) => setCandidateDbsIssueDate(e.target.value)}
+                          className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm" />
+                        <span className="text-xs text-slate-500 mt-1 block">Date printed on your DBS certificate</span>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">DBS Type</label>
+                        <select value={candidateDbsType} onChange={(e) => setCandidateDbsType(e.target.value)}
+                          className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm">
+                          <option value="basic">Basic</option>
+                          <option value="standard">Standard</option>
+                          <option value="enhanced">Enhanced</option>
+                          <option value="enhanced_barred">Enhanced + Barred List</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Workforce</label>
+                        <select value={candidateDbsWorkforce} onChange={(e) => setCandidateDbsWorkforce(e.target.value)}
+                          className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm">
+                          <option value="">Select...</option>
+                          <option value="adults">Adult Workforce</option>
+                          <option value="children">Child Workforce</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">DBS Update Service Reference (optional)</label>
+                      <input type="text" value={candidateDbsUpdateRef} onChange={(e) => setCandidateDbsUpdateRef(e.target.value)}
+                        placeholder="If registered with DBS Update Service"
+                        className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm" />
+                      <span className="text-xs text-slate-500 mt-1 block">If you are registered with the DBS Update Service, enter your reference number for instant validation</span>
+                    </div>
+
+                    {/* Consent/Authority section */}
+                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-4 mt-4">
+                      <h4 className="text-sm font-semibold text-amber-300 mb-2">Authority & Consent</h4>
+                      <p className="text-xs text-slate-300 mb-3 leading-relaxed">
+                        I hereby authorise the agency and Viper AI Ltd to access, verify, and process my Disclosure
+                        and Barring Service (DBS) certificate information for the purposes of pre-employment vetting
+                        and compliance checks. I confirm that the DBS certificate details I have provided are accurate
+                        and relate to a genuine DBS certificate issued to me. I understand that the agency and
+                        Viper AI Ltd will use this information solely for the purpose of verifying my suitability for
+                        the role applied for, in accordance with the Data Protection Act 2018, UK GDPR, and the DBS
+                        Code of Practice. I consent to checks being made against the DBS Update Service where applicable.
+                      </p>
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" checked={candidateDbsConsent} onChange={(e) => setCandidateDbsConsent(e.target.checked)}
+                          className="mt-1 rounded" />
+                        <span className="text-sm text-white">
+                          I confirm I have read and agree to the above authority and consent statement <span className="text-red-400">*</span>
+                        </span>
+                      </label>
+                    </div>
+
+                    <button onClick={submitCandidateSuppliedDBS} disabled={submittingCandidateDbs || !candidateDbsCert || !candidateDbsIssueDate || !candidateDbsConsent}
+                      className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-6 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 mt-4">
+                      <FileCheck size={16} /> {submittingCandidateDbs ? "Submitting..." : "Submit DBS Certificate for Validation"}
+                    </button>
+                  </div>
+
+                  {/* Existing DBS checks history */}
+                  {dbsChecks.length > 0 && (
+                    <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+                      <h3 className="text-md font-semibold text-white mb-3">DBS Submission History</h3>
+                      {dbsChecks.map((check) => (
+                        <div key={check.id as string} className="p-4 bg-slate-700/50 rounded-lg mb-2">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <StatusBadge status={check.result as string} />
+                              {check.dbs_mode === "candidate_supplied" && (
+                                <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/30">Candidate Supplied</span>
+                              )}
+                            </div>
+                            <span className="text-xs text-slate-500">{fmtDate(check.submitted_at)}</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                            <div><span className="text-slate-400">Certificate:</span> <span className="text-white">{(check.certificate_number as string) || "Pending"}</span></div>
+                            <div><span className="text-slate-400">Type:</span> <span className="text-white">{check.check_type as string}</span></div>
+                            <div><span className="text-slate-400">Validation:</span> <span className={`font-medium ${check.validation_status === "validated" ? "text-green-400" : check.validation_status === "review_required" ? "text-amber-400" : "text-slate-400"}`}>{(check.validation_status as string || "pending").replace(/_/g, " ")}</span></div>
+                            <div><span className="text-slate-400">Issue Date:</span> <span className="text-white">{fmtDate(check.issue_date, { dateOnly: true }) || "N/A"}</span></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : isManualMode("dbs_check") ? (
                 <div className="space-y-6">
                   <div className="bg-blue-500/10 rounded-xl border border-blue-500/30 p-6">
                     <div className="flex items-start gap-4">

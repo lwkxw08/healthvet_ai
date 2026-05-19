@@ -90,6 +90,38 @@ class DBSCheckResponse(BaseModel):
     next_renewal: Optional[str] = None
     submitted_at: Optional[str] = None
     completed_at: Optional[str] = None
+    dbs_mode: Optional[str] = "viper_managed"
+    candidate_certificate_number: Optional[str] = None
+    candidate_issue_date: Optional[str] = None
+    candidate_dbs_type: Optional[str] = None
+    candidate_workforce: Optional[str] = None
+    update_service_ref: Optional[str] = None
+    validation_status: Optional[str] = None
+    validation_details: Optional[str] = None
+    validated_at: Optional[str] = None
+
+
+class CandidateDBSSubmission(BaseModel):
+    """Request model for candidate-supplied DBS submission."""
+    certificate_number: str
+    issue_date: str
+    dbs_type: str = "enhanced"  # basic, standard, enhanced, enhanced_barred
+    workforce: Optional[str] = None  # adults, children, other
+    update_service_ref: Optional[str] = None
+    consent_given: bool = False
+
+
+class DBSConsentResponse(BaseModel):
+    id: str
+    candidate_id: str
+    agency_id: Optional[str] = None
+    dbs_check_id: Optional[str] = None
+    consent_given: int
+    consent_text: str
+    consent_timestamp: str
+    consent_ip_address: Optional[str] = None
+    consent_version: Optional[str] = "1.0"
+    created_at: Optional[str] = None
 
 
 class CVAnalysisRequest(BaseModel):

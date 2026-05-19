@@ -4,7 +4,7 @@ import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvite
 import NotificationBell from "../components/NotificationBell";
 import { fmtDate } from "../lib/utils";
 import {
-  Shield, CheckCircle, XCircle, Clock, AlertTriangle, Users,
+  Shield, CheckCircle, CheckCircle2, XCircle, Clock, AlertTriangle, Users,
   BarChart3, Bell, LogOut, RefreshCw, Eye, Mail, Send, Copy, Trash2,
   DollarSign, FileText, Briefcase, CreditCard, Download, Upload, UserPlus, Activity,
   Menu, X as XIcon, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2,
@@ -1986,15 +1986,33 @@ export default function AgencyDashboard() {
                             {item.key === "dbs_valid" && data && data.length > 0 && data.map((check) => (
                               <div key={check.id as string} className="mt-3 p-3 bg-slate-800/60 rounded-lg">
                                 <div className="flex items-center justify-between mb-2">
-                                  <StatusBadge status={check.result as string} />
+                                  <div className="flex items-center gap-2">
+                                    <StatusBadge status={check.result as string} />
+                                    {check.dbs_mode === "candidate_supplied" && (
+                                      <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/30">Candidate Supplied</span>
+                                    )}
+                                  </div>
                                   <span className="text-xs text-slate-500">{fmtDate(check.submitted_at)}</span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                   <div><span className="text-slate-400">Certificate:</span> <span className="text-white">{(check.certificate_number as string) || "Pending"}</span></div>
-                                  <div><span className="text-slate-400">Ref:</span> <span className="text-white">{check.application_ref as string}</span></div>
+                                  <div><span className="text-slate-400">Ref:</span> <span className="text-white">{(check.application_ref as string) || (check.dbs_mode === "candidate_supplied" ? "Candidate Supplied" : "N/A")}</span></div>
                                   <div><span className="text-slate-400">Type:</span> <span className="text-white">{check.check_type as string}</span></div>
                                   <div><span className="text-slate-400">Renewal:</span> <span className="text-white">{fmtDate(check.next_renewal, { dateOnly: true }) || "N/A"}</span></div>
+                                  {check.dbs_mode === "candidate_supplied" && (
+                                    <>
+                                      <div><span className="text-slate-400">Validation:</span> <span className={`font-medium ${check.validation_status === "validated" ? "text-green-400" : check.validation_status === "review_required" ? "text-amber-400" : "text-slate-400"}`}>{String(check.validation_status || "pending").replace(/_/g, " ")}</span></div>
+                                      <div><span className="text-slate-400">Issue Date:</span> <span className="text-white">{fmtDate(check.candidate_issue_date, { dateOnly: true }) || "N/A"}</span></div>
+                                    </>
+                                  )}
                                 </div>
+                                {check.dbs_mode === "candidate_supplied" && (
+                                  <div className="mt-2 pt-2 border-t border-slate-700/50">
+                                    <span className="text-xs text-green-400 flex items-center gap-1">
+                                      <CheckCircle2 size={12} /> Consent/Authority Recorded — {fmtDate(check.submitted_at)}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             ))}
 

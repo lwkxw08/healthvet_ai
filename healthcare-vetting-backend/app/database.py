@@ -2031,5 +2031,37 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_api_keys_agency           ON api_keys(agency_id);
     """)
 
+    # ── Candidate-supplied DBS support ─────────────────────────────
+    # Add dbs_mode column to dbs_checks to track whether Viper-managed or candidate-supplied
+    _add_column_if_missing(cursor, "dbs_checks", "dbs_mode", "TEXT DEFAULT 'viper_managed'")
+    _add_column_if_missing(cursor, "dbs_checks", "candidate_certificate_number", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "candidate_issue_date", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "candidate_dbs_type", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "candidate_workforce", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "update_service_ref", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "validation_status", "TEXT DEFAULT 'pending'")
+    _add_column_if_missing(cursor, "dbs_checks", "validation_details", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "validated_at", "TEXT")
+
+    # DBS consent/authority records — separate from general consent_logs for auditability
+    if not _table_exists(cursor, "dbs_consent_records"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS dbs_consent_records (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            agency_id TEXT,
+            submission_id TEXT,
+            dbs_check_id TEXT,
+            consent_given INTEGER NOT NULL DEFAULT 0,
+            consent_text TEXT NOT NULL,
+            consent_timestamp TEXT NOT NULL,
+            consent_ip_address TEXT,
+            consent_user_agent TEXT,
+            consent_version TEXT DEFAULT '1.0',
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_dbs_consent_candidate ON dbs_consent_records(candidate_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_dbs_consent_agency ON dbs_consent_records(agency_id)")
+
     conn.commit()
     _return_connection(conn)

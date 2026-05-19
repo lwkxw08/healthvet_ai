@@ -82,7 +82,28 @@ class TriggerEngine:
                 results["rtw"] = TriggerEngine._run_rtw(candidate_id, section_data["rtw"])
 
         if "dbs" in sections:
-            if dbs_manual:
+            # Check if the agency template uses candidate-supplied DBS mode
+            dbs_candidate_supplied = False
+            try:
+                with get_db() as _tdb:
+                    _tdb.execute(
+                        """SELECT itc.config FROM industry_template_checks itc
+                           JOIN agencies a ON a.industry_template_id = itc.template_id
+                           JOIN agency_candidates ac ON ac.agency_id = a.id
+                           WHERE ac.candidate_id = %s AND itc.check_key LIKE 'dbs%%'
+                           LIMIT 1""",
+                        (candidate_id,),
+                    )
+                    _trow = _tdb.fetchone()
+                    if _trow:
+                        _tcfg = json.loads(dict(_trow).get("config") or "{}")
+                        dbs_candidate_supplied = _tcfg.get("dbs_mode") == "candidate_supplied"
+            except Exception:
+                pass
+
+            if dbs_candidate_supplied:
+                results["dbs"] = "pending_candidate_supplied"
+            elif dbs_manual:
                 trustid_check_types.append("dbs_check")
                 results["dbs"] = "pending_trustid_manual"
             else:
