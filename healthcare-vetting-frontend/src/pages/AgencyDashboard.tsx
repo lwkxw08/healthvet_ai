@@ -2823,7 +2823,7 @@ export default function AgencyDashboard() {
 }
 
 function DPAAcceptancePanel() {
-  const { token, user } = useAuth();
+  const { token, userId } = useAuth();
   const [dpaStatus, setDpaStatus] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [sigName, setSigName] = useState("");
@@ -2831,19 +2831,19 @@ function DPAAcceptancePanel() {
   const [accepting, setAccepting] = useState(false);
 
   useEffect(() => {
-    if (!token || !user?.agency_id) return;
-    gdprApi.getAgencyDPAStatus(token, user.agency_id as string)
+    if (!token || !userId) return;
+    gdprApi.getAgencyDPAStatus(token, userId)
       .then(setDpaStatus)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token, user?.agency_id]);
+  }, [token, userId]);
 
   const handleAccept = async () => {
-    if (!token || !user?.agency_id || !sigName || !sigRole) return;
+    if (!token || !userId || !sigName || !sigRole) return;
     setAccepting(true);
     try {
       await gdprApi.acceptAgencyDPA(token, {
-        agency_id: user.agency_id as string,
+        agency_id: userId,
         signatory_name: sigName,
         signatory_role: sigRole,
       });
