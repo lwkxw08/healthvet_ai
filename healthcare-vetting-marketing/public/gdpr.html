@@ -34,7 +34,7 @@
         <li><strong>Purpose limitation:</strong> Data is collected for specified, explicit, and legitimate purposes — workforce compliance vetting — and not processed in a manner incompatible with those purposes.</li>
         <li><strong>Data minimisation:</strong> We only collect and process personal data that is necessary for compliance vetting. We do not request or store unnecessary information.</li>
         <li><strong>Accuracy:</strong> We take reasonable steps to ensure personal data is accurate and kept up to date. Our continuous monitoring features help maintain data accuracy.</li>
-        <li><strong>Storage limitation:</strong> Personal data is retained only for as long as necessary to fulfil its purpose, subject to statutory retention requirements.</li>
+        <li><strong>Storage limitation:</strong> Personal data is retained only for as long as necessary to fulfil its purpose. Active candidate data is retained for 12 months from last placement; DBS certificate numbers are purged at 6 months per the DBS Code of Practice; personal data is anonymised after 12 months of inactivity.</li>
         <li><strong>Integrity and confidentiality:</strong> We implement appropriate technical and organisational security measures to protect personal data.</li>
         <li><strong>Accountability:</strong> We maintain records of processing activities and can demonstrate compliance with UK GDPR at all times.</li>
       </ul>
@@ -88,7 +88,7 @@
       <p>Candidates can request correction of inaccurate personal data. Agencies can update candidate records through the platform.</p>
 
       <h3 class="text-lg font-semibold text-slate-800">5.3 Right to Erasure (Article 17)</h3>
-      <p>Candidates can request deletion of their personal data through the GDPR Privacy Panel. Erasure requests are processed within 30 days, subject to legal retention requirements (e.g. DBS data retention periods, employment records).</p>
+      <p>Candidates can request deletion of their personal data through the GDPR Privacy Panel. Erasure requests are processed within 30 days, subject to legal retention requirements (e.g. DBS data retention periods, employment records). When a deletion request is submitted, linked agencies are automatically notified. Consent withdrawal is recorded in the audit trail.</p>
 
       <h3 class="text-lg font-semibold text-slate-800">5.4 Right to Restrict Processing (Article 18)</h3>
       <p>Data subjects can request restriction of processing while accuracy is being verified or where processing is unlawful.</p>
@@ -99,12 +99,28 @@
       <h3 class="text-lg font-semibold text-slate-800">5.6 Right to Object (Article 21)</h3>
       <p>Data subjects can object to processing based on legitimate interests. We will cease processing unless there are compelling legitimate grounds.</p>
 
+      <h3 class="text-lg font-semibold text-slate-800">5.7 Data Retention Consent</h3>
+      <p>Candidates provide explicit consent during onboarding for the retention of their vetting data for up to 12 months for continuous compliance monitoring. This consent covers:</p>
+      <ul class="list-disc pl-6 space-y-1">
+        <li>Processing of personal data for compliance checks (identity, DBS, right to work, references, professional registration)</li>
+        <li>Retention of vetting data for 12 months from last active placement</li>
+        <li>Automatic purging of DBS certificate numbers after 6 months (DBS Code of Practice)</li>
+        <li>Anonymisation of personal data after 12 months of inactivity</li>
+        <li>Continuous monitoring of credential expiry and compliance status during active placement</li>
+      </ul>
+      <p>Consent can be withdrawn at any time through the candidate portal. Withdrawal triggers a deletion request processed within 30 days.</p>
+
+      <h3 class="text-lg font-semibold text-slate-800">5.8 Candidate-Supplied DBS Authority</h3>
+      <p>Where an agency template requires candidate-supplied DBS, a separate explicit consent is captured authorising the agency and Viper AI to verify the DBS certificate via the DBS Update Service. This consent is recorded with timestamp, IP address, user agent, and the full legal text, and is included in the CQC audit report.</p>
+
       <h2 class="text-xl font-semibold text-slate-900">6. Data Protection Impact Assessments</h2>
       <p>Given the sensitive nature of compliance vetting data, we conduct Data Protection Impact Assessments (DPIAs) for:</p>
       <ul class="list-disc pl-6 space-y-1">
         <li>AI-powered CV analysis and reference sentiment scoring</li>
         <li>Continuous monitoring and automated alerting</li>
         <li>Cross-candidate fraud detection</li>
+        <li>Candidate-supplied DBS verification and consent processing</li>
+        <li>Automated data lifecycle management (purging, anonymisation)</li>
         <li>New feature development involving personal data processing</li>
       </ul>
 
@@ -148,7 +164,18 @@
       </ul>
       <p>We maintain an up-to-date list of sub-processors and notify data controllers of any changes with 30 days' notice.</p>
 
-      <h2 class="text-xl font-semibold text-slate-900">11. Record of Processing Activities</h2>
+      <h2 class="text-xl font-semibold text-slate-900">11. Agency Data Processing Agreement</h2>
+      <p>Agencies using the Service must accept the Data Processing Agreement (DPA) before processing candidate data. The DPA confirms:</p>
+      <ul class="list-disc pl-6 space-y-1">
+        <li>The agency's lawful basis for instructing Viper AI to process candidate data</li>
+        <li>The agency's responsibility for informing candidates about data processing</li>
+        <li>Agreement to the 12-month retention period for continuous monitoring</li>
+        <li>Agreement to the 6-month DBS certificate number purge schedule</li>
+        <li>Both parties' obligation to comply with UK GDPR and the Data Protection Act 2018</li>
+      </ul>
+      <p>The DPA acceptance is recorded with signatory name, role, timestamp, and IP address for audit purposes.</p>
+
+      <h2 class="text-xl font-semibold text-slate-900">12. Record of Processing Activities</h2>
       <p>In accordance with Article 30, we maintain detailed records of all processing activities, including:</p>
       <ul class="list-disc pl-6 space-y-1">
         <li>Categories of data subjects and personal data</li>

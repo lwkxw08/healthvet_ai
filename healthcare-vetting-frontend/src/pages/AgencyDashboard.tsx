@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi, trainingApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi, trainingApi, gdprApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
 import { fmtDate } from "../lib/utils";
 import {
@@ -1563,6 +1563,9 @@ export default function AgencyDashboard() {
         {/* CQC Audit Tab */}
         {tab === "audit" && (
           <div className="space-y-6">
+            {/* Data Processing Agreement */}
+            <DPAAcceptancePanel />
+
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><FileText className="text-blue-400" size={22} /> CQC Audit Packs</h2>
               <div className="flex items-center gap-3">
@@ -2815,6 +2818,87 @@ export default function AgencyDashboard() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function DPAAcceptancePanel() {
+  const { token, user } = useAuth();
+  const [dpaStatus, setDpaStatus] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sigName, setSigName] = useState("");
+  const [sigRole, setSigRole] = useState("");
+  const [accepting, setAccepting] = useState(false);
+
+  useEffect(() => {
+    if (!token || !user?.agency_id) return;
+    gdprApi.getAgencyDPAStatus(token, user.agency_id as string)
+      .then(setDpaStatus)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [token, user?.agency_id]);
+
+  const handleAccept = async () => {
+    if (!token || !user?.agency_id || !sigName || !sigRole) return;
+    setAccepting(true);
+    try {
+      await gdprApi.acceptAgencyDPA(token, {
+        agency_id: user.agency_id as string,
+        signatory_name: sigName,
+        signatory_role: sigRole,
+      });
+      setDpaStatus({ dpa_accepted: true, accepted_at: new Date().toISOString() });
+    } catch (_e) { /* handled by API */ }
+    setAccepting(false);
+  };
+
+  if (loading) return null;
+
+  if (dpaStatus?.dpa_accepted) {
+    return (
+      <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 flex items-center gap-3">
+        <CheckCircle2 size={20} className="text-green-400" />
+        <div>
+          <span className="text-sm text-green-300 font-medium">Data Processing Agreement accepted</span>
+          <span className="text-xs text-slate-400 ml-2">{dpaStatus.accepted_at ? new Date(dpaStatus.accepted_at as string).toLocaleDateString("en-GB") : ""}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-6 space-y-4">
+      <h3 className="text-md font-semibold text-amber-300 flex items-center gap-2">
+        <AlertTriangle size={18} /> Data Processing Agreement Required
+      </h3>
+      <div className="text-xs text-slate-300 leading-relaxed space-y-2 max-h-40 overflow-y-auto bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+        <p><strong className="text-white">Data Processing Agreement — Version 1.0</strong></p>
+        <p>As the Data Controller, the undersigned agency confirms that:</p>
+        <p>1. They have a lawful basis under UK GDPR for instructing Viper AI Ltd (Data Processor) to process candidate personal data for the purposes of pre-employment vetting and continuous compliance monitoring.</p>
+        <p>2. They accept responsibility for ensuring all data subjects (candidates) are appropriately informed about the processing of their personal data, including the retention period and their rights under UK GDPR.</p>
+        <p>3. Candidate vetting data will be retained for a maximum of 12 months from the date of the candidate&apos;s last active placement for the purpose of continuous compliance monitoring. After 12 months of inactivity, personal data will be anonymised.</p>
+        <p>4. DBS certificate numbers will be automatically purged 6 months after the recruitment decision, in accordance with the DBS Code of Practice.</p>
+        <p>5. The agency may request data export or deletion at any time by contacting enquiries@viperai.io or via the platform&apos;s GDPR tools.</p>
+        <p>6. Both parties shall comply with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018 at all times.</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Signatory Name <span className="text-red-400">*</span></label>
+          <input type="text" value={sigName} onChange={(e) => setSigName(e.target.value)}
+            placeholder="Full name of authorised signatory"
+            className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm" />
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Signatory Role <span className="text-red-400">*</span></label>
+          <input type="text" value={sigRole} onChange={(e) => setSigRole(e.target.value)}
+            placeholder="e.g. Director, Compliance Manager"
+            className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm" />
+        </div>
+      </div>
+      <button onClick={handleAccept} disabled={accepting || !sigName || !sigRole}
+        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-6 py-2.5 rounded-lg text-sm font-medium">
+        {accepting ? "Accepting..." : "Accept Data Processing Agreement"}
+      </button>
     </div>
   );
 }

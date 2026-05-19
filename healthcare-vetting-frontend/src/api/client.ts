@@ -1217,4 +1217,18 @@ export const gdprApi = {
     }),
   getPrivacyNotice: (token: string) =>
     apiRequest<Record<string, unknown>>("/api/gdpr/privacy-notice", { token }),
+  acceptAgencyDPA: (token: string, data: {
+    agency_id: string; signatory_name: string; signatory_role: string; dpa_version?: string;
+  }) =>
+    apiRequest<Record<string, unknown>>("/api/gdpr/agency-dpa", { method: "POST", body: data, token }),
+  getAgencyDPAStatus: (token: string, agencyId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/gdpr/agency-dpa/${agencyId}`, { token }),
+  requestCandidateDeletion: (token: string, candidateId: string, reason: string) =>
+    apiRequest<Record<string, unknown>>("/api/gdpr/candidate-deletion-request", {
+      method: "POST", body: { candidate_id: candidateId, reason, confirmed: true }, token,
+    }),
+  runDBSCertificatePurge: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/gdpr/dbs-certificate-purge", { method: "POST", token }),
+  runAnonymiseInactive: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/gdpr/anonymise-inactive", { method: "POST", token }),
 };

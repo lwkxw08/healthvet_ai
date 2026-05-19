@@ -53,8 +53,10 @@
       <ul class="list-disc pl-6 space-y-1">
         <li>Conducting pre-employment compliance checks (identity, right to work, DBS, professional registration)</li>
         <li>AI-powered CV analysis and reference verification</li>
-        <li>Continuous monitoring of credential expiry and compliance status</li>
-        <li>Generating compliance reports and audit trails</li>
+        <li>Continuous monitoring of credential expiry and compliance status (for up to 12 months from last active placement)</li>
+        <li>DBS Update Service status checks for candidates registered with the Update Service</li>
+        <li>Validating candidate-supplied DBS certificates where the agency template requires it</li>
+        <li>Generating compliance reports and CQC audit trails</li>
         <li>Billing and invoicing</li>
         <li>Service improvement and fraud detection</li>
         <li>Communicating service updates and expiry notifications</li>
@@ -81,14 +83,25 @@
       </ul>
       <p>We do not sell personal data to third parties.</p>
 
-      <h2 class="text-xl font-semibold text-slate-900">8. Data Retention</h2>
-      <p>Personal data is retained for the duration required by applicable regulations:</p>
+      <h2 class="text-xl font-semibold text-slate-900">7a. Candidate-Supplied DBS Data</h2>
+      <p>Where an agency's vetting template is configured for candidate-supplied DBS, candidates provide their own DBS certificate details. In this case:</p>
       <ul class="list-disc pl-6 space-y-1">
-        <li>Candidate vetting records: 6 years from the date of last vetting activity</li>
-        <li>DBS certificate data: Destroyed within 6 months of the recruitment decision (per DBS Code of Practice)</li>
-        <li>Account data: Duration of the account plus 2 years</li>
-        <li>Audit logs: 7 years</li>
+        <li>The candidate must explicitly consent to the agency and Viper AI verifying their DBS certificate</li>
+        <li>Consent is recorded with timestamp, IP address, and user agent for audit purposes</li>
+        <li>DBS certificate numbers follow the same 6-month purge policy</li>
+        <li>The consent record and verification result are included in the CQC audit report</li>
       </ul>
+
+      <h2 class="text-xl font-semibold text-slate-900">8. Data Retention</h2>
+      <p>We operate a clear data retention policy aligned with UK GDPR, the DBS Code of Practice, and CQC requirements:</p>
+      <ul class="list-disc pl-6 space-y-1">
+        <li><strong>Active candidate data:</strong> Retained for 12 months from the date of the candidate's last active placement. After 12 months of inactivity, personal data is anonymised (names, contact details, dates of birth are removed), retaining only the compliance audit trail.</li>
+        <li><strong>DBS certificate numbers:</strong> Automatically purged 6 months after the recruitment decision, in accordance with the DBS Code of Practice. The check result (clear/flagged) and audit record are retained.</li>
+        <li><strong>Consent records:</strong> Retained for the full retention period to demonstrate compliance. Consent can be withdrawn at any time via the candidate portal.</li>
+        <li><strong>Account data:</strong> Duration of the agency account plus 2 years.</li>
+        <li><strong>Audit logs:</strong> 7 years (legal/regulatory requirement).</li>
+      </ul>
+      <p>Candidates may request deletion of their data at any time through the GDPR Privacy Panel in their portal. Requests are processed within 30 days, subject to legal retention requirements. Linked agencies are notified of deletion requests.</p>
 
       <h2 class="text-xl font-semibold text-slate-900">9. Your Rights</h2>
       <p>Under UK GDPR, you have the right to:</p>

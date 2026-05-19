@@ -906,3 +906,284 @@ async def data_portability_package(
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename=data_portability_{candidate_id[:8]}.zip"},
     )
+
+
+# ── Data Lifecycle Management ──────────────────────────────────────────────
+
+class AgencyDPAAcceptance(BaseModel):
+    agency_id: str = Field(..., max_length=100)
+    signatory_name: str = Field(..., min_length=2, max_length=200)
+    signatory_role: str = Field(..., min_length=2, max_length=200)
+    dpa_version: str = Field("1.0", max_length=20)
+
+
+@router.post("/agency-dpa")
+async def accept_agency_dpa(
+    request: Request,
+    data: AgencyDPAAcceptance,
+    current_user: dict = Depends(get_current_user),
+):
+    """Record agency acceptance of the Data Processing Agreement.
+    The agency confirms lawful basis for retaining candidate data for continuous monitoring."""
+    user_type = current_user.get("type")
+    if user_type not in ("agency", "admin"):
+        raise HTTPException(status_code=403, detail="Only agencies or admins can accept the DPA")
+
+    now = datetime.now(timezone.utc).isoformat()
+    ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
+    user_agent = request.headers.get("User-Agent", "unknown")
+    dpa_id = generate_id()
+
+    dpa_text = (
+        f"Data Processing Agreement — Version {data.dpa_version}\n\n"
+        "As the Data Controller, the undersigned agency confirms that:\n\n"
+        "1. They have a lawful basis under UK GDPR for instructing Viper AI Ltd (Data Processor) "
+        "to process candidate personal data for the purposes of pre-employment vetting and "
+        "continuous compliance monitoring.\n\n"
+        "2. They accept responsibility for ensuring all data subjects (candidates) are appropriately "
+        "informed about the processing of their personal data, including the retention period and "
+        "their rights under UK GDPR.\n\n"
+        "3. Candidate vetting data will be retained for a maximum of 12 months from the date of "
+        "the candidate's last active placement for the purpose of continuous compliance monitoring. "
+        "After 12 months of inactivity, personal data will be anonymised.\n\n"
+        "4. DBS certificate numbers will be automatically purged 6 months after the recruitment "
+        "decision, in accordance with the DBS Code of Practice.\n\n"
+        "5. The agency may request data export or deletion at any time by contacting "
+        "enquiries@viperai.io or via the platform's GDPR tools.\n\n"
+        "6. Both parties shall comply with the UK General Data Protection Regulation (UK GDPR) "
+        "and the Data Protection Act 2018 at all times."
+    )
+
+    with get_db() as db:
+        db.execute(
+            """INSERT INTO consent_logs
+               (id, candidate_id, consent_type, consent_given, ip_address, user_agent,
+                privacy_policy_version, terms_version, timestamp)
+               VALUES (%s, %s, %s, 1, %s, %s, %s, %s, %s)""",
+            (dpa_id, data.agency_id, "agency_dpa_acceptance", ip, user_agent,
+             data.dpa_version, data.dpa_version, now),
+        )
+        # Also store the full DPA text and signatory details in audit log
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (%s, 'agency', %s, 'dpa_accepted', %s, %s, %s)""",
+            (generate_id(), data.agency_id, current_user.get("sub", "unknown"),
+             json.dumps({
+                 "dpa_id": dpa_id,
+                 "signatory_name": data.signatory_name,
+                 "signatory_role": data.signatory_role,
+                 "dpa_version": data.dpa_version,
+                 "dpa_text": dpa_text,
+                 "ip_address": ip,
+                 "user_agent": user_agent,
+             }), now),
+        )
+
+    return {
+        "dpa_id": dpa_id,
+        "agency_id": data.agency_id,
+        "accepted_at": now,
+        "dpa_version": data.dpa_version,
+        "signatory_name": data.signatory_name,
+    }
+
+
+@router.get("/agency-dpa/{agency_id}")
+async def get_agency_dpa_status(
+    agency_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Check whether an agency has accepted the DPA."""
+    with get_db() as db:
+        db.execute(
+            """SELECT * FROM consent_logs
+               WHERE candidate_id=%s AND consent_type='agency_dpa_acceptance' AND consent_given=1
+               ORDER BY timestamp DESC LIMIT 1""",
+            (agency_id,),
+        )
+        row = db.fetchone()
+        if not row:
+            return {"agency_id": agency_id, "dpa_accepted": False}
+
+        r = dict(row)
+        return {
+            "agency_id": agency_id,
+            "dpa_accepted": True,
+            "accepted_at": r["timestamp"],
+            "dpa_version": r.get("privacy_policy_version"),
+        }
+
+
+@router.post("/dbs-certificate-purge")
+async def run_dbs_certificate_purge(
+    current_user: dict = Depends(get_current_admin),
+):
+    """Purge DBS certificate numbers older than 6 months (DBS Code of Practice).
+    Retains the check result, status, and audit trail — only removes the certificate number."""
+    now = datetime.now(timezone.utc)
+    six_months_ago = (now - __import__("datetime").timedelta(days=183)).isoformat()
+    purged = 0
+
+    with get_db() as db:
+        db.execute(
+            """UPDATE dbs_checks
+               SET certificate_number = NULL,
+                   candidate_certificate_number = NULL
+               WHERE (submitted_at < %s OR completed_at < %s)
+               AND (certificate_number IS NOT NULL OR candidate_certificate_number IS NOT NULL)""",
+            (six_months_ago, six_months_ago),
+        )
+        purged = db.rowcount
+
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (%s, 'system', 'dbs_purge', 'dbs_certificate_purge', 'system', %s, %s)""",
+            (generate_id(), json.dumps({
+                "purged_count": purged,
+                "cutoff_date": six_months_ago,
+                "policy": "DBS Code of Practice — 6 month retention",
+            }), now.isoformat()),
+        )
+
+    return {"purged_count": purged, "cutoff_date": six_months_ago}
+
+
+@router.post("/anonymise-inactive")
+async def anonymise_inactive_candidates(
+    current_user: dict = Depends(get_current_admin),
+):
+    """Anonymise candidates inactive for 12+ months.
+    Replaces personal data with anonymised values; retains compliance audit trail."""
+    now = datetime.now(timezone.utc)
+    twelve_months_ago = (now - __import__("datetime").timedelta(days=365)).isoformat()
+    anonymised = 0
+
+    with get_db() as db:
+        # Find candidates with no activity in 12 months
+        db.execute(
+            """SELECT c.id, c.email FROM candidates c
+               LEFT JOIN agency_candidates ac ON ac.candidate_id = c.id
+               WHERE c.updated_at < %s
+               AND (ac.monitoring_active IS NULL OR ac.monitoring_active = 0)
+               AND c.email NOT LIKE '%%@anonymised.viperai.io'""",
+            (twelve_months_ago,),
+        )
+        inactive = db.fetchall()
+
+        for row in inactive:
+            cand = dict(row)
+            cid = cand["id"]
+            anon_email = f"{cid[:8]}@anonymised.viperai.io"
+
+            db.execute(
+                """UPDATE candidates SET
+                   first_name='[Anonymised]', last_name='[Anonymised]',
+                   email=%s, phone=NULL, address=NULL,
+                   date_of_birth=NULL, ni_number=NULL,
+                   updated_at=%s
+                   WHERE id=%s""",
+                (anon_email, now.isoformat(), cid),
+            )
+            anonymised += 1
+
+        # Log the anonymisation run
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (%s, 'system', 'anonymisation', 'data_lifecycle_anonymise', 'system', %s, %s)""",
+            (generate_id(), json.dumps({
+                "anonymised_count": anonymised,
+                "cutoff_date": twelve_months_ago,
+                "policy": "12-month data retention — UK GDPR compliance",
+            }), now.isoformat()),
+        )
+
+    return {"anonymised_count": anonymised, "cutoff_date": twelve_months_ago}
+
+
+@router.post("/candidate-deletion-request")
+@limiter.limit("3/minute")
+async def candidate_deletion_request(
+    request: Request,
+    data: ErasureRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Candidate requests deletion of their data (GDPR Article 17).
+    Creates a request that is processed within 30 days.
+    Notifies the agency and logs the request for audit."""
+    if current_user.get("type") != "candidate":
+        raise HTTPException(status_code=403, detail="Only candidates can request their own data deletion")
+
+    candidate_id = data.candidate_id
+    if current_user["sub"] != candidate_id:
+        raise HTTPException(status_code=403, detail="You can only request deletion of your own data")
+
+    if not data.confirmed:
+        raise HTTPException(status_code=400, detail="You must confirm the deletion request")
+
+    now = datetime.now(timezone.utc).isoformat()
+    ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
+    request_id = generate_id()
+
+    with get_db() as db:
+        # Check candidate exists
+        db.execute("SELECT id, email FROM candidates WHERE id=%s", (candidate_id,))
+        candidate = db.fetchone()
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+
+        # Create erasure request with 30-day processing window
+        due_date = (datetime.now(timezone.utc) + __import__("datetime").timedelta(days=30)).isoformat()
+        db.execute(
+            """INSERT INTO gdpr_erasure_requests
+               (id, candidate_id, reason, status, requested_at, created_at)
+               VALUES (%s, %s, %s, 'pending', %s, %s)""",
+            (request_id, candidate_id, data.reason, now, now),
+        )
+
+        # Record withdrawal of data retention consent
+        db.execute(
+            """INSERT INTO consent_logs
+               (id, candidate_id, consent_type, consent_given, ip_address,
+                privacy_policy_version, terms_version, timestamp)
+               VALUES (%s, %s, 'data_retention_withdrawal', 0, %s, '1.0', '1.0', %s)""",
+            (generate_id(), candidate_id, ip, now),
+        )
+
+        # Notify linked agencies
+        db.execute(
+            "SELECT agency_id FROM agency_candidates WHERE candidate_id=%s",
+            (candidate_id,),
+        )
+        agencies = db.fetchall()
+        for ag in agencies:
+            aid = dict(ag)["agency_id"]
+            db.execute(
+                """INSERT INTO notifications (id, user_id, user_type, title, message, link, created_at)
+                   VALUES (%s, %s, 'agency', %s, %s, %s, %s)""",
+                (generate_id(), aid,
+                 "Candidate Data Deletion Request",
+                 f"A candidate has requested deletion of their personal data. "
+                 f"Request ID: {request_id}. Processing deadline: 30 days.",
+                 "/dashboard?tab=compliance", now),
+            )
+
+        # Audit log
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (%s, 'candidate', %s, 'data_deletion_requested', %s, %s, %s)""",
+            (generate_id(), candidate_id, candidate_id,
+             json.dumps({
+                 "request_id": request_id,
+                 "reason": data.reason,
+                 "due_date": due_date,
+                 "ip_address": ip,
+                 "agencies_notified": [dict(a)["agency_id"] for a in agencies],
+             }), now),
+        )
+
+    return {
+        "request_id": request_id,
+        "status": "pending",
+        "due_date": due_date,
+        "message": "Your deletion request has been received and will be processed within 30 days.",
+    }
