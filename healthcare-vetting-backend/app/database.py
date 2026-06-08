@@ -1084,6 +1084,56 @@ def migrate_db():
         FOR EACH ROW EXECUTE FUNCTION audit_trail_immutable();
     """)
 
+    # -- Staged Workflow: agency workflow_mode setting --
+    _add_column_if_missing(cursor, "agencies", "workflow_mode", "TEXT DEFAULT 'standard'")
+
+    # -- Staged Workflow: submission phase tracking --
+    _add_column_if_missing(cursor, "candidate_submissions", "workflow_phase", "TEXT DEFAULT 'all'")
+    _add_column_if_missing(cursor, "candidate_submissions", "phase1_completed_at", "TEXT")
+    _add_column_if_missing(cursor, "candidate_submissions", "phase2_decision", "TEXT")
+    _add_column_if_missing(cursor, "candidate_submissions", "phase2_decision_at", "TEXT")
+    _add_column_if_missing(cursor, "candidate_submissions", "phase2_decision_by", "TEXT")
+
+    # -- £ Balance Billing: agency balance and discount --
+    _add_column_if_missing(cursor, "agencies", "balance_amount", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "total_topup_amount", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "total_spent_amount", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "discount_percent", "REAL DEFAULT 0")
+
+    # -- £ Balance Billing: credit pack tiers with discount percentage --
+    _add_column_if_missing(cursor, "subscription_tier_config", "discount_percent", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "topup_amount", "REAL DEFAULT 0")
+
+    # -- £ Balance Billing: balance transactions table --
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS balance_transactions (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_id TEXT,
+            transaction_type TEXT NOT NULL,
+            description TEXT,
+            gross_amount REAL DEFAULT 0,
+            discount_percent REAL DEFAULT 0,
+            discount_amount REAL DEFAULT 0,
+            net_amount REAL DEFAULT 0,
+            balance_after REAL DEFAULT 0,
+            check_type TEXT,
+            submission_id TEXT,
+            topup_pack_tier TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_balance_tx_agency ON balance_transactions(agency_id);
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_balance_tx_created ON balance_transactions(created_at);
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_balance_tx_type ON balance_transactions(transaction_type);
+    """)
+
     conn.commit()
     _return_connection(conn)
 

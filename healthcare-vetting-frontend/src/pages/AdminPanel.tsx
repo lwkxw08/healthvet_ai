@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi, documentsApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, adminExtendedApi, fraudApi, schedulerApi, reportsApi, billingApi, benchmarkingApi, industryTemplatesApi, trustidApi, checksApi, documentsApi, balanceBillingApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
 import { fmtDate } from "../lib/utils";
 import LeadGenerationPanel from "./LeadGenerationPanel";
@@ -47,6 +47,7 @@ export default function AdminPanel() {
     if (mainTab === "agencies") {
       if (subTab === "invoicing") return "invoicing";
       if (subTab === "subscriptions") return "subscriptions";
+      if (subTab === "financial") return "financial";
       if (subTab === "refunds") return "refunds";
       return "agencies";
     }
@@ -1365,7 +1366,7 @@ export default function AdminPanel() {
       {mainTab === "agencies" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-4 sm:px-6">
           <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-            {[{ key: "list", label: "Agency List" }, { key: "invoicing", label: "Invoicing" }, { key: "subscriptions", label: "Credit Packs" }, { key: "refunds", label: "Refund Requests" }].map((s) => (
+            {[{ key: "list", label: "Agency List" }, { key: "invoicing", label: "Invoicing" }, { key: "subscriptions", label: "Credit Packs" }, { key: "financial", label: "Financial Reports" }, { key: "refunds", label: "Refund Requests" }].map((s) => (
               <button key={s.key} onClick={() => setSubTab(s.key)}
                 className={`px-4 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
                 {s.label}
@@ -3015,6 +3016,11 @@ export default function AdminPanel() {
           </div>
         )}
 
+        {/* Financial Reports Tab — £ Balance Revenue & Pack Performance */}
+        {tab === "financial" && (
+          <FinancialReportsPanel />
+        )}
+
         {/* Refund Requests Tab — PAYG refunds pending admin approval */}
         {tab === "refunds" && (
           <div className="space-y-6">
@@ -4273,6 +4279,123 @@ export default function AdminPanel() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function FinancialReportsPanel() {
+  const { token } = useAuth();
+  const [revenueReport, setRevenueReport] = useState<Record<string, unknown> | null>(null);
+  const [packPerformance, setPackPerformance] = useState<Record<string, unknown>[]>([]);
+  const [allAgencies, setAllAgencies] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!token) return;
+    setLoading(true);
+    Promise.all([
+      balanceBillingApi.getRevenueReport(token).catch(() => null),
+      balanceBillingApi.getPackPerformance(token).catch(() => []),
+      balanceBillingApi.getAllAgenciesFinancial(token).catch(() => ({ agencies: [] })),
+    ]).then(([rev, packs, agencies]) => {
+      setRevenueReport(rev);
+      setPackPerformance(packs as Record<string, unknown>[]);
+      setAllAgencies((agencies as Record<string, unknown>)?.agencies as Record<string, unknown>[] || []);
+      setLoading(false);
+    });
+  }, [token]);
+
+  if (loading) return <div className="text-center py-8 text-slate-400">Loading financial data...</div>;
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-bold text-white flex items-center gap-2">
+        <TrendingUp className="text-green-400" size={22} /> Financial Reports — £ Balance System
+      </h2>
+      <p className="text-slate-400 text-sm">Actual revenue received vs balance consumed. All figures are real money — no inflated balances.</p>
+
+      {/* Revenue Overview */}
+      {revenueReport && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-center">
+            <div className="text-2xl font-bold text-green-400">£{Number(revenueReport.total_revenue_received || 0).toFixed(2)}</div>
+            <div className="text-xs text-slate-400 mt-1">Total Revenue Received</div>
+          </div>
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-center">
+            <div className="text-2xl font-bold text-blue-400">£{Number(revenueReport.total_consumed_net || 0).toFixed(2)}</div>
+            <div className="text-xs text-slate-400 mt-1">Total Consumed (Net)</div>
+          </div>
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-center">
+            <div className="text-2xl font-bold text-amber-400">£{Number(revenueReport.total_discount_given || 0).toFixed(2)}</div>
+            <div className="text-xs text-slate-400 mt-1">Total Discount Given</div>
+          </div>
+          <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4 text-center">
+            <div className="text-2xl font-bold text-purple-400">£{Number(revenueReport.outstanding_balances || 0).toFixed(2)}</div>
+            <div className="text-xs text-slate-400 mt-1">Outstanding Balances</div>
+          </div>
+        </div>
+      )}
+
+      {/* Pack Performance */}
+      {packPerformance.length > 0 && (
+        <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">Credit Pack Performance</h3>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-400 border-b border-slate-700">
+                <th className="text-left py-2">Pack Tier</th>
+                <th className="text-right py-2">Discount</th>
+                <th className="text-right py-2">Revenue</th>
+                <th className="text-right py-2">Consumed</th>
+                <th className="text-right py-2">Discount Given</th>
+                <th className="text-right py-2">Utilisation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {packPerformance.map((p) => (
+                <tr key={String(p.tier_key)} className="border-b border-slate-700/50">
+                  <td className="py-2 text-white font-medium">{String(p.tier_name)}</td>
+                  <td className="py-2 text-right text-slate-300">{Number(p.discount_percent)}%</td>
+                  <td className="py-2 text-right text-green-400 font-medium">£{Number(p.total_revenue).toFixed(2)}</td>
+                  <td className="py-2 text-right text-blue-400">£{Number(p.total_spent).toFixed(2)}</td>
+                  <td className="py-2 text-right text-amber-400">£{Number(p.total_discount_given).toFixed(2)}</td>
+                  <td className="py-2 text-right text-slate-300">{Number(p.utilisation_percent)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* All Agencies Financial */}
+      {allAgencies.length > 0 && (
+        <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">All Agency Balances</h3>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-400 border-b border-slate-700">
+                <th className="text-left py-2">Agency</th>
+                <th className="text-right py-2">Balance</th>
+                <th className="text-right py-2">Total Paid In</th>
+                <th className="text-right py-2">Total Spent</th>
+                <th className="text-right py-2">Discount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allAgencies.map((a) => (
+                <tr key={String(a.agency_id)} className="border-b border-slate-700/50">
+                  <td className="py-2 text-white">{String(a.agency_name)}</td>
+                  <td className="py-2 text-right text-green-400 font-medium">£{Number(a.balance).toFixed(2)}</td>
+                  <td className="py-2 text-right text-slate-300">£{Number(a.total_paid_in).toFixed(2)}</td>
+                  <td className="py-2 text-right text-blue-400">£{Number(a.total_spent).toFixed(2)}</td>
+                  <td className="py-2 text-right text-slate-300">{Number(a.discount_percent)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

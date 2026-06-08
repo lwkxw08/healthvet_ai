@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
-import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi, trainingApi, gdprApi } from "../api/client";
+import { candidatesApi, complianceApi, monitoringApi, dashboardApi, agencyInvitesApi, agencyServicesApi, billingApi, reportsApi, agencyRevetApi, checksApi, notificationsApi, bulkImportApi, shiftReadinessApi, subAccountsApi, trainingApi, gdprApi, stagedWorkflowApi, balanceBillingApi } from "../api/client";
 import NotificationBell from "../components/NotificationBell";
 import { fmtDate } from "../lib/utils";
 import {
@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis } from "recharts";
 
-type Tab = "dashboard" | "candidates" | "alerts" | "candidate-detail" | "invites" | "billing" | "audit" | "bulk-import" | "sub-accounts" | "notifications";
+type Tab = "dashboard" | "candidates" | "alerts" | "candidate-detail" | "invites" | "billing" | "audit" | "bulk-import" | "sub-accounts" | "notifications" | "pending-review" | "workflow-settings";
 
 export default function AgencyDashboard() {
   const { token, logout } = useAuth();
@@ -147,6 +147,19 @@ export default function AgencyDashboard() {
   // Credit pack tiers from DB
   const [creditPackTiers, setCreditPackTiers] = useState<Record<string, unknown>[]>([]);
 
+  // Staged Workflow state
+  const [workflowMode, setWorkflowMode] = useState<string>("standard");
+  const [awaitingReview, setAwaitingReview] = useState<Record<string, unknown>[]>([]);
+  const [selectedFeedback, setSelectedFeedback] = useState<Record<string, unknown> | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [decisionLoading, setDecisionLoading] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
+  // £ Balance state
+  const [balanceInfo, setBalanceInfo] = useState<Record<string, unknown> | null>(null);
+  const [balanceTransactions, setBalanceTransactions] = useState<Record<string, unknown>[]>([]);
+  const [checkPrices, setCheckPrices] = useState<Record<string, unknown>[]>([]);
+
   const loadData = useCallback(async () => {
     if (!token) return;
     try {
@@ -214,6 +227,28 @@ export default function AgencyDashboard() {
         const tiers = await billingApi.getTiers(token);
         const tiersArr = (tiers as Record<string, unknown>).tiers as Record<string, unknown>[] || [];
         if (tiersArr.length > 0) setCreditPackTiers(tiersArr);
+      } catch { /* ignore */ }
+      // Load staged workflow data
+      try {
+        const wf = await stagedWorkflowApi.getWorkflowSettings(token);
+        setWorkflowMode(wf.workflow_mode || "standard");
+      } catch { /* ignore */ }
+      try {
+        const ar = await stagedWorkflowApi.getAwaitingReview(token);
+        setAwaitingReview(ar);
+      } catch { /* ignore */ }
+      // Load £ balance data
+      try {
+        const bal = await balanceBillingApi.getBalance(token);
+        setBalanceInfo(bal);
+      } catch { /* ignore */ }
+      try {
+        const txns = await balanceBillingApi.getTransactions(token, 20);
+        setBalanceTransactions(txns);
+      } catch { /* ignore */ }
+      try {
+        const prices = await balanceBillingApi.getCheckPrices(token);
+        setCheckPrices((prices as Record<string, unknown>).prices as Record<string, unknown>[] || []);
       } catch { /* ignore */ }
     } catch (err) {
       console.error("Failed to load data", err);
@@ -885,6 +920,7 @@ export default function AgencyDashboard() {
         const agencyNavItems = [
           { key: "dashboard" as Tab, label: "Dashboard", icon: <BarChart3 size={16} /> },
           { key: "candidates" as Tab, label: "Candidates", icon: <Users size={16} /> },
+          ...(awaitingReview.length > 0 ? [{ key: "pending-review" as Tab, label: `Pending Review (${awaitingReview.length})`, icon: <Clock size={16} /> }] : []),
           { key: "invites" as Tab, label: `Invites (${invites.length})`, icon: <Mail size={16} /> },
           { key: "bulk-import" as Tab, label: "Bulk Import", icon: <Upload size={16} /> },
           { key: "sub-accounts" as Tab, label: "Team", icon: <UserPlus size={16} /> },
@@ -892,6 +928,7 @@ export default function AgencyDashboard() {
           { key: "alerts" as Tab, label: `Alerts (${alerts.length})`, icon: <Bell size={16} /> },
           { key: "audit" as Tab, label: "CQC Audit", icon: <FileText size={16} /> },
           { key: "billing" as Tab, label: "Billing", icon: <CreditCard size={16} /> },
+          { key: "workflow-settings" as Tab, label: "Settings", icon: <Shield size={16} /> },
         ];
         const activeAgencyItem = agencyNavItems.find(i => i.key === tab);
         return (
@@ -2812,6 +2849,306 @@ export default function AgencyDashboard() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Pending Review Tab — Staged Workflow */}
+        {tab === "pending-review" && (
+          <div className="space-y-6">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
+                <Clock className="text-amber-400" size={20} /> Pending Review — References & Work History
+              </h3>
+              <p className="text-sm text-slate-400 mb-4">
+                These candidates have completed Phase 1 (references and work history verification). Review the full feedback below, then decide whether to continue with full vetting or cancel.
+              </p>
+
+              {awaitingReview.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">
+                  <CheckCircle2 size={40} className="mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No submissions awaiting review.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {awaitingReview.map((sub) => (
+                    <div key={String(sub.id)} className="bg-slate-700/50 rounded-lg border border-slate-600 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="text-white font-medium">{String(sub.first_name)} {String(sub.last_name)}</span>
+                          <span className="text-slate-400 text-xs ml-2">{String(sub.candidate_email)}</span>
+                        </div>
+                        <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-1 rounded-full">Awaiting Decision</span>
+                      </div>
+                      <div className="text-xs text-slate-500 mb-3">Phase 1 completed: {fmtDate(sub.phase1_completed_at)}</div>
+
+                      {selectedFeedback && String((selectedFeedback as Record<string, unknown>).submission_id) === String(sub.id) ? (
+                        <div className="space-y-4">
+                          {/* References Section */}
+                          <div>
+                            <h4 className="text-sm font-semibold text-blue-400 mb-2">Reference Responses</h4>
+                            {((selectedFeedback as Record<string, unknown>).references as Record<string, unknown>[] || []).length === 0 ? (
+                              <p className="text-xs text-slate-500">No reference responses received yet.</p>
+                            ) : (
+                              ((selectedFeedback as Record<string, unknown>).references as Record<string, unknown>[] || []).map((ref) => (
+                                <div key={String(ref.id)} className="bg-slate-800 rounded-lg p-3 mb-2 border border-slate-600">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-white text-sm font-medium">{String(ref.referee_name)} — {String(ref.referee_organisation || "N/A")}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${ref.status === "completed" ? "bg-green-500/20 text-green-400" : ref.status === "flagged" ? "bg-red-500/20 text-red-400" : "bg-slate-600 text-slate-300"}`}>
+                                      {String(ref.status)}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-slate-400 mb-1">{String(ref.referee_email)} • {String(ref.referee_job_title || "")} • Relationship: {String(ref.relationship || "N/A")}</div>
+                                  {ref.sentiment_score != null && (
+                                    <div className="text-xs mb-1">Sentiment Score: <span className={`font-medium ${Number(ref.sentiment_score) >= 7 ? "text-green-400" : Number(ref.sentiment_score) >= 4 ? "text-amber-400" : "text-red-400"}`}>{String(ref.sentiment_score)}/10</span></div>
+                                  )}
+                                  {ref.domain_verified != null && (
+                                    <div className="text-xs mb-1">Domain verified: {ref.domain_verified ? <span className="text-green-400">Yes</span> : <span className="text-red-400">No — mismatch</span>}</div>
+                                  )}
+                                  {ref.fraud_flags && (ref.fraud_flags as unknown[]).length > 0 && (
+                                    <div className="text-xs text-red-400 mb-1">⚠ Fraud flags: {JSON.stringify(ref.fraud_flags)}</div>
+                                  )}
+                                  {ref.responses && (
+                                    <div className="mt-2 bg-slate-900/50 rounded p-2 border border-slate-700">
+                                      <div className="text-xs text-slate-300 font-medium mb-1">Full Responses:</div>
+                                      {Object.entries(ref.responses as Record<string, unknown>).map(([q, a]) => (
+                                        <div key={q} className="text-xs text-slate-400 mb-1">
+                                          <span className="text-slate-300 font-medium">{q}:</span> {String(a)}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+
+                          {/* Employment Verification Section */}
+                          <div>
+                            <h4 className="text-sm font-semibold text-purple-400 mb-2">Employment Verification Responses</h4>
+                            {((selectedFeedback as Record<string, unknown>).employment_verification as Record<string, unknown>[] || []).length === 0 ? (
+                              <p className="text-xs text-slate-500">No employment verification responses received yet.</p>
+                            ) : (
+                              ((selectedFeedback as Record<string, unknown>).employment_verification as Record<string, unknown>[] || []).map((emp) => (
+                                <div key={String(emp.id)} className="bg-slate-800 rounded-lg p-3 mb-2 border border-slate-600">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-white text-sm font-medium">{String(emp.employer_name)} — {String(emp.job_title)}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${emp.verification_status === "verified" ? "bg-green-500/20 text-green-400" : emp.verification_status === "flagged" ? "bg-red-500/20 text-red-400" : "bg-slate-600 text-slate-300"}`}>
+                                      {String(emp.verification_status || "pending")}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-slate-400 mb-1">
+                                    {emp.start_date && <span>From: {String(emp.start_date)}</span>}
+                                    {emp.end_date && <span> To: {String(emp.end_date)}</span>}
+                                  </div>
+                                  <div className="text-xs text-slate-400 mb-1">
+                                    Verifier: {String(emp.verifier_name || "N/A")} ({String(emp.verifier_email || "N/A")})
+                                  </div>
+                                  {emp.verification_sentiment != null && (
+                                    <div className="text-xs mb-1">Sentiment: <span className="font-medium">{String(emp.verification_sentiment)}/10</span></div>
+                                  )}
+                                  {emp.verification_fraud_flags && (emp.verification_fraud_flags as unknown[]).length > 0 && (
+                                    <div className="text-xs text-red-400 mb-1">⚠ Fraud flags: {JSON.stringify(emp.verification_fraud_flags)}</div>
+                                  )}
+                                  {emp.verification_responses && (
+                                    <div className="mt-2 bg-slate-900/50 rounded p-2 border border-slate-700">
+                                      <div className="text-xs text-slate-300 font-medium mb-1">Full Verification Responses:</div>
+                                      {Object.entries(emp.verification_responses as Record<string, unknown>).map(([q, a]) => (
+                                        <div key={q} className="text-xs text-slate-400 mb-1">
+                                          <span className="text-slate-300 font-medium">{q}:</span> {String(a)}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+
+                          {/* Decision Buttons */}
+                          <div className="border-t border-slate-600 pt-4 mt-4">
+                            <div className="flex items-center gap-4">
+                              <button
+                                onClick={async () => {
+                                  setDecisionLoading(true);
+                                  try {
+                                    await stagedWorkflowApi.submitPhase2Decision(token!, String(sub.id), "continue");
+                                    setAwaitingReview(prev => prev.filter(s => s.id !== sub.id));
+                                    setSelectedFeedback(null);
+                                  } catch (e) { console.error(e); }
+                                  setDecisionLoading(false);
+                                }}
+                                disabled={decisionLoading}
+                                className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer"
+                              >
+                                {decisionLoading ? "Processing..." : "Continue Full Vetting"}
+                              </button>
+                              <div className="flex-1">
+                                <input
+                                  type="text"
+                                  value={cancelReason}
+                                  onChange={(e) => setCancelReason(e.target.value)}
+                                  placeholder="Reason for cancellation (optional)"
+                                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+                                />
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  setDecisionLoading(true);
+                                  try {
+                                    await stagedWorkflowApi.submitPhase2Decision(token!, String(sub.id), "cancel", cancelReason || undefined);
+                                    setAwaitingReview(prev => prev.filter(s => s.id !== sub.id));
+                                    setSelectedFeedback(null);
+                                    setCancelReason("");
+                                  } catch (e) { console.error(e); }
+                                  setDecisionLoading(false);
+                                }}
+                                disabled={decisionLoading}
+                                className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 text-white px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer"
+                              >
+                                Cancel Vetting
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2">
+                              &quot;Continue&quot; will trigger remaining checks (Identity, DBS, RTW, etc.) and bill accordingly. &quot;Cancel&quot; will only charge for references &amp; work history.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            setFeedbackLoading(true);
+                            try {
+                              const fb = await stagedWorkflowApi.getPhase1Feedback(token!, String(sub.id));
+                              setSelectedFeedback(fb);
+                            } catch (e) { console.error(e); }
+                            setFeedbackLoading(false);
+                          }}
+                          disabled={feedbackLoading}
+                          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-pointer"
+                        >
+                          {feedbackLoading ? <Loader2 size={14} className="animate-spin inline mr-1" /> : <Eye size={14} className="inline mr-1" />}
+                          View Full Feedback
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Workflow Settings Tab */}
+        {tab === "workflow-settings" && (
+          <div className="space-y-6">
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
+                <Shield className="text-blue-400" size={20} /> Workflow Settings
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-2">Vetting Workflow Mode</h4>
+                  <p className="text-xs text-slate-400 mb-3">
+                    Choose how vetting checks are processed for your candidates.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button
+                      onClick={async () => {
+                        await stagedWorkflowApi.updateWorkflowSettings(token!, "standard");
+                        setWorkflowMode("standard");
+                      }}
+                      className={`p-4 rounded-lg border text-left cursor-pointer ${workflowMode === "standard" ? "border-blue-500 bg-blue-500/10" : "border-slate-600 bg-slate-700/30 hover:border-slate-500"}`}
+                    >
+                      <div className="text-sm font-medium text-white mb-1">Standard</div>
+                      <div className="text-xs text-slate-400">All vetting checks fire simultaneously after candidate consent. Fastest completion time.</div>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await stagedWorkflowApi.updateWorkflowSettings(token!, "staged");
+                        setWorkflowMode("staged");
+                      }}
+                      className={`p-4 rounded-lg border text-left cursor-pointer ${workflowMode === "staged" ? "border-blue-500 bg-blue-500/10" : "border-slate-600 bg-slate-700/30 hover:border-slate-500"}`}
+                    >
+                      <div className="text-sm font-medium text-white mb-1">Staged (Review First)</div>
+                      <div className="text-xs text-slate-400">References &amp; work history run first. You review full feedback before deciding to continue with remaining checks (DBS, Identity, etc.) or cancel.</div>
+                    </button>
+                  </div>
+                </div>
+
+                {workflowMode === "staged" && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mt-4">
+                    <div className="text-xs text-amber-300">
+                      <strong>Staged mode active:</strong> New candidates will go through Phase 1 (references + work history) first. You&apos;ll see them in the &quot;Pending Review&quot; tab once feedback is received. You can then approve or cancel before any further checks are triggered.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Balance & Pricing Info */}
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
+                <DollarSign className="text-green-400" size={20} /> Account Balance
+              </h3>
+
+              {balanceInfo && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                  <div className="bg-slate-700/50 rounded-lg p-4 text-center border border-slate-600">
+                    <div className="text-2xl font-bold text-green-400">£{Number(balanceInfo.balance || 0).toFixed(2)}</div>
+                    <div className="text-xs text-slate-400 mt-1">Current Balance</div>
+                  </div>
+                  <div className="bg-slate-700/50 rounded-lg p-4 text-center border border-slate-600">
+                    <div className="text-2xl font-bold text-blue-400">{Number(balanceInfo.discount_percent || 0)}%</div>
+                    <div className="text-xs text-slate-400 mt-1">Your Discount ({String(balanceInfo.active_tier_name || "No tier")})</div>
+                  </div>
+                  <div className="bg-slate-700/50 rounded-lg p-4 text-center border border-slate-600">
+                    <div className="text-2xl font-bold text-slate-300">£{Number(balanceInfo.total_spent || 0).toFixed(2)}</div>
+                    <div className="text-xs text-slate-400 mt-1">Total Spent</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Check Prices */}
+              {checkPrices.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-2">Check Prices (with your discount)</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {checkPrices.map((p) => (
+                      <div key={String(p.check_type)} className="bg-slate-700/30 rounded-lg p-3 border border-slate-600">
+                        <div className="text-xs text-slate-300 font-medium">{String(p.label)}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          {Number(p.your_discount_percent) > 0 && (
+                            <span className="text-xs text-slate-500 line-through">£{Number(p.gross_price).toFixed(2)}</span>
+                          )}
+                          <span className="text-sm font-bold text-green-400">£{Number(p.your_price).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent Transactions */}
+              {balanceTransactions.length > 0 && (
+                <div className="mt-6">
+                  <h4 className="text-sm font-medium text-white mb-2">Recent Transactions</h4>
+                  <div className="space-y-1 max-h-60 overflow-y-auto">
+                    {balanceTransactions.map((txn) => (
+                      <div key={String(txn.id)} className="flex items-center justify-between px-3 py-2 rounded bg-slate-700/30 border border-slate-700">
+                        <div className="flex-1">
+                          <span className={`text-xs font-medium ${txn.transaction_type === "topup" ? "text-green-400" : "text-red-400"}`}>
+                            {txn.transaction_type === "topup" ? "+" : "-"}£{Math.abs(Number(txn.net_amount || 0)).toFixed(2)}
+                          </span>
+                          <span className="text-xs text-slate-400 ml-2">{String(txn.description)}</span>
+                        </div>
+                        <span className="text-xs text-slate-500">{fmtDate(txn.created_at)}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

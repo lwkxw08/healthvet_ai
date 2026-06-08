@@ -24,8 +24,27 @@ class TriggerEngine:
     """Automated check trigger engine - fires all checks after consent."""
 
     @staticmethod
+    def _get_agency_workflow_mode(candidate_id: str) -> str:
+        """Get the workflow mode for the agency that owns this candidate."""
+        with get_db() as db:
+            db.execute(
+                """SELECT a.workflow_mode FROM agencies a
+                   JOIN agency_candidates ac ON ac.agency_id = a.id
+                   WHERE ac.candidate_id = %s LIMIT 1""",
+                (candidate_id,),
+            )
+            row = db.fetchone()
+            if row:
+                return dict(row).get("workflow_mode") or "standard"
+        return "standard"
+
+    @staticmethod
     def process_submission(submission_id: str) -> dict:
-        """Process a submitted application - fire all relevant checks."""
+        """Process a submitted application - fire all relevant checks.
+        Supports staged workflow: if agency workflow_mode='staged', only fires
+        references + employment verification first (phase 1), then waits for
+        agency decision before firing remaining checks (phase 2).
+        """
         now = datetime.now(timezone.utc).isoformat()
 
         with get_db() as db:
@@ -40,10 +59,15 @@ class TriggerEngine:
             candidate_id = sub_data["candidate_id"]
             sections = json.loads(sub_data["sections_requested"]) if sub_data["sections_requested"] else []
 
+            # Determine workflow mode
+            workflow_mode = TriggerEngine._get_agency_workflow_mode(candidate_id)
+            is_staged = workflow_mode == "staged"
+
             # Mark as processing
+            phase_label = "phase1" if is_staged else "all"
             db.execute(
-                "UPDATE candidate_submissions SET status='processing', processing_started_at=%s WHERE id=%s",
-                (now, submission_id),
+                "UPDATE candidate_submissions SET status='processing', processing_started_at=%s, workflow_phase=%s WHERE id=%s",
+                (now, phase_label, submission_id),
             )
 
             # Load all section draft data
@@ -59,6 +83,35 @@ class TriggerEngine:
         # Fire checks for each section
         results = {}
 
+        # In staged mode (phase 1), only fire references + employment verification
+        # All other checks are deferred until the agency approves phase 2
+        if is_staged:
+            # Phase 1: References and employment verification only
+            if "references" in sections and "references" in section_data:
+                results["references"] = TriggerEngine._run_references(candidate_id, section_data["references"])
+
+            results["employment_verification"] = TriggerEngine._run_employment_verifications(candidate_id)
+
+            # Mark phase 1 as awaiting agency review
+            phase1_done_at = datetime.now(timezone.utc).isoformat()
+            with get_db() as db:
+                db.execute(
+                    """UPDATE candidate_submissions
+                       SET status='awaiting_agency_review', phase1_completed_at=%s
+                       WHERE id=%s""",
+                    (phase1_done_at, submission_id),
+                )
+                db.execute(
+                    """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+                       VALUES (%s, 'submission', %s, 'phase1_completed', 'trigger_engine', %s, %s)""",
+                    (generate_id(), submission_id,
+                     json.dumps({"sections_processed": list(results.keys()), "candidate_id": candidate_id, "workflow_mode": "staged"}),
+                     phase1_done_at),
+                )
+
+            return {"status": "awaiting_agency_review", "workflow_phase": "phase1", "results": results}
+
+        # Standard workflow (or phase 2 continuation) — fire all checks
         # Check TrustID manual mode for identity/rtw/dbs
         # When in manual mode, create TrustID pending_admin records instead of running simulated checks
         identity_manual = TrustIDService.get_submission_mode("identity_verification") == "manual"
@@ -197,6 +250,149 @@ class TriggerEngine:
             )
 
         return {"status": "completed", "results": results}
+
+    @staticmethod
+    def process_phase2(submission_id: str) -> dict:
+        """Process phase 2 of a staged submission — fires all remaining checks
+        (identity, RTW, DBS, CV, registration, training) after agency approves."""
+        now = datetime.now(timezone.utc).isoformat()
+
+        with get_db() as db:
+            db.execute(
+                "SELECT * FROM candidate_submissions WHERE id=%s", (submission_id,)
+            )
+            sub = db.fetchone()
+            if not sub:
+                return {"error": "Submission not found"}
+
+            sub_data = dict(sub)
+            if sub_data.get("workflow_phase") != "phase1" or sub_data.get("phase2_decision") != "continue":
+                return {"error": "Submission not in valid state for phase 2 processing"}
+
+            candidate_id = sub_data["candidate_id"]
+            sections = json.loads(sub_data["sections_requested"]) if sub_data["sections_requested"] else []
+
+            # Mark as processing phase 2
+            db.execute(
+                "UPDATE candidate_submissions SET status='processing', workflow_phase='phase2' WHERE id=%s",
+                (submission_id,),
+            )
+
+            # Load section draft data
+            db.execute(
+                "SELECT * FROM candidate_draft_data WHERE submission_id=%s", (submission_id,)
+            )
+            drafts = db.fetchall()
+            section_data = {}
+            for d in drafts:
+                dd = dict(d)
+                section_data[dd["section"]] = json.loads(dd["data"])
+
+        # Fire remaining checks (everything except references + employment)
+        results = {}
+
+        identity_manual = TrustIDService.get_submission_mode("identity_verification") == "manual"
+        rtw_manual = TrustIDService.get_submission_mode("right_to_work") == "manual"
+        dbs_manual = TrustIDService.get_submission_mode("dbs_check") == "manual"
+
+        trustid_check_types = []
+
+        if "identity" in sections:
+            if identity_manual:
+                trustid_check_types.append("identity_verification")
+                results["identity"] = "pending_trustid_manual"
+            elif "identity" in section_data:
+                results["identity"] = TriggerEngine._run_identity(candidate_id, section_data["identity"])
+
+        if "rtw" in sections:
+            if rtw_manual:
+                trustid_check_types.append("right_to_work")
+                results["rtw"] = "pending_trustid_manual"
+            elif "rtw" in section_data:
+                results["rtw"] = TriggerEngine._run_rtw(candidate_id, section_data["rtw"])
+
+        if "dbs" in sections:
+            dbs_candidate_supplied = False
+            try:
+                with get_db() as _tdb:
+                    _tdb.execute(
+                        """SELECT itc.config FROM industry_template_checks itc
+                           JOIN agencies a ON a.industry_template_id = itc.template_id
+                           JOIN agency_candidates ac ON ac.agency_id = a.id
+                           WHERE ac.candidate_id = %s AND itc.check_key LIKE 'dbs%%'
+                           LIMIT 1""",
+                        (candidate_id,),
+                    )
+                    _trow = _tdb.fetchone()
+                    if _trow:
+                        _tcfg = json.loads(dict(_trow).get("config") or "{}")
+                        dbs_candidate_supplied = _tcfg.get("dbs_mode") == "candidate_supplied"
+            except Exception:
+                pass
+
+            if dbs_candidate_supplied:
+                results["dbs"] = "pending_candidate_supplied"
+            elif dbs_manual:
+                trustid_check_types.append("dbs_check")
+                results["dbs"] = "pending_trustid_manual"
+            else:
+                results["dbs"] = TriggerEngine._run_dbs(candidate_id, section_data.get("dbs", {}))
+
+        if trustid_check_types:
+            try:
+                with get_db() as db:
+                    db.execute(
+                        "SELECT first_name, last_name, email, date_of_birth FROM candidates WHERE id=%s",
+                        (candidate_id,),
+                    )
+                    cand = db.fetchone()
+                    cand_data = dict(cand) if cand else {}
+
+                candidate_name = f"{cand_data.get('first_name', '')} {cand_data.get('last_name', '')}".strip()
+                candidate_email = cand_data.get("email", "")
+                candidate_dob = cand_data.get("date_of_birth", "")
+
+                for check_type in trustid_check_types:
+                    TrustIDService.create_check(
+                        candidate_id=candidate_id,
+                        check_type=check_type,
+                        submitted_by="trigger_engine",
+                        candidate_name=candidate_name or None,
+                        candidate_email=candidate_email or None,
+                        candidate_dob=candidate_dob or None,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to create TrustID check records for phase 2: {e}")
+
+        if "cv" in sections:
+            results["cv"] = TriggerEngine._run_cv(candidate_id, section_data.get("cv", {}))
+
+        if "registration" in sections:
+            results["registration"] = TriggerEngine._run_registration(candidate_id, section_data.get("registration", {}))
+
+        if "training" in sections and "training" in section_data:
+            results["training"] = TriggerEngine._run_training(candidate_id, section_data["training"])
+
+        # Run compliance evaluation
+        ComplianceEngine.evaluate_candidate(candidate_id)
+
+        # Mark as completed
+        completed_at = datetime.now(timezone.utc).isoformat()
+        with get_db() as db:
+            db.execute(
+                "UPDATE candidate_submissions SET status='completed', processing_completed_at=%s, workflow_phase='phase2' WHERE id=%s",
+                (completed_at, submission_id),
+            )
+
+            db.execute(
+                """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+                   VALUES (%s, 'submission', %s, 'phase2_completed', 'trigger_engine', %s, %s)""",
+                (generate_id(), submission_id,
+                 json.dumps({"sections_processed": list(results.keys()), "candidate_id": candidate_id}),
+                 completed_at),
+            )
+
+        return {"status": "completed", "workflow_phase": "phase2", "results": results}
 
     @staticmethod
     def _run_identity(candidate_id: str, data: dict) -> str:

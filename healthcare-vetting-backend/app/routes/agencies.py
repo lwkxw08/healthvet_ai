@@ -1,4 +1,5 @@
 """Agency management and invite routes."""
+import json
 import logging
 import os
 import secrets
@@ -1363,3 +1364,228 @@ async def renew_monitoring(candidate_id: str, current_user: dict = Depends(get_c
         "sell_price": round(sell_price, 2),
         "payment": payment_info,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Staged Workflow Endpoints
+# ──────────────────────────────────────────────────────────────────────────────
+
+@router.get("/workflow-settings")
+async def get_workflow_settings(user=Depends(get_current_user)):
+    """Get the agency's workflow mode setting."""
+    agency_id = user.get("agency_id") or user.get("id")
+    with get_db() as db:
+        db.execute("SELECT id, workflow_mode FROM agencies WHERE id=%s", (agency_id,))
+        row = db.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Agency not found")
+        r = dict(row)
+        return {"workflow_mode": r.get("workflow_mode") or "standard"}
+
+
+class WorkflowModeUpdate(BaseModel):
+    workflow_mode: str  # 'standard' or 'staged'
+
+
+@router.put("/workflow-settings")
+async def update_workflow_settings(data: WorkflowModeUpdate, user=Depends(get_current_user)):
+    """Update the agency's workflow mode."""
+    agency_id = user.get("agency_id") or user.get("id")
+    if data.workflow_mode not in ("standard", "staged"):
+        raise HTTPException(status_code=400, detail="workflow_mode must be 'standard' or 'staged'")
+    with get_db() as db:
+        db.execute(
+            "UPDATE agencies SET workflow_mode=%s WHERE id=%s",
+            (data.workflow_mode, agency_id),
+        )
+    return {"workflow_mode": data.workflow_mode, "message": f"Workflow mode updated to '{data.workflow_mode}'"}
+
+
+@router.get("/submissions/awaiting-review")
+async def get_submissions_awaiting_review(user=Depends(get_current_user)):
+    """Get all submissions in 'awaiting_agency_review' status for this agency."""
+    agency_id = user.get("agency_id") or user.get("id")
+    with get_db() as db:
+        db.execute(
+            """SELECT cs.*, c.first_name, c.last_name, c.email as candidate_email
+               FROM candidate_submissions cs
+               JOIN candidates c ON cs.candidate_id = c.id
+               JOIN agency_candidates ac ON ac.candidate_id = c.id
+               WHERE ac.agency_id = %s AND cs.status = 'awaiting_agency_review'
+               ORDER BY cs.phase1_completed_at DESC""",
+            (agency_id,),
+        )
+        rows = db.fetchall()
+        return [dict(r) for r in rows]
+
+
+@router.get("/submissions/{submission_id}/phase1-feedback")
+async def get_phase1_feedback(submission_id: str, user=Depends(get_current_user)):
+    """Get the full reference and employment verification feedback for a phase 1 submission.
+    Returns ALL response details, not just scores — enabling the agency to make an informed decision."""
+    agency_id = user.get("agency_id") or user.get("id")
+
+    with get_db() as db:
+        # Verify submission belongs to this agency
+        db.execute(
+            """SELECT cs.*, c.first_name, c.last_name, c.email as candidate_email
+               FROM candidate_submissions cs
+               JOIN candidates c ON cs.candidate_id = c.id
+               JOIN agency_candidates ac ON ac.candidate_id = c.id
+               WHERE cs.id = %s AND ac.agency_id = %s""",
+            (submission_id, agency_id),
+        )
+        sub = db.fetchone()
+        if not sub:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        sub_data = dict(sub)
+        candidate_id = sub_data["candidate_id"]
+
+        # Get full reference responses
+        db.execute(
+            """SELECT id, referee_name, referee_email, referee_organisation, referee_job_title,
+                      relationship, status, responses, sentiment_score, fraud_flags,
+                      domain_verified, sent_at, completed_at
+               FROM references_ WHERE candidate_id=%s ORDER BY sent_at DESC""",
+            (candidate_id,),
+        )
+        references = []
+        for row in db.fetchall():
+            ref = dict(row)
+            if ref.get("responses"):
+                ref["responses"] = json.loads(ref["responses"]) if isinstance(ref["responses"], str) else ref["responses"]
+            if ref.get("fraud_flags"):
+                ref["fraud_flags"] = json.loads(ref["fraud_flags"]) if isinstance(ref["fraud_flags"], str) else ref["fraud_flags"]
+            references.append(ref)
+
+        # Get full employment verification responses
+        db.execute(
+            """SELECT id, employer_name, job_title, start_date, end_date,
+                      verifier_name, verifier_email, verifier_job_title,
+                      verification_status, verification_responses, verification_fraud_flags,
+                      verification_sentiment, verified_at, verification_sent_at
+               FROM employment_history WHERE candidate_id=%s ORDER BY start_date DESC""",
+            (candidate_id,),
+        )
+        employment = []
+        for row in db.fetchall():
+            emp = dict(row)
+            if emp.get("verification_responses"):
+                emp["verification_responses"] = json.loads(emp["verification_responses"]) if isinstance(emp["verification_responses"], str) else emp["verification_responses"]
+            if emp.get("verification_fraud_flags"):
+                emp["verification_fraud_flags"] = json.loads(emp["verification_fraud_flags"]) if isinstance(emp["verification_fraud_flags"], str) else emp["verification_fraud_flags"]
+            employment.append(emp)
+
+    return {
+        "submission_id": submission_id,
+        "candidate": {
+            "id": candidate_id,
+            "first_name": sub_data.get("first_name"),
+            "last_name": sub_data.get("last_name"),
+            "email": sub_data.get("candidate_email"),
+        },
+        "phase1_completed_at": sub_data.get("phase1_completed_at"),
+        "status": sub_data.get("status"),
+        "references": references,
+        "employment_verification": employment,
+    }
+
+
+class Phase2Decision(BaseModel):
+    decision: str  # 'continue' or 'cancel'
+    reason: Optional[str] = None
+
+
+@router.post("/submissions/{submission_id}/phase2-decision")
+async def submit_phase2_decision(submission_id: str, data: Phase2Decision, user=Depends(get_current_user)):
+    """Agency decides whether to continue with full vetting (phase 2) or cancel after reviewing phase 1 feedback."""
+    agency_id = user.get("agency_id") or user.get("id")
+    if data.decision not in ("continue", "cancel"):
+        raise HTTPException(status_code=400, detail="decision must be 'continue' or 'cancel'")
+
+    now = datetime.now(timezone.utc).isoformat()
+    actor = user.get("email") or user.get("id")
+
+    with get_db() as db:
+        # Verify submission belongs to this agency and is awaiting review
+        db.execute(
+            """SELECT cs.candidate_id, cs.status, cs.workflow_phase
+               FROM candidate_submissions cs
+               JOIN candidates c ON cs.candidate_id = c.id
+               JOIN agency_candidates ac ON ac.candidate_id = c.id
+               WHERE cs.id = %s AND ac.agency_id = %s""",
+            (submission_id, agency_id),
+        )
+        sub = db.fetchone()
+        if not sub:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        sub_data = dict(sub)
+        if sub_data.get("status") != "awaiting_agency_review":
+            raise HTTPException(status_code=400, detail="Submission is not awaiting agency review")
+
+        candidate_id = sub_data["candidate_id"]
+
+        # Record the decision
+        db.execute(
+            """UPDATE candidate_submissions
+               SET phase2_decision=%s, phase2_decision_at=%s, phase2_decision_by=%s
+               WHERE id=%s""",
+            (data.decision, now, actor, submission_id),
+        )
+
+        # Audit log
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (%s, 'submission', %s, %s, %s, %s, %s)""",
+            (generate_id(), submission_id,
+             f"phase2_{data.decision}", actor,
+             json.dumps({"decision": data.decision, "reason": data.reason, "candidate_id": candidate_id}),
+             now),
+        )
+
+    if data.decision == "continue":
+        # Fire phase 2 checks
+        from app.services.trigger_engine import TriggerEngine
+        result = TriggerEngine.process_phase2(submission_id)
+
+        # Bill for full vetting (phase 2 portion) using £ balance
+        from app.services.balance_billing import BalanceBillingService
+        BalanceBillingService.charge_check(
+            agency_id, candidate_id, "phase2_vetting",
+            description="Full Vetting - Phase 2 (remaining checks)",
+            submission_id=submission_id,
+        )
+
+        return {
+            "decision": "continue",
+            "submission_id": submission_id,
+            "phase2_result": result,
+            "message": "Full vetting continues. Remaining checks have been triggered.",
+        }
+    else:
+        # Cancel — mark submission as cancelled, bill only for phase 1
+        with get_db() as db:
+            db.execute(
+                "UPDATE candidate_submissions SET status='cancelled_after_phase1' WHERE id=%s",
+                (submission_id,),
+            )
+            # Update candidate employment status
+            db.execute(
+                """UPDATE agency_candidates SET employment_status='vetting_cancelled',
+                   employment_status_updated_at=%s WHERE candidate_id=%s AND agency_id=%s""",
+                (now, candidate_id, agency_id),
+            )
+
+        # Bill for phase 1 only (references + work history) using £ balance
+        from app.services.balance_billing import BalanceBillingService
+        BalanceBillingService.charge_check(
+            agency_id, candidate_id, "phase1_refs_only",
+            description="References & Work History Only (phase 1 - cancelled before full vetting)",
+            submission_id=submission_id,
+        )
+
+        return {
+            "decision": "cancel",
+            "submission_id": submission_id,
+            "message": "Vetting cancelled after phase 1 review. Only references and work history charges apply.",
+        }

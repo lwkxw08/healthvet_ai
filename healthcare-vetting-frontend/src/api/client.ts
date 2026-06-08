@@ -1232,3 +1232,40 @@ export const gdprApi = {
   runAnonymiseInactive: (token: string) =>
     apiRequest<Record<string, unknown>>("/api/gdpr/anonymise-inactive", { method: "POST", token }),
 };
+
+// Staged Workflow API
+export const stagedWorkflowApi = {
+  getWorkflowSettings: (token: string) =>
+    apiRequest<{ workflow_mode: string }>("/api/agencies/workflow-settings", { token }),
+  updateWorkflowSettings: (token: string, workflowMode: string) =>
+    apiRequest<{ workflow_mode: string; message: string }>("/api/agencies/workflow-settings", { method: "PUT", body: { workflow_mode: workflowMode }, token }),
+  getAwaitingReview: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/agencies/submissions/awaiting-review", { token }),
+  getPhase1Feedback: (token: string, submissionId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/agencies/submissions/${submissionId}/phase1-feedback`, { token }),
+  submitPhase2Decision: (token: string, submissionId: string, decision: string, reason?: string) =>
+    apiRequest<Record<string, unknown>>(`/api/agencies/submissions/${submissionId}/phase2-decision`, { method: "POST", body: { decision, reason }, token }),
+};
+
+// £ Balance Billing API
+export const balanceBillingApi = {
+  getBalance: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/billing/balance", { token }),
+  topup: (token: string, amount: number, tierKey?: string, paymentMethod?: string) =>
+    apiRequest<Record<string, unknown>>("/api/billing/topup", { method: "POST", body: { amount, tier_key: tierKey, payment_method: paymentMethod || "stripe" }, token }),
+  getTransactions: (token: string, limit?: number, transactionType?: string) =>
+    apiRequest<Record<string, unknown>[]>(`/api/billing/transactions?limit=${limit || 50}${transactionType ? `&transaction_type=${transactionType}` : ""}`, { token }),
+  getCheckPrices: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/billing/check-prices", { token }),
+  // Admin financial reports
+  getRevenueReport: (token: string, startDate?: string, endDate?: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/financial/revenue-report${startDate ? `?start_date=${startDate}` : ""}${endDate ? `${startDate ? "&" : "?"}end_date=${endDate}` : ""}`, { token }),
+  getPackPerformance: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/admin/financial/pack-performance", { token }),
+  getAgencyFinancial: (token: string, agencyId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/financial/agency/${agencyId}`, { token }),
+  getAllAgenciesFinancial: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/admin/financial/all-agencies", { token }),
+  updateTierDiscount: (token: string, tierKey: string, discountPercent: number) =>
+    apiRequest<Record<string, unknown>>(`/api/admin/tiers/${tierKey}/discount`, { method: "PUT", body: { discount_percent: discountPercent }, token }),
+};

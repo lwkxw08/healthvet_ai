@@ -750,3 +750,151 @@ async def trigger_scheduled_job(job_name: str, user=Depends(get_current_admin)):
         return {"status": "completed", "job": job_name}
     except Exception as e:
         return {"status": "error", "job": job_name, "error": str(e)}
+
+
+# ============================================================
+# £ BALANCE BILLING — ADMIN FINANCIAL REPORTS
+# ============================================================
+
+@router.get("/admin/financial/revenue-report")
+async def get_revenue_report(start_date: str = None, end_date: str = None, user=Depends(get_current_admin)):
+    """Admin report: actual revenue received vs balance consumed across all agencies.
+    Shows REAL financial data — money in vs money spent."""
+    from app.services.balance_billing import BalanceBillingService
+    return BalanceBillingService.get_revenue_report(start_date, end_date)
+
+
+@router.get("/admin/financial/pack-performance")
+async def get_pack_performance(user=Depends(get_current_admin)):
+    """Admin report: revenue and usage performance by credit pack tier.
+    Shows which pack tiers generate the most revenue and which are most used."""
+    from app.services.balance_billing import BalanceBillingService
+    return BalanceBillingService.get_pack_performance_report()
+
+
+@router.get("/admin/financial/agency/{agency_id}")
+async def get_agency_financial_detail(agency_id: str, user=Depends(get_current_admin)):
+    """Admin view: detailed financial summary for a specific agency.
+    Shows actual money paid in, actual money spent, balance, and usage breakdown."""
+    from app.services.balance_billing import BalanceBillingService
+    result = BalanceBillingService.get_agency_financial_summary(agency_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@router.get("/admin/financial/all-agencies")
+async def get_all_agencies_financial(user=Depends(get_current_admin)):
+    """Admin report: financial overview of all agencies with balances."""
+    from app.database import get_db
+    with get_db() as db:
+        db.execute(
+            """SELECT id, name, balance_amount, total_topup_amount, total_spent_amount, discount_percent
+               FROM agencies WHERE status='active'
+               ORDER BY total_topup_amount DESC"""
+        )
+        rows = db.fetchall()
+        agencies = []
+        for row in rows:
+            r = dict(row)
+            agencies.append({
+                "agency_id": r["id"],
+                "agency_name": r["name"],
+                "balance": round(float(r.get("balance_amount") or 0), 2),
+                "total_paid_in": round(float(r.get("total_topup_amount") or 0), 2),
+                "total_spent": round(float(r.get("total_spent_amount") or 0), 2),
+                "discount_percent": float(r.get("discount_percent") or 0),
+            })
+        return {"agencies": agencies, "count": len(agencies)}
+
+
+# ============================================================
+# £ BALANCE BILLING — AGENCY BALANCE ENDPOINTS
+# ============================================================
+
+@router.get("/billing/balance")
+async def get_my_balance(user=Depends(get_current_user)):
+    """Agency endpoint: get current balance and billing summary."""
+    agency_id = user.get("agency_id") or user.get("id")
+    from app.services.balance_billing import BalanceBillingService
+    return BalanceBillingService.get_agency_balance(agency_id)
+
+
+@router.post("/billing/topup")
+async def topup_balance(data: dict, user=Depends(get_current_user)):
+    """Agency endpoint: top up balance with a credit pack."""
+    agency_id = user.get("agency_id") or user.get("id")
+    amount = data.get("amount")
+    tier_key = data.get("tier_key")
+    if not amount or float(amount) <= 0:
+        raise HTTPException(status_code=400, detail="amount must be a positive number")
+    from app.services.balance_billing import BalanceBillingService
+    try:
+        return BalanceBillingService.topup_balance(
+            agency_id, float(amount), tier_key,
+            payment_method=data.get("payment_method", "stripe"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/billing/transactions")
+async def get_my_transactions(limit: int = 50, transaction_type: str = None, user=Depends(get_current_user)):
+    """Agency endpoint: get balance transaction history."""
+    agency_id = user.get("agency_id") or user.get("id")
+    from app.services.balance_billing import BalanceBillingService
+    return BalanceBillingService.get_transactions(agency_id, limit, transaction_type)
+
+
+@router.get("/billing/check-prices")
+async def get_check_prices(user=Depends(get_current_user)):
+    """Get all check prices (gross). Agency can see their discounted price based on tier."""
+    from app.services.balance_billing import BalanceBillingService
+    prices = BalanceBillingService.get_check_prices()
+    # Get agency discount
+    agency_id = user.get("agency_id") or user.get("id")
+    balance_info = BalanceBillingService.get_agency_balance(agency_id)
+    discount_pct = balance_info.get("discount_percent", 0)
+    result = []
+    for p in prices:
+        gross = float(p.get("third_party_cost") or p.get("gross_price") or 0)
+        discount_amt = round(gross * (discount_pct / 100), 2)
+        net = round(gross - discount_amt, 2)
+        result.append({
+            "check_type": p.get("check_type"),
+            "label": p.get("label"),
+            "gross_price": gross,
+            "your_discount_percent": discount_pct,
+            "your_price": net,
+        })
+    return {"prices": result, "discount_percent": discount_pct}
+
+
+# ============================================================
+# ADMIN — CREDIT PACK TIER MANAGEMENT (with discount %)
+# ============================================================
+
+@router.put("/admin/tiers/{tier_key}/discount")
+async def update_tier_discount(tier_key: str, data: dict, user=Depends(get_current_admin)):
+    """Admin: update the discount percentage for a credit pack tier."""
+    discount_percent = data.get("discount_percent")
+    if discount_percent is None:
+        raise HTTPException(status_code=400, detail="discount_percent is required")
+    if not (0 <= float(discount_percent) <= 100):
+        raise HTTPException(status_code=400, detail="discount_percent must be between 0 and 100")
+
+    from app.database import get_db
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as db:
+        db.execute(
+            "SELECT id FROM subscription_tier_config WHERE tier_key=%s", (tier_key,)
+        )
+        if not db.fetchone():
+            raise HTTPException(status_code=404, detail=f"Tier '{tier_key}' not found")
+        db.execute(
+            "UPDATE subscription_tier_config SET discount_percent=%s, updated_at=%s WHERE tier_key=%s",
+            (float(discount_percent), now, tier_key),
+        )
+        db.execute("SELECT * FROM subscription_tier_config WHERE tier_key=%s", (tier_key,))
+        row = db.fetchone()
+        return dict(row)
