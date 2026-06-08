@@ -2,6 +2,8 @@
 £ Balance Billing Service
 Agencies prepay funds onto their account and are charged per-check at discounted rates.
 Discount percentage is determined by the credit pack tier they purchased.
+Check prices are pulled from the agency's assigned industry template/pricing plan,
+falling back to master pricing_settings, then hardcoded defaults.
 Admin reports show ACTUAL revenue (amount paid in) vs amount consumed.
 """
 from datetime import datetime, timezone
@@ -12,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-# Default check prices (gross, before any discount)
+# Hardcoded fallback prices (only used if neither industry nor master pricing exists)
 DEFAULT_CHECK_PRICES = {
     "full_vetting": 95.00,
     "phase1_refs_only": 28.00,
@@ -27,6 +29,66 @@ DEFAULT_CHECK_PRICES = {
     "monitoring_renewal": 12.00,
 }
 
+# Mapping from billing check_type → industry_check_pricing.check_type (template check key)
+BILLING_TYPE_TO_TEMPLATE_KEY = {
+    "identity_verification": "identity_verified",
+    "right_to_work": "right_to_work_valid",
+    "dbs_check": "dbs_valid",
+    "dbs_standard": "dbs_standard",
+    "dbs_enhanced": "dbs_enhanced",
+    "dbs_enhanced_barred": "dbs_enhanced_barred",
+    "cv_analysis": "cv_validated",
+    "registration_check": "registration_active",
+    "training_certificate": "training_compliant",
+    "references": "references_verified",
+    "employment": "employment_verified",
+    "overseas_criminal": "overseas_criminal_check",
+    "professional_registration": "professional_registration_check",
+    "fit_to_work": "occupational_health_check",
+    "sanctions_check": "sanctions_check",
+    "credit_check": "credit_check",
+    "social_media_check": "social_media_check",
+    "counterterrorism_check": "counterterrorism_check",
+}
+
+# Mapping from billing check_type → pricing_settings.check_type (master pricing)
+BILLING_TYPE_TO_PRICING_KEY = {
+    "identity_verification": "identity",
+    "right_to_work": "right_to_work",
+    "dbs_check": "dbs",
+    "dbs_standard": "dbs_standard",
+    "dbs_enhanced": "dbs_enhanced",
+    "dbs_enhanced_barred": "dbs_enhanced_barred",
+    "cv_analysis": "cv_analysis",
+    "registration_check": "registration",
+    "training_certificate": "training_verification",
+    "references": "references",
+    "employment": "employment",
+    "overseas_criminal": "overseas_criminal",
+    "professional_registration": "professional_registration",
+    "fit_to_work": "fit_to_work",
+    "sanctions_check": "sanctions_check",
+    "credit_check": "credit_check",
+    "social_media_check": "social_media_check",
+    "counterterrorism_check": "counterterrorism_check",
+    "monitoring_renewal": "monitoring_renewal",
+    "reference_rechase": "reference_rechase",
+}
+
+# Composite check types → list of component template check keys to sum
+COMPOSITE_CHECK_COMPONENTS = {
+    "phase1_refs_only": ["references_verified", "employment_verified"],
+    "phase2_vetting": [
+        "identity_verified", "dbs_valid", "right_to_work_valid",
+        "cv_validated", "registration_active", "training_compliant",
+    ],
+    "full_vetting": [
+        "references_verified", "employment_verified",
+        "identity_verified", "dbs_valid", "right_to_work_valid",
+        "cv_validated", "registration_active", "training_compliant",
+    ],
+}
+
 
 class BalanceBillingService:
     """£ balance billing — agencies prepay, get tier-based discounts on usage."""
@@ -34,30 +96,153 @@ class BalanceBillingService:
     # ── Check Price Management ──────────────────────────────────────
 
     @staticmethod
-    def get_check_prices() -> list:
-        """Get all check prices from partial_credit_rates (repurposed as price table)."""
+    def _get_agency_template_id(agency_id: str, db=None) -> str | None:
+        """Look up the industry_template_id assigned to an agency."""
+        def _query(cursor):
+            cursor.execute(
+                "SELECT industry_template_id FROM agencies WHERE id=%s",
+                (agency_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return dict(row).get("industry_template_id")
+            return None
+
+        if db:
+            return _query(db)
+        with get_db() as cursor:
+            return _query(cursor)
+
+    @staticmethod
+    def _get_industry_price(template_id: str, check_key: str, db=None) -> float | None:
+        """Get sell_price from industry_check_pricing for a specific template + check."""
+        def _query(cursor):
+            cursor.execute(
+                """SELECT sell_price FROM industry_check_pricing
+                   WHERE industry_template_id=%s AND check_type=%s AND is_active=1""",
+                (template_id, check_key),
+            )
+            row = cursor.fetchone()
+            if row:
+                val = dict(row).get("sell_price")
+                if val is not None:
+                    return float(val)
+            return None
+
+        if db:
+            return _query(db)
+        with get_db() as cursor:
+            return _query(cursor)
+
+    @staticmethod
+    def _get_master_price(pricing_key: str, db=None) -> float | None:
+        """Get sell_price from pricing_settings (master pricing)."""
+        def _query(cursor):
+            cursor.execute(
+                "SELECT sell_price FROM pricing_settings WHERE check_type=%s",
+                (pricing_key,),
+            )
+            row = cursor.fetchone()
+            if row:
+                val = dict(row).get("sell_price")
+                if val is not None:
+                    return float(val)
+            return None
+
+        if db:
+            return _query(db)
+        with get_db() as cursor:
+            return _query(cursor)
+
+    @staticmethod
+    def get_check_prices(agency_id: str = None) -> list:
+        """Get all check prices relevant to an agency.
+        Priority: agency's industry template → master pricing → defaults."""
         with get_db() as db:
-            db.execute("SELECT * FROM partial_credit_rates ORDER BY check_type")
+            template_id = None
+            if agency_id:
+                template_id = BalanceBillingService._get_agency_template_id(agency_id, db)
+
+            # If agency has an industry template, get prices from it
+            if template_id:
+                db.execute(
+                    """SELECT check_type, label, sell_price, third_party_cost
+                       FROM industry_check_pricing
+                       WHERE industry_template_id=%s AND is_active=1
+                       ORDER BY check_type""",
+                    (template_id,),
+                )
+                rows = db.fetchall()
+                if rows:
+                    return [
+                        {"check_type": dict(r)["check_type"],
+                         "label": dict(r).get("label") or dict(r)["check_type"].replace("_", " ").title(),
+                         "gross_price": float(dict(r).get("sell_price") or 0)}
+                        for r in rows
+                    ]
+
+            # Fall back to master pricing_settings
+            db.execute("SELECT check_type, label, sell_price FROM pricing_settings ORDER BY check_type")
             rows = db.fetchall()
             if rows:
-                return [dict(r) for r in rows]
+                return [
+                    {"check_type": dict(r)["check_type"],
+                     "label": dict(r).get("label") or dict(r)["check_type"].replace("_", " ").title(),
+                     "gross_price": float(dict(r).get("sell_price") or 0)}
+                    for r in rows
+                ]
+
+        # Last resort: hardcoded defaults
         return [{"check_type": k, "label": k.replace("_", " ").title(), "gross_price": v}
                 for k, v in DEFAULT_CHECK_PRICES.items()]
 
     @staticmethod
-    def get_check_price(check_type: str) -> float:
-        """Get the gross price for a specific check type."""
+    def get_check_price(check_type: str, agency_id: str = None) -> float:
+        """Get the gross price for a check, resolved from the agency's industry pricing plan.
+        Priority: industry_check_pricing (agency's template) → pricing_settings → defaults.
+        For composite types (phase1, phase2, full_vetting), sums the component check prices."""
         with get_db() as db:
-            db.execute(
-                "SELECT third_party_cost, credit_value FROM partial_credit_rates WHERE check_type=%s",
-                (check_type,),
-            )
-            row = db.fetchone()
-            if row:
-                r = dict(row)
-                # Use third_party_cost as gross price in the new model
-                return float(r.get("third_party_cost") or DEFAULT_CHECK_PRICES.get(check_type, 95.00))
-        return DEFAULT_CHECK_PRICES.get(check_type, 95.00)
+            template_id = None
+            if agency_id:
+                template_id = BalanceBillingService._get_agency_template_id(agency_id, db)
+
+            # Handle composite check types by summing components
+            if check_type in COMPOSITE_CHECK_COMPONENTS:
+                total = 0.0
+                for component_key in COMPOSITE_CHECK_COMPONENTS[check_type]:
+                    price = BalanceBillingService._resolve_single_price(
+                        component_key, template_id, db
+                    )
+                    total += price
+                return round(total, 2) if total > 0 else DEFAULT_CHECK_PRICES.get(check_type, 95.00)
+
+            # Single check type
+            # Map billing type to template check key
+            template_key = BILLING_TYPE_TO_TEMPLATE_KEY.get(check_type, check_type)
+            price = BalanceBillingService._resolve_single_price(template_key, template_id, db)
+            if price > 0:
+                return price
+
+            # Fall back to default
+            return DEFAULT_CHECK_PRICES.get(check_type, 95.00)
+
+    @staticmethod
+    def _resolve_single_price(template_check_key: str, template_id: str | None, db) -> float:
+        """Resolve a single check's price: industry template → master pricing → 0."""
+        # Try industry-specific pricing
+        if template_id:
+            price = BalanceBillingService._get_industry_price(template_id, template_check_key, db)
+            if price is not None and price > 0:
+                return price
+
+        # Try master pricing (map template key back to pricing_settings key)
+        from app.routes.subscription_plans import CHECK_KEY_TO_PRICING_TYPE
+        pricing_key = CHECK_KEY_TO_PRICING_TYPE.get(template_check_key, template_check_key)
+        master_price = BalanceBillingService._get_master_price(pricing_key, db)
+        if master_price is not None and master_price > 0:
+            return master_price
+
+        return 0.0
 
     # ── Agency Balance ──────────────────────────────────────────────
 
@@ -198,7 +383,7 @@ class BalanceBillingService:
         Records ACTUAL spend (net after discount) for financial reporting."""
         now = datetime.now(timezone.utc).isoformat()
 
-        gross_price = BalanceBillingService.get_check_price(check_type)
+        gross_price = BalanceBillingService.get_check_price(check_type, agency_id)
 
         with get_db() as db:
             # Get agency discount
