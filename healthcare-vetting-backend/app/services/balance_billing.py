@@ -97,15 +97,23 @@ class BalanceBillingService:
 
     @staticmethod
     def _get_agency_template_id(agency_id: str, db=None) -> str | None:
-        """Look up the industry_template_id assigned to an agency."""
+        """Look up the industry_template_id assigned to an agency.
+        Falls back to the default industry template if none is explicitly assigned."""
         def _query(cursor):
             cursor.execute(
                 "SELECT industry_template_id FROM agencies WHERE id=%s",
                 (agency_id,),
             )
             row = cursor.fetchone()
-            if row:
-                return dict(row).get("industry_template_id")
+            if row and dict(row).get("industry_template_id"):
+                return dict(row)["industry_template_id"]
+            # Fall back to default template
+            cursor.execute(
+                "SELECT id FROM industry_templates WHERE is_default=1 AND is_active=1 LIMIT 1"
+            )
+            default_tmpl = cursor.fetchone()
+            if default_tmpl:
+                return dict(default_tmpl)["id"]
             return None
 
         if db:
