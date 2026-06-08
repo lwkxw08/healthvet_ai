@@ -1373,7 +1373,7 @@ async def renew_monitoring(candidate_id: str, current_user: dict = Depends(get_c
 @router.get("/workflow-settings")
 async def get_workflow_settings(user=Depends(get_current_user)):
     """Get the agency's workflow mode setting."""
-    agency_id = user.get("agency_id") or user.get("id")
+    agency_id = user.get("agency_id") or user.get("sub") or user.get("id")
     with get_db() as db:
         db.execute("SELECT id, workflow_mode FROM agencies WHERE id=%s", (agency_id,))
         row = db.fetchone()
@@ -1390,7 +1390,7 @@ class WorkflowModeUpdate(BaseModel):
 @router.put("/workflow-settings")
 async def update_workflow_settings(data: WorkflowModeUpdate, user=Depends(get_current_user)):
     """Update the agency's workflow mode."""
-    agency_id = user.get("agency_id") or user.get("id")
+    agency_id = user.get("agency_id") or user.get("sub") or user.get("id")
     if data.workflow_mode not in ("standard", "staged"):
         raise HTTPException(status_code=400, detail="workflow_mode must be 'standard' or 'staged'")
     with get_db() as db:
@@ -1404,7 +1404,7 @@ async def update_workflow_settings(data: WorkflowModeUpdate, user=Depends(get_cu
 @router.get("/submissions/awaiting-review")
 async def get_submissions_awaiting_review(user=Depends(get_current_user)):
     """Get all submissions in 'awaiting_agency_review' status for this agency."""
-    agency_id = user.get("agency_id") or user.get("id")
+    agency_id = user.get("agency_id") or user.get("sub") or user.get("id")
     with get_db() as db:
         db.execute(
             """SELECT cs.*, c.first_name, c.last_name, c.email as candidate_email
@@ -1423,7 +1423,7 @@ async def get_submissions_awaiting_review(user=Depends(get_current_user)):
 async def get_phase1_feedback(submission_id: str, user=Depends(get_current_user)):
     """Get the full reference and employment verification feedback for a phase 1 submission.
     Returns ALL response details, not just scores — enabling the agency to make an informed decision."""
-    agency_id = user.get("agency_id") or user.get("id")
+    agency_id = user.get("agency_id") or user.get("sub") or user.get("id")
 
     with get_db() as db:
         # Verify submission belongs to this agency
@@ -1499,7 +1499,7 @@ class Phase2Decision(BaseModel):
 @router.post("/submissions/{submission_id}/phase2-decision")
 async def submit_phase2_decision(submission_id: str, data: Phase2Decision, user=Depends(get_current_user)):
     """Agency decides whether to continue with full vetting (phase 2) or cancel after reviewing phase 1 feedback."""
-    agency_id = user.get("agency_id") or user.get("id")
+    agency_id = user.get("agency_id") or user.get("sub") or user.get("id")
     if data.decision not in ("continue", "cancel"):
         raise HTTPException(status_code=400, detail="decision must be 'continue' or 'cancel'")
 

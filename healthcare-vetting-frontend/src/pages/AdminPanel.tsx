@@ -2546,7 +2546,7 @@ export default function AdminPanel() {
             </div>
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
               <table className="w-full min-w-[800px]"><thead><tr className="border-b border-slate-700">
-                {["Agency Name","Email","Industry","Discount","Billing Mode","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+                {["Agency Name","Email","Industry","Discount","Billing Mode","Workflow","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
               </tr></thead><tbody>
                 {agencies.map((a) => {
                   const currentTemplateId = String(a.industry_template_id || "");
@@ -2607,6 +2607,11 @@ export default function AdminPanel() {
                         <option value="credit_pack">Credit Pack</option>
                       </select>
                     </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-1 rounded-full border ${String(a.workflow_mode) === "staged" ? "bg-amber-600/20 text-amber-300 border-amber-600/30" : "bg-slate-600/20 text-slate-400 border-slate-600/30"}`}>
+                        {String(a.workflow_mode) === "staged" ? "Staged" : "Standard"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3"><StatusBadge status={String(a.status || "active")} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -2621,7 +2626,7 @@ export default function AdminPanel() {
                   </tr>
                   );
                 })}
-                {agencies.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500 text-sm">No agencies found</td></tr>}
+                {agencies.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500 text-sm">No agencies found</td></tr>}
               </tbody></table>
             </div>
           </div>
