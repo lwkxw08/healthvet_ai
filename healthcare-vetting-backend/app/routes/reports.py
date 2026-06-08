@@ -848,7 +848,7 @@ async def get_all_agencies_financial(user=Depends(get_current_admin)):
 @router.get("/billing/balance")
 async def get_my_balance(user=Depends(get_current_user)):
     """Agency endpoint: get current balance and billing summary."""
-    agency_id = user.get("agency_id") or user.get("id")
+    agency_id = user.get("agency_id") or user.get("sub") or user.get("id")
     from app.services.balance_billing import BalanceBillingService
     return BalanceBillingService.get_agency_balance(agency_id)
 
@@ -874,7 +874,7 @@ async def topup_balance(data: dict, user=Depends(get_current_user)):
 @router.get("/billing/transactions")
 async def get_my_transactions(limit: int = 50, transaction_type: str = None, user=Depends(get_current_user)):
     """Agency endpoint: get balance transaction history."""
-    agency_id = user.get("agency_id") or user.get("id")
+    agency_id = user.get("agency_id") or user.get("sub") or user.get("id")
     from app.services.balance_billing import BalanceBillingService
     return BalanceBillingService.get_transactions(agency_id, limit, transaction_type)
 
@@ -883,7 +883,7 @@ async def get_my_transactions(limit: int = 50, transaction_type: str = None, use
 async def get_check_prices(user=Depends(get_current_user)):
     """Get all check prices (gross). Agency can see their discounted price based on tier."""
     from app.services.balance_billing import BalanceBillingService
-    agency_id = user.get("agency_id") or user.get("id")
+    agency_id = user.get("agency_id") or user.get("sub") or user.get("id")
     prices = BalanceBillingService.get_check_prices(agency_id)
     # Get agency discount
     balance_info = BalanceBillingService.get_agency_balance(agency_id)
