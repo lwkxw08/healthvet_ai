@@ -156,32 +156,50 @@ class BalanceBillingService:
 
     @staticmethod
     def get_check_prices(agency_id: str = None) -> list:
-        """Get all check prices relevant to an agency.
-        Priority: agency's industry template → master pricing → defaults."""
+        """Get check prices relevant to an agency.
+        Only returns checks enabled in the agency's industry template.
+        Price priority: industry_check_pricing → pricing_settings → defaults."""
         with get_db() as db:
             template_id = None
             if agency_id:
                 template_id = BalanceBillingService._get_agency_template_id(agency_id, db)
 
-            # If agency has an industry template, get prices from it
+            # If agency has an industry template, only show checks enabled for that template
             if template_id:
+                # Get enabled check keys from industry_template_checks
                 db.execute(
-                    """SELECT check_type, label, sell_price, third_party_cost
-                       FROM industry_check_pricing
-                       WHERE industry_template_id=%s AND is_active=1
-                       ORDER BY check_type""",
+                    """SELECT check_key, check_label
+                       FROM industry_template_checks
+                       WHERE template_id=%s AND is_enabled=1
+                       ORDER BY sort_order, check_key""",
                     (template_id,),
                 )
-                rows = db.fetchall()
-                if rows:
-                    return [
-                        {"check_type": dict(r)["check_type"],
-                         "label": dict(r).get("label") or dict(r)["check_type"].replace("_", " ").title(),
-                         "gross_price": float(dict(r).get("sell_price") or 0)}
-                        for r in rows
-                    ]
+                enabled_checks = db.fetchall()
+                if enabled_checks:
+                    results = []
+                    for row in enabled_checks:
+                        rd = dict(row)
+                        check_key = rd["check_key"]
+                        label = rd.get("check_label") or check_key.replace("_", " ").title()
 
-            # Fall back to master pricing_settings
+                        # Get price from industry_check_pricing first
+                        price = BalanceBillingService._get_industry_price(template_id, check_key, db)
+                        if price is None or price <= 0:
+                            # Fall back to master pricing
+                            from app.routes.subscription_plans import CHECK_KEY_TO_PRICING_TYPE
+                            pricing_key = CHECK_KEY_TO_PRICING_TYPE.get(check_key, check_key)
+                            price = BalanceBillingService._get_master_price(pricing_key, db)
+                        if price is None or price <= 0:
+                            price = 0.0
+
+                        results.append({
+                            "check_type": check_key,
+                            "label": label,
+                            "gross_price": round(price, 2),
+                        })
+                    return results
+
+            # No template assigned — fall back to master pricing_settings
             db.execute("SELECT check_type, label, sell_price FROM pricing_settings ORDER BY check_type")
             rows = db.fetchall()
             if rows:
