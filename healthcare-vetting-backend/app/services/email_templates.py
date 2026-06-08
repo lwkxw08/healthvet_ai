@@ -1002,6 +1002,80 @@ Viper AI Team""",
             {"key": "dashboard_link", "description": "Link to the agency dashboard"},
         ]),
     },
+    {
+        "template_key": "phase1_complete_agency",
+        "name": "Phase 1 Complete — Review Required",
+        "description": "Sent to agency when Phase 1 (references + work history) is complete and awaiting review.",
+        "category": "workflow",
+        "subject": "Viper AI — Phase 1 Complete: {{candidate_name}} awaiting your review",
+        "body_html": """<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+<div style="background: #1e293b; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+    <h1 style="color: #60a5fa; margin: 0; font-size: 24px;">Viper AI</h1>
+    <p style="color: #94a3b8; margin: 5px 0 0; font-size: 14px;">Staged Vetting — Phase 1 Complete</p>
+</div>
+<div style="background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
+    <p>Dear {{agency_name}},</p>
+    <p><strong>Phase 1</strong> of the vetting process for <strong>{{candidate_name}}</strong> is now complete.</p>
+    <div style="background: #ecfdf5; border: 1px solid #86efac; border-radius: 6px; padding: 15px; margin: 20px 0;">
+        <p style="margin: 0; color: #166534; font-weight: 600;">✓ References Verified</p>
+        <p style="margin: 5px 0 0; color: #166534; font-weight: 600;">✓ Work History Confirmed</p>
+    </div>
+    <p>The full feedback is ready for your review, including:</p>
+    <ul style="color: #475569; line-height: 1.8;">
+        <li>Complete referee responses (every question & answer)</li>
+        <li>Employment verification details from previous employers</li>
+        <li>AI fraud detection flags</li>
+        <li>Sentiment analysis scores</li>
+    </ul>
+    <p><strong>What happens next?</strong></p>
+    <p>Please review the feedback and choose one of the following:</p>
+    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 15px; margin: 20px 0;">
+        <p style="margin: 0 0 10px;"><strong>Continue</strong> — Proceed with the remaining vetting checks (DBS, identity, right to work, CV analysis, registration, training). You will be charged for the full vetting.</p>
+        <p style="margin: 0;"><strong>Cancel</strong> — Stop the process here. You will only be charged for the Phase 1 checks (references + work history).</p>
+    </div>
+    <div style="text-align: center; margin: 25px 0;">
+        <a href="{{review_link}}" style="background: #3b82f6; color: white; padding: 14px 35px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block; font-size: 16px;">Review & Decide</a>
+    </div>
+    <p style="color: #64748b; font-size: 13px;">Or log in to your dashboard: <a href="{{dashboard_link}}">{{dashboard_link}}</a></p>
+    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+    <p style="color: #64748b; font-size: 12px;">This is an automated notification from Viper AI's staged vetting workflow. If you did not expect this email, please contact support.</p>
+</div>
+</div>""",
+        "body_text": """Viper AI — Phase 1 Complete: {{candidate_name}} awaiting your review
+
+Dear {{agency_name}},
+
+Phase 1 of the vetting process for {{candidate_name}} is now complete.
+
+✓ References Verified
+✓ Work History Confirmed
+
+The full feedback is ready for your review, including:
+- Complete referee responses (every question & answer)
+- Employment verification details from previous employers
+- AI fraud detection flags
+- Sentiment analysis scores
+
+What happens next?
+
+Please review the feedback and choose:
+• Continue — Proceed with remaining vetting checks (DBS, identity, right to work, etc.). Full vetting charge applies.
+• Cancel — Stop here. You will only be charged for Phase 1 (references + work history).
+
+Review now: {{review_link}}
+
+Or log in to your dashboard: {{dashboard_link}}
+
+Best regards,
+Viper AI Vetting Team""",
+        "variables": json.dumps([
+            {"key": "agency_name", "description": "Name of the agency"},
+            {"key": "candidate_name", "description": "Full name of the candidate"},
+            {"key": "submission_id", "description": "Submission ID for the vetting request"},
+            {"key": "review_link", "description": "Direct link to review the Phase 1 results"},
+            {"key": "dashboard_link", "description": "Link to the agency dashboard"},
+        ]),
+    },
 ]
 
 

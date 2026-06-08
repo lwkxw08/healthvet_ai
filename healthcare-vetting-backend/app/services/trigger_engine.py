@@ -109,6 +109,14 @@ class TriggerEngine:
                      phase1_done_at),
                 )
 
+            # Send email + notification to agency about Phase 1 completion
+            try:
+                TriggerEngine._notify_agency_phase1_complete(
+                    candidate_id, submission_id, results
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send phase1 completion notification: {e}")
+
             return {"status": "awaiting_agency_review", "workflow_phase": "phase1", "results": results}
 
         # Standard workflow (or phase 2 continuation) — fire all checks
@@ -517,6 +525,87 @@ class TriggerEngine:
 
         except Exception as e:
             logger.warning(f"Failed to notify agency for imposter check: {e}")
+
+    @staticmethod
+    def _notify_agency_phase1_complete(candidate_id: str, submission_id: str, results: dict):
+        """Send email + in-app notification to agency when Phase 1 (refs + employment) is complete."""
+        with get_db() as db:
+            # Get candidate name
+            db.execute("SELECT first_name, last_name FROM candidates WHERE id=%s", (candidate_id,))
+            cand = db.fetchone()
+            cand_name = "Unknown"
+            if cand:
+                cd = dict(cand)
+                cand_name = f"{cd.get('first_name', '')} {cd.get('last_name', '')}".strip() or "Unknown"
+
+            # Get linked agency
+            db.execute(
+                "SELECT a.id, a.name, a.email, a.contact_email FROM agencies a "
+                "JOIN agency_candidates ac ON a.id = ac.agency_id "
+                "WHERE ac.candidate_id=%s LIMIT 1",
+                (candidate_id,),
+            )
+            agency = db.fetchone()
+            if not agency:
+                return
+            agency_data = dict(agency)
+            agency_email = agency_data.get("contact_email") or agency_data.get("email")
+
+            # Create in-app notification (bell icon)
+            now = datetime.now(timezone.utc).isoformat()
+            db.execute(
+                """INSERT INTO in_app_notifications
+                   (id, user_id, user_type, title, message, category, severity, link, is_read, created_at)
+                   VALUES (%s, %s, 'agency', %s, %s, 'action_required', 'info', %s, 0, %s)""",
+                (
+                    generate_id(),
+                    agency_data["id"],
+                    f"Phase 1 Complete — {cand_name}",
+                    f"References and work history verification for {cand_name} are complete and ready for your review. Please review the feedback and decide whether to proceed with full vetting or cancel.",
+                    f"/pending-review/{submission_id}",
+                    now,
+                ),
+            )
+
+        # Send email to agency
+        if agency_email:
+            import os
+            base_url = os.environ.get("BASE_URL", "https://app.viperai.io")
+            review_link = f"{base_url}/pending-review/{submission_id}"
+
+            from app.services.email_service import EmailService
+            variables = {
+                "agency_name": agency_data.get("name", "Agency"),
+                "candidate_name": cand_name,
+                "submission_id": submission_id,
+                "review_link": review_link,
+                "dashboard_link": f"{base_url}/agency/dashboard",
+            }
+
+            fallback_subject = f"Viper AI — Phase 1 Complete: {cand_name} awaiting your review"
+            fallback_body = (
+                f"Dear {agency_data.get('name', 'Agency')},\n\n"
+                f"Phase 1 of the vetting process for {cand_name} is now complete.\n\n"
+                f"References and work history verification have been processed. "
+                f"The full feedback — including all referee responses, employment verification details, "
+                f"fraud flags, and AI sentiment analysis — is ready for your review.\n\n"
+                f"Please log in to review the results and decide whether to:\n"
+                f"  • Continue — proceed with the remaining vetting checks (DBS, identity, right to work, etc.)\n"
+                f"  • Cancel — stop here (you will only be charged for Phase 1)\n\n"
+                f"Review now: {review_link}\n\n"
+                f"Best regards,\nViper AI Vetting Team"
+            )
+
+            resolved_key = EmailService._resolve_template_key(
+                "phase1_completed", "phase1_complete_agency",
+                recipient_type="agency",
+            )
+            EmailService._send_via_template(
+                resolved_key, agency_email, agency_data.get("name", "Agency"),
+                variables, fallback_subject, fallback_body,
+                "phase1_complete", submission_id,
+            )
+            logger.info(f"Phase 1 completion notification sent to {agency_email} for candidate {cand_name}")
 
     @staticmethod
     def _run_dbs(candidate_id: str, data: dict) -> str:

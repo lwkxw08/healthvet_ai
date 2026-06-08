@@ -192,10 +192,10 @@ export default function AdminPanel() {
   // Subscription tier editing state
   const [subTiers, setSubTiers] = useState<Record<string, {name: string; monthly_price: number; per_worker_price: number; max_workers: number; monthly_checks: number; overage_rate: number; allow_rollover: boolean; features: string[]}>>({});
   const [editingTier, setEditingTier] = useState<string | null>(null);
-  const [tierEditData, setTierEditData] = useState<{name: string; monthly_price: string; per_worker_price: string; max_workers: string; monthly_checks: string; overage_rate: string; allow_rollover: boolean; features: string}>({name: "", monthly_price: "", per_worker_price: "", max_workers: "", monthly_checks: "", overage_rate: "", allow_rollover: false, features: ""});
+  const [tierEditData, setTierEditData] = useState<{name: string; monthly_price: string; per_worker_price: string; max_workers: string; monthly_checks: string; overage_rate: string; discount_percent: string; allow_rollover: boolean; features: string}>({name: "", monthly_price: "", per_worker_price: "", max_workers: "", monthly_checks: "", overage_rate: "", discount_percent: "", allow_rollover: false, features: ""});
   const [savingTier, setSavingTier] = useState(false);
   const [creatingTier, setCreatingTier] = useState(false);
-  const [newTierData, setNewTierData] = useState<{tier_key: string; name: string; monthly_price: string; per_worker_price: string; max_workers: string; monthly_checks: string; overage_rate: string; allow_rollover: boolean; features: string}>({tier_key: "", name: "", monthly_price: "", per_worker_price: "0", max_workers: "999", monthly_checks: "", overage_rate: "", allow_rollover: false, features: ""});
+  const [newTierData, setNewTierData] = useState<{tier_key: string; name: string; monthly_price: string; per_worker_price: string; max_workers: string; monthly_checks: string; overage_rate: string; discount_percent: string; allow_rollover: boolean; features: string}>({tier_key: "", name: "", monthly_price: "", per_worker_price: "0", max_workers: "999", monthly_checks: "", overage_rate: "", discount_percent: "", allow_rollover: false, features: ""});
   // Partial credit rates state
   const [creditRates, setCreditRates] = useState<Record<string, unknown>[]>([]);
   const [editingRate, setEditingRate] = useState<string | null>(null);
@@ -847,6 +847,7 @@ export default function AdminPanel() {
         max_workers: parseInt(tierEditData.max_workers) || 0,
         monthly_checks: parseInt(tierEditData.monthly_checks) || 0,
         overage_rate: parseFloat(tierEditData.overage_rate) || 0,
+        discount_percent: parseFloat(tierEditData.discount_percent) || 0,
         allow_rollover: tierEditData.allow_rollover,
         features,
       });
@@ -873,11 +874,12 @@ export default function AdminPanel() {
         max_workers: parseInt(newTierData.max_workers) || 999,
         monthly_checks: parseInt(newTierData.monthly_checks) || 0,
         overage_rate: parseFloat(newTierData.overage_rate) || 0,
+        discount_percent: parseFloat(newTierData.discount_percent) || 0,
         allow_rollover: newTierData.allow_rollover,
         features,
       });
       setCreatingTier(false);
-      setNewTierData({tier_key: "", name: "", monthly_price: "", per_worker_price: "0", max_workers: "999", monthly_checks: "", overage_rate: "", allow_rollover: false, features: ""});
+      setNewTierData({tier_key: "", name: "", monthly_price: "", per_worker_price: "0", max_workers: "999", monthly_checks: "", overage_rate: "", discount_percent: "", allow_rollover: false, features: ""});
       await loadSubscriptionTiers();
       showMessage("New tier created successfully");
     } catch (err) {
@@ -909,6 +911,7 @@ export default function AdminPanel() {
       max_workers: tier.max_workers.toString(),
       monthly_checks: (tier.monthly_checks || 0).toString(),
       overage_rate: (tier.overage_rate || 0).toString(),
+      discount_percent: ((tier as Record<string, unknown>).discount_percent || 0).toString(),
       allow_rollover: tier.allow_rollover || false,
       features: tier.features.join("\n"),
     });
@@ -2208,10 +2211,16 @@ export default function AdminPanel() {
                           className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                       <div>
                         <label className="block text-xs text-slate-400 mb-1">Pack Price (£)</label>
                         <input type="number" step="0.01" value={newTierData.monthly_price} onChange={(e) => setNewTierData(prev => ({...prev, monthly_price: e.target.value}))}
+                          className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Discount %</label>
+                        <input type="number" step="0.5" min="0" max="100" value={newTierData.discount_percent || ""} onChange={(e) => setNewTierData(prev => ({...prev, discount_percent: e.target.value}))}
+                          placeholder="e.g. 5"
                           className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                       </div>
                       <div>
@@ -2276,7 +2285,13 @@ export default function AdminPanel() {
                                 className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Discount %</label>
+                              <input type="number" step="0.5" min="0" max="100" value={tierEditData.discount_percent || ""} onChange={(e) => setTierEditData(prev => ({...prev, discount_percent: e.target.value}))}
+                                placeholder="e.g. 5"
+                                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm" />
+                            </div>
                             <div>
                               <label className="block text-xs text-slate-400 mb-1">Overage Rate (£/credit)</label>
                               <input type="number" step="0.01" value={tierEditData.overage_rate} onChange={(e) => setTierEditData(prev => ({...prev, overage_rate: e.target.value}))}
@@ -2332,6 +2347,9 @@ export default function AdminPanel() {
                           <p className="text-green-400 text-sm font-medium mb-1">
                             {(tier.monthly_checks || 0) >= 999999 ? "Unlimited credits" : `${tier.monthly_checks || 0} credits per pack`}
                           </p>
+                          {Number((tier as Record<string, unknown>).discount_percent || 0) > 0 && (
+                            <p className="text-green-300 text-xs mb-1 font-medium">Discount: {String((tier as Record<string, unknown>).discount_percent)}% off all checks</p>
+                          )}
                           {(tier.overage_rate || 0) > 0 && (
                             <p className="text-amber-400 text-xs mb-1">Overage: £{tier.overage_rate}/credit</p>
                           )}

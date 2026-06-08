@@ -6,9 +6,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import io
+import logging
 
 from app.database import get_db
 from app.utils.auth import get_current_user, get_current_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["reports"])
 
@@ -433,17 +436,47 @@ async def cancel_subscription(agency_id: str, user=Depends(get_current_user)):
 
 @router.post("/billing/topup")
 async def topup_credits(data: dict, user=Depends(get_current_user)):
-    """Manual top-up: purchase a new credit pack. Remaining credits carry over."""
+    """Manual top-up: purchase a new credit pack. Also tops up £ balance with tier discount."""
     from app.services.billing import BillingService
+    from app.services.balance_billing import BalanceBillingService
     agency_id = data.get("agency_id")
     if agency_id == "me":
         agency_id = user["sub"]
     tier = data.get("tier")
     billing_method = data.get("billing_method", "stripe")
-    if not agency_id or not tier:
+    # Support both old format (tier only) and new format (amount + tier_key)
+    amount = data.get("amount")
+    tier_key = data.get("tier_key") or tier
+    if not agency_id and not amount:
         raise HTTPException(status_code=400, detail="agency_id and tier are required")
+    if not agency_id:
+        agency_id = user.get("agency_id") or user.get("id") or user.get("sub")
     try:
-        return BillingService.topup_credits(agency_id, tier, billing_method)
+        # If amount is provided directly (new £ balance topup format)
+        if amount and float(amount) > 0:
+            return BalanceBillingService.topup_balance(
+                agency_id, float(amount), tier_key,
+                payment_method=data.get("payment_method", billing_method or "stripe"),
+            )
+        # Otherwise use existing credit pack flow + top up £ balance
+        if not tier_key:
+            raise HTTPException(status_code=400, detail="tier is required")
+        result = BillingService.topup_credits(agency_id, tier_key, billing_method)
+        # Also top up £ balance using the pack's price from subscription_tier_config
+        try:
+            from app.database import get_db
+            with get_db() as db:
+                db.execute("SELECT monthly_price FROM subscription_tier_config WHERE tier_key=%s", (tier_key,))
+                tier_row = db.fetchone()
+                if tier_row:
+                    pack_price = float(dict(tier_row).get("monthly_price") or 0)
+                    if pack_price > 0:
+                        BalanceBillingService.topup_balance(
+                            agency_id, pack_price, tier_key, payment_method=billing_method or "stripe"
+                        )
+        except Exception as e:
+            logger.warning(f"Failed to top up £ balance alongside credit pack: {e}")
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -820,10 +853,10 @@ async def get_my_balance(user=Depends(get_current_user)):
     return BalanceBillingService.get_agency_balance(agency_id)
 
 
-@router.post("/billing/topup")
+@router.post("/billing/balance-topup")
 async def topup_balance(data: dict, user=Depends(get_current_user)):
-    """Agency endpoint: top up balance with a credit pack."""
-    agency_id = user.get("agency_id") or user.get("id")
+    """Direct balance top-up (admin or API use). For agency pack purchases, use POST /billing/topup."""
+    agency_id = user.get("agency_id") or user.get("id") or user.get("sub")
     amount = data.get("amount")
     tier_key = data.get("tier_key")
     if not amount or float(amount) <= 0:
@@ -850,9 +883,9 @@ async def get_my_transactions(limit: int = 50, transaction_type: str = None, use
 async def get_check_prices(user=Depends(get_current_user)):
     """Get all check prices (gross). Agency can see their discounted price based on tier."""
     from app.services.balance_billing import BalanceBillingService
-    prices = BalanceBillingService.get_check_prices()
-    # Get agency discount
     agency_id = user.get("agency_id") or user.get("id")
+    prices = BalanceBillingService.get_check_prices(agency_id)
+    # Get agency discount
     balance_info = BalanceBillingService.get_agency_balance(agency_id)
     discount_pct = balance_info.get("discount_percent", 0)
     result = []
