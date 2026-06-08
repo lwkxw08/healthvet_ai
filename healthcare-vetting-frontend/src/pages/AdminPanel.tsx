@@ -92,6 +92,10 @@ export default function AdminPanel() {
   };
   const [stats, setStats] = useState<Record<string, unknown> | null>(null);
   const [candidates, setCandidates] = useState<Record<string, unknown>[]>([]);
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [candidateFilterAgency, setCandidateFilterAgency] = useState("");
+  const [candidateFilterProfession, setCandidateFilterProfession] = useState("");
+  const [candidateFilterStatus, setCandidateFilterStatus] = useState("");
   const [alerts, setAlerts] = useState<Record<string, unknown>[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, unknown> | null>(null);
   const [candidateCompliance, setCandidateCompliance] = useState<Record<string, unknown> | null>(null);
@@ -1717,16 +1721,58 @@ export default function AdminPanel() {
         )}
 
         {/* Candidates Tab */}
-        {tab === "candidates" && (
+        {tab === "candidates" && (() => {
+          const filteredCandidates = candidates.filter((c) => {
+            const name = `${String(c.first_name || "")} ${String(c.last_name || "")}`.toLowerCase();
+            if (candidateSearch && !name.includes(candidateSearch.toLowerCase()) && !String(c.email || "").toLowerCase().includes(candidateSearch.toLowerCase())) return false;
+            if (candidateFilterAgency && String(c.agency_name || "") !== candidateFilterAgency) return false;
+            if (candidateFilterProfession && String(c.profession || "") !== candidateFilterProfession) return false;
+            if (candidateFilterStatus && String(c.compliance_status || "") !== candidateFilterStatus) return false;
+            return true;
+          });
+          const uniqueAgencies = [...new Set(candidates.map(c => String(c.agency_name || "")).filter(Boolean))].sort();
+          const uniqueProfessions = [...new Set(candidates.map(c => String(c.profession || "")).filter(Boolean))].sort();
+          const uniqueStatuses = [...new Set(candidates.map(c => String(c.compliance_status || "")).filter(Boolean))].sort();
+          return (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">All Candidates ({candidates.length})</h2>
+              <h2 className="text-xl font-bold text-white">All Candidates ({filteredCandidates.length}{filteredCandidates.length !== candidates.length ? ` / ${candidates.length}` : ""})</h2>
               <button
                 onClick={handlePurgeTestAccounts}
                 className="bg-amber-600 hover:bg-amber-700 text-white text-xs px-4 py-2 rounded-lg font-medium flex items-center gap-2"
               >
                 <Trash2 size={14} /> Purge Test Accounts ({candidates.filter((c) => String(c.email || "").endsWith("@test.viperai")).length})
               </button>
+            </div>
+
+            {/* Search and Filters */}
+            <div className="flex flex-wrap gap-3 items-center">
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={candidateSearch}
+                onChange={(e) => setCandidateSearch(e.target.value)}
+                className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-400 focus:border-blue-500 focus:outline-none w-64"
+              />
+              <select value={candidateFilterAgency} onChange={(e) => setCandidateFilterAgency(e.target.value)}
+                className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Agencies</option>
+                {uniqueAgencies.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <select value={candidateFilterProfession} onChange={(e) => setCandidateFilterProfession(e.target.value)}
+                className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Professions</option>
+                {uniqueProfessions.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select value={candidateFilterStatus} onChange={(e) => setCandidateFilterStatus(e.target.value)}
+                className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Statuses</option>
+                {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              {(candidateSearch || candidateFilterAgency || candidateFilterProfession || candidateFilterStatus) && (
+                <button onClick={() => { setCandidateSearch(""); setCandidateFilterAgency(""); setCandidateFilterProfession(""); setCandidateFilterStatus(""); }}
+                  className="text-xs text-slate-400 hover:text-white border border-slate-600 rounded-lg px-3 py-2">Clear Filters</button>
+              )}
             </div>
 
             {/* Inline Edit Panel */}
@@ -1768,13 +1814,14 @@ export default function AdminPanel() {
             <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
               <table className="w-full min-w-[800px]">
                 <thead><tr className="border-b border-slate-700">
-                  {["Name","Email","Profession","Registration","Score","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
+                  {["Name","Email","Agency","Profession","Registration","Score","Status","Actions"].map(h => <th key={h} className="text-left text-xs text-slate-400 font-medium px-4 py-3">{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {candidates.map((c) => (
+                  {filteredCandidates.map((c) => (
                     <tr key={c.id as string} className={`border-b border-slate-700/50 hover:bg-slate-700/30 ${editingCandidate && String(editingCandidate.id) === String(c.id) ? "bg-blue-500/10" : ""}`}>
                       <td className="px-4 py-3 text-sm text-white">{c.first_name as string} {c.last_name as string}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">{c.email as string}</td>
+                      <td className="px-4 py-3 text-sm text-slate-300">{String(c.agency_name || "—")}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">{(c.profession as string) || "N/A"}</td>
                       <td className="px-4 py-3 text-sm text-slate-300">{c.registration_body as string} {c.registration_number as string}</td>
                       <td className="px-4 py-3"><span className={`text-sm font-bold ${(c.compliance_score as number) >= 95 ? "text-green-400" : (c.compliance_score as number) >= 60 ? "text-amber-400" : "text-red-400"}`}>{Number(c.compliance_score ?? 0).toFixed(1)}%</span></td>
@@ -1801,7 +1848,8 @@ export default function AdminPanel() {
               </table>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Alerts Tab */}
         {tab === "alerts" && (

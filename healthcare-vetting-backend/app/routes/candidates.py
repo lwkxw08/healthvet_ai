@@ -56,7 +56,13 @@ async def list_candidates(current_user: dict = Depends(get_current_user)):
             )
             rows = db.fetchall()
         else:
-            db.execute("SELECT * FROM candidates ORDER BY created_at DESC")
+            db.execute(
+                """SELECT c.*, ag.name AS agency_name, ag.id AS agency_id
+                   FROM candidates c
+                   LEFT JOIN agency_candidates ac ON c.id = ac.candidate_id
+                   LEFT JOIN agencies ag ON ac.agency_id = ag.id
+                   ORDER BY c.created_at DESC"""
+            )
             rows = db.fetchall()
 
         return [dict(r) for r in rows]
