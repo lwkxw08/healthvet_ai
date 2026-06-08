@@ -2907,10 +2907,10 @@ export default function AgencyDashboard() {
                                   {ref.domain_verified != null && (
                                     <div className="text-xs mb-1">Domain verified: {ref.domain_verified ? <span className="text-green-400">Yes</span> : <span className="text-red-400">No — mismatch</span>}</div>
                                   )}
-                                  {ref.fraud_flags && (ref.fraud_flags as unknown[]).length > 0 && (
+                                  {ref.fraud_flags && (ref.fraud_flags as unknown[]).length > 0 ? (
                                     <div className="text-xs text-red-400 mb-1">⚠ Fraud flags: {JSON.stringify(ref.fraud_flags)}</div>
-                                  )}
-                                  {ref.responses && (
+                                  ) : null}
+                                  {ref.responses ? (
                                     <div className="mt-2 bg-slate-900/50 rounded p-2 border border-slate-700">
                                       <div className="text-xs text-slate-300 font-medium mb-1">Full Responses:</div>
                                       {Object.entries(ref.responses as Record<string, unknown>).map(([q, a]) => (
@@ -2919,7 +2919,7 @@ export default function AgencyDashboard() {
                                         </div>
                                       ))}
                                     </div>
-                                  )}
+                                  ) : null}
                                 </div>
                               ))
                             )}
@@ -2940,8 +2940,8 @@ export default function AgencyDashboard() {
                                     </span>
                                   </div>
                                   <div className="text-xs text-slate-400 mb-1">
-                                    {emp.start_date && <span>From: {String(emp.start_date)}</span>}
-                                    {emp.end_date && <span> To: {String(emp.end_date)}</span>}
+                                    {emp.start_date ? <span>From: {String(emp.start_date)}</span> : null}
+                                    {emp.end_date ? <span> To: {String(emp.end_date)}</span> : null}
                                   </div>
                                   <div className="text-xs text-slate-400 mb-1">
                                     Verifier: {String(emp.verifier_name || "N/A")} ({String(emp.verifier_email || "N/A")})
@@ -2949,10 +2949,10 @@ export default function AgencyDashboard() {
                                   {emp.verification_sentiment != null && (
                                     <div className="text-xs mb-1">Sentiment: <span className="font-medium">{String(emp.verification_sentiment)}/10</span></div>
                                   )}
-                                  {emp.verification_fraud_flags && (emp.verification_fraud_flags as unknown[]).length > 0 && (
+                                  {emp.verification_fraud_flags && (emp.verification_fraud_flags as unknown[]).length > 0 ? (
                                     <div className="text-xs text-red-400 mb-1">⚠ Fraud flags: {JSON.stringify(emp.verification_fraud_flags)}</div>
-                                  )}
-                                  {emp.verification_responses && (
+                                  ) : null}
+                                  {emp.verification_responses ? (
                                     <div className="mt-2 bg-slate-900/50 rounded p-2 border border-slate-700">
                                       <div className="text-xs text-slate-300 font-medium mb-1">Full Verification Responses:</div>
                                       {Object.entries(emp.verification_responses as Record<string, unknown>).map(([q, a]) => (
@@ -2961,7 +2961,7 @@ export default function AgencyDashboard() {
                                         </div>
                                       ))}
                                     </div>
-                                  )}
+                                  ) : null}
                                 </div>
                               ))
                             )}
