@@ -1094,6 +1094,14 @@ def migrate_db():
     _add_column_if_missing(cursor, "candidate_submissions", "phase2_decision_at", "TEXT")
     _add_column_if_missing(cursor, "candidate_submissions", "phase2_decision_by", "TEXT")
 
+    # -- Staged Workflow: employment_history verification columns --
+    _add_column_if_missing(cursor, "employment_history", "verification_status", "TEXT")
+    _add_column_if_missing(cursor, "employment_history", "verification_responses", "TEXT")
+    _add_column_if_missing(cursor, "employment_history", "verification_fraud_flags", "TEXT")
+    _add_column_if_missing(cursor, "employment_history", "verification_sentiment", "REAL")
+    _add_column_if_missing(cursor, "employment_history", "verified_at", "TEXT")
+    _add_column_if_missing(cursor, "employment_history", "verification_sent_at", "TEXT")
+
     # -- £ Balance Billing: agency balance and discount --
     _add_column_if_missing(cursor, "agencies", "balance_amount", "REAL DEFAULT 0")
     _add_column_if_missing(cursor, "agencies", "total_topup_amount", "REAL DEFAULT 0")
