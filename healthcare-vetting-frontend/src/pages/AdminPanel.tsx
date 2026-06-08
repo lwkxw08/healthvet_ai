@@ -2348,7 +2348,7 @@ export default function AdminPanel() {
                             {(tier.monthly_checks || 0) >= 999999 ? "Unlimited credits" : `${tier.monthly_checks || 0} credits per pack`}
                           </p>
                           {Number((tier as Record<string, unknown>).discount_percent || 0) > 0 && (
-                            <p className="text-green-300 text-xs mb-1 font-medium">Discount: {(tier as Record<string, unknown>).discount_percent}% off all checks</p>
+                            <p className="text-green-300 text-xs mb-1 font-medium">Discount: {String((tier as Record<string, unknown>).discount_percent)}% off all checks</p>
                           )}
                           {(tier.overage_rate || 0) > 0 && (
                             <p className="text-amber-400 text-xs mb-1">Overage: £{tier.overage_rate}/credit</p>
