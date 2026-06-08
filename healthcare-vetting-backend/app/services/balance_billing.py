@@ -4,9 +4,7 @@ Agencies prepay funds onto their account and are charged per-check at discounted
 Discount percentage is determined by the credit pack tier they purchased.
 Admin reports show ACTUAL revenue (amount paid in) vs amount consumed.
 """
-import json
 from datetime import datetime, timezone
-from typing import Optional
 from app.database import get_db
 from app.utils.auth import generate_id
 

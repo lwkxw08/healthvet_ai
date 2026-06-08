@@ -255,8 +255,6 @@ class TriggerEngine:
     def process_phase2(submission_id: str) -> dict:
         """Process phase 2 of a staged submission — fires all remaining checks
         (identity, RTW, DBS, CV, registration, training) after agency approves."""
-        now = datetime.now(timezone.utc).isoformat()
-
         with get_db() as db:
             db.execute(
                 "SELECT * FROM candidate_submissions WHERE id=%s", (submission_id,)
