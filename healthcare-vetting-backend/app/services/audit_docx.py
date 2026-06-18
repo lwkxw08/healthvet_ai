@@ -5,7 +5,6 @@ Generates audit reports in the branded VIPER template layout matching the
 provided VIPER_Enterprise_Audit_Report_sample.docx exactly.
 """
 import io
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from docx import Document
@@ -226,7 +225,7 @@ def generate_candidate_audit_docx(candidate_id: str) -> bytes:
     doc.add_page_break()
 
     # ── CANDIDATE SUMMARY TABLE ─────────────────────────────────
-    candidate_name = f"{_s(c.get('first_name'), '')} {_s(c.get('last_name'), '')}"
+    _candidate_name = f"{_s(c.get('first_name'), '')} {_s(c.get('last_name'), '')}"
     compliance_status = _s(comp.get("overall_status"), "incomplete").upper()
     cqc_ready = "YES" if comp.get("cqc_ready") else "NO"
     risk_level = "LOW" if comp.get("cqc_ready") else "MEDIUM"
