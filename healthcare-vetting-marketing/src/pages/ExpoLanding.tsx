@@ -3,7 +3,7 @@
  *
  * Custom landing page for prospects who scan a QR code at an expo.
  * Features: platform overview, industry benefits, video placeholder,
- * free first use case offer, and contact form.
+ * free first candidate vetting check offer, and contact form.
  */
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -98,7 +98,7 @@ export default function ExpoLanding() {
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/20 text-blue-200 px-5 py-2 text-sm font-medium mb-8 border border-blue-400/20">
-            <Gift size={16} /> Exclusive Expo Offer — First Use Case Free
+            <Gift size={16} /> Exclusive Expo Offer — First Candidate Vetting Check Free
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight tracking-tight max-w-4xl mx-auto">
@@ -316,11 +316,11 @@ export default function ExpoLanding() {
             <Gift size={16} /> Exclusive Expo Offer
           </div>
           <h2 className="text-3xl sm:text-4xl font-bold text-white">
-            Your First Use Case — Completely Free
+            Your First Candidate Vetting Check — Completely Free
           </h2>
           <p className="mt-4 text-lg text-emerald-50/80 max-w-2xl mx-auto">
             Experience the full power of Viper AI with no commitment. We&apos;ll set up a bespoke check template
-            matched to your exact industry requirements, and you can run your first batch of candidates
+            matched to your exact industry requirements, and you can run your first candidate vetting check
             at no cost.
           </p>
           <a href="#contact" className="mt-8 inline-flex items-center gap-2 rounded-xl bg-white px-8 py-4 text-lg font-semibold text-emerald-700 shadow-lg hover:bg-emerald-50 transition-colors">
@@ -371,7 +371,7 @@ export default function ExpoLanding() {
               </h2>
               <p className="mt-4 text-lg text-slate-600 leading-relaxed">
                 Tell us about your industry and requirements. We&apos;ll configure a custom check template
-                tailored to your exact needs — and your first use case is on us.
+                tailored to your exact needs — and your first candidate vetting check is on us.
               </p>
 
               <div className="mt-10 space-y-6">
@@ -413,7 +413,7 @@ export default function ExpoLanding() {
                   </div>
                   <p className="text-sm text-emerald-600">
                     Mention this expo offer and we&apos;ll set up your template and run your
-                    first batch of candidates completely free of charge.
+                    first candidate vetting check completely free of charge.
                   </p>
                 </div>
               </div>
@@ -480,10 +480,10 @@ export default function ExpoLanding() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Team Size</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Number of Checks Per Month</label>
                       <select value={formData.team_size} onChange={e => setFormData(f => ({ ...f, team_size: e.target.value }))}
                         className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                        <option value="">How many candidates per month?</option>
+                        <option value="">How many checks per month?</option>
                         <option>1-25</option>
                         <option>26-50</option>
                         <option>51-200</option>
