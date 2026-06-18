@@ -317,7 +317,7 @@ export default function QRCodesPanel() {
                 <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Email</th>
                 <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Company</th>
                 <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Industry</th>
-                <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Team Size</th>
+                <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Checks/Month</th>
                 <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">QR Source</th>
                 <th className="text-left text-xs text-slate-400 font-medium px-4 py-3">Date</th>
               </tr>
