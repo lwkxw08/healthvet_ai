@@ -8,8 +8,10 @@ import { useAuth } from "../context/AuthContext";
 import { qrApi } from "../api/client";
 import {
   QrCode, Plus, Trash2, BarChart3, Users, Eye,
-  Copy, ExternalLink, TrendingUp,
+  Copy, ExternalLink, TrendingUp, Download, X,
 } from "lucide-react";
+
+const API_URL = import.meta.env.VITE_API_URL || "https://api.viperai.io";
 
 const MARKETING_URL = import.meta.env.VITE_MARKETING_URL || "https://viperai.io";
 
@@ -23,6 +25,7 @@ export default function QRCodesPanel() {
   const [newEvent, setNewEvent] = useState("");
   const [creating, setCreating] = useState(false);
   const [activeView, setActiveView] = useState<"codes" | "analytics" | "leads">("codes");
+  const [showQrImage, setShowQrImage] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!token) return;
@@ -67,6 +70,16 @@ export default function QRCodesPanel() {
   const copyUrl = (code: string) => {
     const url = `${MARKETING_URL}/expo?qr=${code}`;
     navigator.clipboard.writeText(url);
+  };
+
+  const downloadQrImage = (code: string, name: string) => {
+    const url = `${API_URL}/api/qr/codes/${code}/qr-image`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `QR-${name.replace(/\s+/g, "-")}-${code}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const recentLeads = (analytics?.recent_leads ?? []) as Record<string, unknown>[];
@@ -194,6 +207,10 @@ export default function QRCodesPanel() {
                     <td className="px-4 py-3 text-xs text-slate-400">{String(c.created_at || "").slice(0, 10)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
+                        <button onClick={() => setShowQrImage(code)} title="View QR Code"
+                          className="text-slate-400 hover:text-white"><QrCode size={14} /></button>
+                        <button onClick={() => downloadQrImage(code, String(c.name || ""))} title="Download QR Code"
+                          className="text-slate-400 hover:text-green-400"><Download size={14} /></button>
                         <button onClick={() => copyUrl(code)} title="Copy landing page URL"
                           className="text-slate-400 hover:text-blue-400"><Copy size={14} /></button>
                         <a href={landingUrl} target="_blank" rel="noopener noreferrer" title="Open landing page"
@@ -263,6 +280,34 @@ export default function QRCodesPanel() {
       )}
 
       {/* Expo Leads */}
+      {/* QR Code Image Modal */}
+      {showQrImage && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setShowQrImage(null)}>
+          <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-md font-semibold text-white">QR Code: {showQrImage}</h3>
+              <button onClick={() => setShowQrImage(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="bg-white rounded-lg p-4 flex justify-center">
+              <img src={`${API_URL}/api/qr/codes/${showQrImage}/qr-image`} alt="QR Code" className="w-64 h-64" />
+            </div>
+            <p className="text-xs text-slate-400 text-center mt-3">
+              Scan this QR code with a phone camera to open the expo landing page
+            </p>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => downloadQrImage(showQrImage, showQrImage)}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                <Download size={14} /> Download PNG
+              </button>
+              <button onClick={() => { copyUrl(showQrImage); }}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                <Copy size={14} /> Copy URL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeView === "leads" && (
         <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-x-auto">
           <table className="w-full min-w-[800px]">
