@@ -239,15 +239,15 @@ export default function QRCodesPanel() {
               <h3 className="text-md font-semibold text-white mb-4 flex items-center gap-2">
                 <BarChart3 size={18} className="text-blue-400" /> Daily Scans (Last 30 Days)
               </h3>
-              <div className="flex items-end gap-1 h-32">
+              <div className="flex items-end gap-1" style={{ height: 128 }}>
                 {dailyScans.slice(0, 30).reverse().map((d, i) => {
                   const count = Number(d.count || 0);
                   const maxCount = Math.max(...dailyScans.map(x => Number(x.count || 0)), 1);
-                  const height = Math.max(4, (count / maxCount) * 100);
+                  const barH = Math.max(6, Math.round((count / maxCount) * 120));
                   return (
-                    <div key={i} className="flex-1 min-w-[8px] group relative">
-                      <div className="bg-blue-500 hover:bg-blue-400 rounded-t transition-all"
-                        style={{ height: `${height}%` }} />
+                    <div key={i} className="flex-1 min-w-[8px] group relative flex items-end" style={{ height: 128 }}>
+                      <div className="w-full bg-blue-500 hover:bg-blue-400 rounded-t transition-all"
+                        style={{ height: barH }} />
                       <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-700 text-white text-xs px-2 py-1 rounded mb-1 whitespace-nowrap z-10">
                         {String(d.scan_date || "")}: {count} scan{count !== 1 ? "s" : ""}
                       </div>
