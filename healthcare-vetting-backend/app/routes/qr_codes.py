@@ -198,10 +198,10 @@ async def get_qr_analytics(user=Depends(get_current_admin)):
 
         # Daily scan counts (last 30 days)
         db.execute(
-            """SELECT DATE(scanned_at) as scan_date, COUNT(*) as count
+            """SELECT LEFT(scanned_at, 10) as scan_date, COUNT(*) as count
                FROM qr_scans
-               WHERE scanned_at >= (NOW() - INTERVAL '30 days')::text
-               GROUP BY DATE(scanned_at)
+               WHERE scanned_at >= to_char(NOW() - INTERVAL '30 days', 'YYYY-MM-DD')
+               GROUP BY LEFT(scanned_at, 10)
                ORDER BY scan_date DESC"""
         )
         daily_scans = [dict(r) for r in db.fetchall()]
