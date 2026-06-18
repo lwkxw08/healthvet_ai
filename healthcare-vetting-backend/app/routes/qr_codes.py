@@ -4,9 +4,11 @@ QR Code Management & Expo Lead Generation Routes
 Create QR codes for expos, track scans, capture leads via landing page contact forms,
 and view analytics in the admin dashboard.
 """
+import io
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 
@@ -127,10 +129,32 @@ async def create_qr_code(data: QRCodeCreate, user=Depends(get_current_admin)):
 
 @router.delete("/codes/{qr_id}")
 async def delete_qr_code(qr_id: str, user=Depends(get_current_admin)):
-    """Delete a QR code."""
+    """Delete a QR code and all related scans/leads."""
     with get_db() as db:
+        db.execute("DELETE FROM qr_scans WHERE qr_code_id=%s", (qr_id,))
+        db.execute("DELETE FROM expo_leads WHERE qr_code_id=%s", (qr_id,))
         db.execute("DELETE FROM qr_codes WHERE id=%s", (qr_id,))
     return {"status": "deleted"}
+
+
+@router.get("/codes/{code}/qr-image")
+async def get_qr_image(code: str):
+    """Generate a scannable QR code PNG image for the given code."""
+    import qrcode
+
+    marketing_url = "https://viperai.io"
+    landing_url = f"{marketing_url}/expo?qr={code}"
+
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
+    qr.add_data(landing_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#17365D", back_color="white")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png",
+                             headers={"Content-Disposition": f"inline; filename=qr-{code}.png"})
 
 
 @router.get("/analytics")
