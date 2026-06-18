@@ -655,6 +655,10 @@ export const reportsApi = {
     const headers: Record<string, string> = { "X-Auth-Token": token };
     return fetch(`${API_URL}/api/audit/candidate/${candidateId}`, { headers });
   },
+  downloadCandidateAuditDocx: (token: string, candidateId: string) => {
+    const headers: Record<string, string> = { "X-Auth-Token": token };
+    return fetch(`${API_URL}/api/audit/candidate/${candidateId}/docx`, { headers });
+  },
   downloadAgencyAudit: (token: string, agencyId: string) => {
     const headers: Record<string, string> = { "X-Auth-Token": token };
     return fetch(`${API_URL}/api/audit/agency/${agencyId}`, { headers });
@@ -1268,4 +1272,16 @@ export const balanceBillingApi = {
     apiRequest<Record<string, unknown>>("/api/admin/financial/all-agencies", { token }),
   updateTierDiscount: (token: string, tierKey: string, discountPercent: number) =>
     apiRequest<Record<string, unknown>>(`/api/admin/tiers/${tierKey}/discount`, { method: "PUT", body: { discount_percent: discountPercent }, token }),
+};
+
+// QR Code Management API
+export const qrApi = {
+  listCodes: (token: string) =>
+    apiRequest<Record<string, unknown>[]>("/api/qr/codes", { token }),
+  createCode: (token: string, data: { name: string; campaign?: string; event_name?: string }) =>
+    apiRequest<Record<string, unknown>>("/api/qr/codes", { method: "POST", body: data, token }),
+  deleteCode: (token: string, qrId: string) =>
+    apiRequest<Record<string, unknown>>(`/api/qr/codes/${qrId}`, { method: "DELETE", token }),
+  getAnalytics: (token: string) =>
+    apiRequest<Record<string, unknown>>("/api/qr/analytics", { token }),
 };
