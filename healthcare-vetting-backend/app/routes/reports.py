@@ -37,6 +37,23 @@ async def generate_candidate_audit_pack(candidate_id: str, user=Depends(get_curr
         raise HTTPException(status_code=500, detail=f"Failed to generate audit pack: {str(e)}")
 
 
+@router.get("/audit/candidate/{candidate_id}/docx")
+async def generate_candidate_audit_docx(candidate_id: str, user=Depends(get_current_user)):
+    """Generate a CQC audit report DOCX (VIPER Enterprise template) for a candidate."""
+    from app.services.audit_docx import generate_candidate_audit_docx
+    try:
+        docx_bytes = generate_candidate_audit_docx(candidate_id)
+        return StreamingResponse(
+            io.BytesIO(docx_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename=VIPER_Audit_Report_{candidate_id[:8]}.docx"},
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate DOCX audit: {str(e)}")
+
+
 @router.get("/audit/agency/{agency_id}")
 async def generate_agency_audit_pack(agency_id: str, user=Depends(get_current_user)):
     """Generate an agency-wide audit summary PDF."""

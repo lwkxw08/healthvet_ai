@@ -61,6 +61,7 @@ from app.routes import trustid
 from app.routes import sms
 from app.routes import training_catalogue
 from app.routes import websocket as ws_routes
+from app.routes import qr_codes
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
 from app.middleware.agency_scope import AgencyScopeMiddleware
@@ -150,6 +151,7 @@ app.include_router(trustid.router)
 app.include_router(sms.router)
 app.include_router(training_catalogue.router)
 app.include_router(ws_routes.router)
+app.include_router(qr_codes.router)
 
 
 @app.on_event("startup")

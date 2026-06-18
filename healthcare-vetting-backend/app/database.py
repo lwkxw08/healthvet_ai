@@ -2121,5 +2121,48 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_dbs_consent_candidate ON dbs_consent_records(candidate_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_dbs_consent_agency ON dbs_consent_records(agency_id)")
 
+    # ── QR Codes & Expo Lead Generation ────────────────────────────
+    if not _table_exists(cursor, "qr_codes"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS qr_codes (
+            id TEXT PRIMARY KEY,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            campaign TEXT,
+            event_name TEXT,
+            redirect_url TEXT,
+            scan_count INTEGER DEFAULT 0,
+            lead_count INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (NOW()::text)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_codes_code ON qr_codes(code)")
+
+    if not _table_exists(cursor, "qr_scans"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS qr_scans (
+            id TEXT PRIMARY KEY,
+            qr_code_id TEXT NOT NULL REFERENCES qr_codes(id),
+            ip_address TEXT,
+            user_agent TEXT,
+            referer TEXT,
+            scanned_at TEXT DEFAULT (NOW()::text)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_scans_qr_code ON qr_scans(qr_code_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_scans_date ON qr_scans(scanned_at)")
+
+    if not _table_exists(cursor, "expo_leads"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS expo_leads (
+            id TEXT PRIMARY KEY,
+            qr_code_id TEXT REFERENCES qr_codes(id),
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            company TEXT NOT NULL,
+            phone TEXT,
+            industry TEXT,
+            team_size TEXT,
+            message TEXT,
+            created_at TEXT DEFAULT (NOW()::text)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_expo_leads_qr ON expo_leads(qr_code_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_expo_leads_email ON expo_leads(email)")
+
     conn.commit()
     _return_connection(conn)

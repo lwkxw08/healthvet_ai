@@ -4,6 +4,7 @@ import { candidatesApi, complianceApi, monitoringApi, dashboardApi, adminApi, ad
 import NotificationBell from "../components/NotificationBell";
 import { fmtDate } from "../lib/utils";
 import LeadGenerationPanel from "./LeadGenerationPanel";
+import QRCodesPanel from "./QRCodesPanel";
 import SubscriptionPlansPanel from "./SubscriptionPlansPanel";
 import TrainingMatrixPanel from "./TrainingMatrixPanel";
 import EmailTemplatesPanel from "./EmailTemplatesPanel";
@@ -61,7 +62,10 @@ export default function AdminPanel() {
       if (subTab === "overrides") return "overrides";
       return "user-management";
     }
-    if (mainTab === "lead-generation") return "lead-generation";
+    if (mainTab === "lead-generation") {
+      if (subTab === "qr-codes") return "qr-codes";
+      return "lead-generation";
+    }
     if (mainTab === "trustid-queue") return "trustid-queue";
     if (mainTab === "operations") {
       if (subTab === "analytics-dashboard") return "analytics-dashboard";
@@ -1418,6 +1422,18 @@ export default function AdminPanel() {
           </div>
         </div>
       )}
+      {mainTab === "lead-generation" && (
+        <div className="bg-slate-800/30 border-b border-slate-700/50 px-4 sm:px-6">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+            {[{ key: "scrape", label: "Lead Scraping" }, { key: "qr-codes", label: "QR Codes & Expo" }].map((s) => (
+              <button key={s.key} onClick={() => setSubTab(s.key)}
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${subTab === s.key ? "text-blue-300 border-blue-400" : "text-slate-500 border-transparent hover:text-slate-300"}`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {mainTab === "operations" && (
         <div className="bg-slate-800/30 border-b border-slate-700/50 px-4 sm:px-6">
           <div className="flex gap-1 overflow-x-auto scrollbar-hide">
@@ -1434,6 +1450,9 @@ export default function AdminPanel() {
       <main className="p-4 sm:p-6">
         {/* Lead Generation Tab */}
         {tab === "lead-generation" && <LeadGenerationPanel />}
+
+        {/* QR Codes & Expo Tab */}
+        {tab === "qr-codes" && <QRCodesPanel />}
 
         {/* Industry Plans Sub-tab under Settings */}
         {mainTab === "settings" && subTab === "industry-plans" && <SubscriptionPlansPanel />}

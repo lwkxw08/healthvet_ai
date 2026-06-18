@@ -614,6 +614,20 @@ export default function AgencyDashboard() {
     finally { setDownloadingSingleAudit(""); }
   };
 
+  const downloadCandidateAuditDocx = async (candidateId: string) => {
+    if (!token) return;
+    setDownloadingSingleAudit(candidateId + "_docx");
+    try {
+      const resp = await reportsApi.downloadCandidateAuditDocx(token, candidateId);
+      if (!resp.ok) { const e = await resp.json().catch(() => null); throw new Error(e?.detail || "Failed to generate DOCX audit"); }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `VIPER_Audit_Report_${candidateId}.docx`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { alert(err instanceof Error ? err.message : "Download failed"); }
+    finally { setDownloadingSingleAudit(""); }
+  };
+
   const downloadBulkCandidateAudit = async () => {
     if (!token || selectedAuditCandidates.length === 0) return;
     setDownloadingBulkAudit(true);
@@ -1646,10 +1660,16 @@ export default function AgencyDashboard() {
                         <td className="px-4 py-3"><StatusBadge status={String(c.compliance_status || "incomplete")} /></td>
                         <td className="px-4 py-3 text-sm font-medium text-white">{Number(c.compliance_score || 0).toFixed(1)}%</td>
                         <td className="px-4 py-3">
-                          <button onClick={() => downloadCandidateAudit(cId)} disabled={downloadingSingleAudit === cId}
-                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
-                            <Download size={12} /> {downloadingSingleAudit === cId ? "Downloading..." : "Individual Audit"}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => downloadCandidateAudit(cId)} disabled={downloadingSingleAudit === cId}
+                              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                              <Download size={12} /> {downloadingSingleAudit === cId ? "..." : "PDF"}
+                            </button>
+                            <button onClick={() => downloadCandidateAuditDocx(cId)} disabled={downloadingSingleAudit === cId + "_docx"}
+                              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
+                              <Download size={12} /> {downloadingSingleAudit === cId + "_docx" ? "..." : "DOCX"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
