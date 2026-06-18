@@ -109,8 +109,8 @@ export default function ExpoLanding() {
           </h1>
 
           <p className="mt-6 text-lg sm:text-xl text-blue-100/80 leading-relaxed max-w-2xl mx-auto">
-            Viper AI replaces manual background checks, reference chasing, and compliance spreadsheets
-            with one intelligent platform — built for any regulated industry.
+            Viper AI empowers your compliance team by automating background checks, reference chasing,
+            and compliance tracking — so your people can focus on what matters most. Built for any regulated industry.
           </p>
 
           <div className="mt-10 flex flex-wrap justify-center gap-4">
