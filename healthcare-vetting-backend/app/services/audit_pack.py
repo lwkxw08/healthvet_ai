@@ -6,15 +6,26 @@ compliance files, timestamped logs, verification evidence, and scoring history.
 import json
 import io
 from datetime import datetime, timezone
+from pathlib import Path
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    PageBreak, HRFlowable
+    PageBreak, HRFlowable, Image
 )
 from app.database import get_db
+
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+LOGO_PATH = ASSETS_DIR / "viper-logo.png"
+COVER_PATH = ASSETS_DIR / "viper-cover.png"
+
+# VIPER brand colours
+BRAND_NAVY = colors.HexColor('#17365D')
+BRAND_HEADING = colors.HexColor('#365F91')
+BRAND_TABLE_HDR = colors.HexColor('#1E3A5F')
+BRAND_ROW_ALT = colors.HexColor('#F0F4F8')
 
 
 def _s(val, default="N/A"):
@@ -119,38 +130,91 @@ class AuditPackService:
 
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle('Title2', parent=styles['Title'],
-                                      fontSize=20, textColor=colors.HexColor('#1e3a5f'))
+                                      fontSize=22, textColor=BRAND_NAVY)
         heading_style = ParagraphStyle('Heading2a', parent=styles['Heading2'],
-                                        textColor=colors.HexColor('#1e3a5f'),
+                                        textColor=BRAND_HEADING,
                                         spaceAfter=6)
-        _subheading_style = ParagraphStyle('Heading3a', parent=styles['Heading3'],  # noqa: F841
-                                            textColor=colors.HexColor('#2d5f8a'))
         normal_style = styles['Normal']
         small_style = ParagraphStyle('Small', parent=normal_style, fontSize=8,
                                       textColor=colors.grey)
 
         elements = []
 
-        # Cover page
-        elements.append(Spacer(1, 30*mm))
-        elements.append(Paragraph("Viper AI", title_style))
+        # ── COVER PAGE ─────────────────────────────────────────
+        if LOGO_PATH.exists():
+            elements.append(Image(str(LOGO_PATH), width=65*mm, height=65*mm))
         elements.append(Spacer(1, 5*mm))
-        elements.append(Paragraph("CQC Compliance Audit Pack", heading_style))
+        if COVER_PATH.exists():
+            elements.append(Image(str(COVER_PATH), width=130*mm, height=80*mm))
         elements.append(Spacer(1, 10*mm))
-        elements.append(HRFlowable(width="80%", color=colors.HexColor('#1e3a5f')))
-        elements.append(Spacer(1, 10*mm))
+        elements.append(Paragraph("CQC COMPLIANCE AUDIT REPORT", title_style))
+        elements.append(Spacer(1, 3*mm))
+        elements.append(Paragraph(
+            "Enterprise Compliance Report",
+            ParagraphStyle('SubTitle', parent=styles['Normal'], fontSize=12,
+                           textColor=BRAND_HEADING, alignment=1),
+        ))
+        elements.append(Spacer(1, 3*mm))
+        elements.append(Paragraph(
+            "Confidential",
+            ParagraphStyle('Conf', parent=styles['Normal'], fontSize=10,
+                           textColor=colors.grey, alignment=1),
+        ))
+        elements.append(PageBreak())
 
-        # Candidate info table
-        candidate_name = f"{_s(c.get('first_name'), '')} {_s(c.get('last_name'), '')}"
+        # ── PAGE 2: COMPLIANCE SCORE + CANDIDATE DETAILS ──────
         comp = dict(compliance) if compliance else {}
+        candidate_name = f"{_s(c.get('first_name'), '')} {_s(c.get('last_name'), '')}"
+        compliance_status = _s(comp.get("overall_status"), "incomplete").upper()
+        cqc_ready = "YES" if comp.get("cqc_ready") else "NO"
+        risk_level = "LOW" if comp.get("cqc_ready") else "MEDIUM"
+        score = _n(comp.get("score"))
+
+        # Compliance score heading
+        elements.append(Paragraph(
+            f"Compliance Score: {score:.0f}% ({risk_level} RISK)",
+            ParagraphStyle('ScoreHead', parent=styles['Normal'], fontSize=14,
+                           textColor=BRAND_NAVY, alignment=1,
+                           spaceAfter=6, fontName='Helvetica-Bold'),
+        ))
+
+        # Section summary table
+        section_checks = [
+            ["Section", "Status"],
+            ["Identity Verification", "\u25A0 Compliant" if identity else "\u25A0 Pending"],
+            ["Right to Work", "\u25A0 Verified" if rtw else "\u25A0 Pending"],
+            ["DBS Check", "\u25A0 Clear" if dbs else "\u25A0 Pending"],
+            ["Fraud Detection", "\u25A0 Low Risk" if cv else "\u25A0 Pending"],
+        ]
+        st = Table(section_checks, colWidths=[80*mm, 80*mm])
+        st.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), BRAND_TABLE_HDR),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, BRAND_ROW_ALT]),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(st)
+        elements.append(Spacer(1, 2*mm))
+        elements.append(Paragraph(
+            "This report is generated by VIPER AI and provides real-time audit-ready compliance intelligence.",
+            ParagraphStyle('Disc', parent=small_style, alignment=1),
+        ))
+        elements.append(Spacer(1, 8*mm))
+
+        # Candidate details table
         info_data = [
-            ["Candidate Name:", candidate_name],
+            ["Candidate ID:", candidate_id[:12] + "..."],
+            ["Name:", candidate_name],
             ["Email:", _s(c.get("email"))],
             ["Profession:", _s(c.get("profession"))],
             ["Registration:", f"{_s(c.get('registration_body'))} - {_s(c.get('registration_number'))}"],
-            ["Compliance Score:", f"{_n(comp.get('score')):.0f}%"],
-            ["Compliance Status:", _s(comp.get("overall_status"), "incomplete").upper()],
-            ["CQC Ready:", "YES" if comp.get("cqc_ready") else "NO"],
+            ["Compliance Status:", compliance_status],
+            ["CQC Ready:", cqc_ready],
+            ["Risk Level:", risk_level],
             ["Report Generated:", datetime.now(timezone.utc).strftime("%d %B %Y at %H:%M UTC")],
         ]
         info_table = Table(info_data, colWidths=[45*mm, 120*mm])
@@ -655,19 +719,26 @@ class AuditPackService:
 
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle('Title2', parent=styles['Title'],
-                                      fontSize=20, textColor=colors.HexColor('#1e3a5f'))
+                                      fontSize=22, textColor=BRAND_NAVY)
         heading_style = ParagraphStyle('Heading2a', parent=styles['Heading2'],
-                                        textColor=colors.HexColor('#1e3a5f'))
+                                        textColor=BRAND_HEADING)
         normal_style = styles['Normal']
         small_style = ParagraphStyle('Small', parent=normal_style, fontSize=8,
                                       textColor=colors.grey)
 
         elements = []
-        elements.append(Spacer(1, 20*mm))
-        elements.append(Paragraph("Viper AI", title_style))
-        elements.append(Paragraph("Agency Compliance Summary", heading_style))
+        if LOGO_PATH.exists():
+            elements.append(Image(str(LOGO_PATH), width=50*mm, height=50*mm))
+        elements.append(Spacer(1, 5*mm))
+        elements.append(Paragraph("Agency Compliance Summary", title_style))
+        elements.append(Spacer(1, 5*mm))
+        elements.append(Paragraph(
+            "Enterprise Compliance Report",
+            ParagraphStyle('SubT2', parent=styles['Normal'], fontSize=12,
+                           textColor=BRAND_HEADING, alignment=1),
+        ))
         elements.append(Spacer(1, 10*mm))
-        elements.append(HRFlowable(width="80%", color=colors.HexColor('#1e3a5f')))
+        elements.append(HRFlowable(width="80%", color=BRAND_NAVY))
         elements.append(Spacer(1, 10*mm))
 
         info_data = [
