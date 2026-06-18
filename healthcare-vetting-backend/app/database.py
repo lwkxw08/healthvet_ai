@@ -1,56 +1,108 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
+import psycopg2.pool
 import os
 from contextlib import contextmanager
 
-# Use /data/app.db for persistent storage in deployment, local otherwise
-DB_PATH = os.environ.get("DATABASE_PATH", "/data/app.db" if os.path.isdir("/data") else "app.db")
+# PostgreSQL connection via DATABASE_URL (Railway provides this)
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://healthvet:healthvet@localhost:5432/healthvet_db",
+)
+# Railway uses postgres:// but psycopg2 requires postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Connection pool for efficiency
+_pool = None
 
 
-def get_db_path():
-    return DB_PATH
+def _get_pool():
+    global _pool
+    if _pool is None:
+        _pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=DATABASE_URL,
+        )
+    return _pool
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    pool = _get_pool()
+    conn = pool.getconn()
+    conn.autocommit = False
     return conn
+
+
+def _return_connection(conn):
+    try:
+        _get_pool().putconn(conn)
+    except Exception:
+        pass
 
 
 @contextmanager
 def get_db():
+    """Yield a *cursor* (RealDictCursor) with auto-commit/rollback.
+
+    The old SQLite version yielded a connection whose .execute() returned a
+    cursor-like object.  psycopg2 connections also have .execute() but the
+    semantics differ.  By yielding a cursor directly every call-site that does
+    ``db.execute(…)`` / ``db.fetchone()`` / ``db.fetchall()`` keeps working
+    without changes.
+    """
     conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        yield conn
+        yield cursor
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
-        conn.close()
+        cursor.close()
+        _return_connection(conn)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for migration
+# ---------------------------------------------------------------------------
+
+def _column_exists(cursor, table, column):
+    cursor.execute(
+        "SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+        (table, column),
+    )
+    return cursor.fetchone() is not None
+
+
+def _table_exists(cursor, table):
+    cursor.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = %s AND table_schema = 'public'",
+        (table,),
+    )
+    return cursor.fetchone() is not None
+
+
+def _add_column_if_missing(cursor, table, column, col_type):
+    if not _column_exists(cursor, table, column):
+        cursor.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {col_type}')
 
 
 def migrate_db():
     """Run database migrations for schema changes."""
     conn = get_connection()
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
     cursor = conn.cursor()
     # Add new columns to right_to_work_checks if they don't exist
-    existing_cols = {row[1] for row in cursor.execute("PRAGMA table_info(right_to_work_checks)").fetchall()}
-    new_cols = {
-        "verification_method": "TEXT DEFAULT 'share_code'",
-        "nationality": "TEXT",
-        "document_type": "TEXT",
-        "document_reference": "TEXT",
-        "ni_number": "TEXT",
-    }
-    for col, col_type in new_cols.items():
-        if col not in existing_cols:
-            cursor.execute(f"ALTER TABLE right_to_work_checks ADD COLUMN {col} {col_type}")
+    _add_column_if_missing(cursor, "right_to_work_checks", "verification_method", "TEXT DEFAULT 'share_code'")
+    _add_column_if_missing(cursor, "right_to_work_checks", "nationality", "TEXT")
+    _add_column_if_missing(cursor, "right_to_work_checks", "document_type", "TEXT")
+    _add_column_if_missing(cursor, "right_to_work_checks", "document_reference", "TEXT")
+    _add_column_if_missing(cursor, "right_to_work_checks", "ni_number", "TEXT")
     # Also create new tables if they don't exist (for existing databases)
-    try:
-        cursor.execute("SELECT 1 FROM employment_history LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "employment_history"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS employment_history (
             id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,
@@ -66,12 +118,10 @@ def migrate_db():
             verifier_email TEXT,
             verifier_job_title TEXT,
             source TEXT DEFAULT 'cv_extracted',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         )""")
-    try:
-        cursor.execute("SELECT 1 FROM employment_verifications LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "employment_verifications"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS employment_verifications (
             id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,
@@ -90,15 +140,13 @@ def migrate_db():
             ip_address TEXT,
             domain_verified INTEGER DEFAULT 0,
             reminder_count INTEGER DEFAULT 0,
-            sent_at TEXT DEFAULT (datetime('now')),
+            sent_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id),
             FOREIGN KEY (employment_id) REFERENCES employment_history(id)
         )""")
     # Create agency_invites table if it doesn't exist
-    try:
-        cursor.execute("SELECT 1 FROM agency_invites LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "agency_invites"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS agency_invites (
             id TEXT PRIMARY KEY,
             agency_id TEXT NOT NULL,
@@ -106,36 +154,52 @@ def migrate_db():
             invite_code TEXT UNIQUE NOT NULL,
             status TEXT DEFAULT 'pending',
             candidate_id TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             accepted_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         )""")
     # Add employment_status column to agency_candidates if missing
-    try:
-        existing_ac_cols = {row[1] for row in cursor.execute("PRAGMA table_info(agency_candidates)").fetchall()}
-        if "employment_status" not in existing_ac_cols:
-            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN employment_status TEXT DEFAULT 'vetting'")
-        if "employment_status_updated_at" not in existing_ac_cols:
-            cursor.execute("ALTER TABLE agency_candidates ADD COLUMN employment_status_updated_at TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "agency_candidates", "employment_status", "TEXT DEFAULT 'vetting'")
+    _add_column_if_missing(cursor, "agency_candidates", "employment_status_updated_at", "TEXT")
+    _add_column_if_missing(cursor, "agency_candidates", "annual_monitoring", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_candidates", "vetting_cost_accepted", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_candidates", "monitoring_cost_accepted", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_candidates", "monitoring_started_at", "TEXT")
+    _add_column_if_missing(cursor, "agency_candidates", "monitoring_expires_at", "TEXT")
+    _add_column_if_missing(cursor, "agency_candidates", "monitoring_active", "INTEGER DEFAULT 0")
+    # Add include_monitoring and cost columns to agency_invites if missing
+    _add_column_if_missing(cursor, "agency_invites", "include_monitoring", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_invites", "vetting_cost", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_invites", "monitoring_cost", "REAL DEFAULT 0")
+    # Add missing columns to agencies table
+    _add_column_if_missing(cursor, "agencies", "status", "TEXT DEFAULT 'active'")
+    _add_column_if_missing(cursor, "agencies", "discount_percent", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "billing_mode", "TEXT DEFAULT 'manual_invoicing'")
+    _add_column_if_missing(cursor, "agencies", "stripe_customer_id", "TEXT")
+    _add_column_if_missing(cursor, "agencies", "industry_template_id", "TEXT")
+    # Add adjusted_amount, adjustment_notes, payment_method, stripe_session_id columns to invoices if missing
+    _add_column_if_missing(cursor, "invoices", "adjusted_amount", "REAL")
+    _add_column_if_missing(cursor, "invoices", "adjustment_notes", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "candidate_email", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "payment_method", "TEXT DEFAULT 'manual'")
+    _add_column_if_missing(cursor, "invoices", "stripe_session_id", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "stripe_payment_intent_id", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "due_date", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "reminder_sent_at", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "reminder_count", "INTEGER DEFAULT 0")
     # Create pricing_settings table if it doesn't exist
-    try:
-        cursor.execute("SELECT 1 FROM pricing_settings LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "pricing_settings"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS pricing_settings (
             id TEXT PRIMARY KEY,
             check_type TEXT UNIQUE NOT NULL,
             label TEXT NOT NULL,
             cost_price REAL DEFAULT 0.0,
             sell_price REAL DEFAULT 0.0,
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (NOW()::text)
         )""")
     # Create invoices table if it doesn't exist
-    try:
-        cursor.execute("SELECT 1 FROM invoices LIMIT 1")
-    except Exception:
+    if not _table_exists(cursor, "invoices"):
         cursor.execute("""CREATE TABLE IF NOT EXISTS invoices (
             id TEXT PRIMARY KEY,
             agency_id TEXT NOT NULL,
@@ -145,28 +209,36 @@ def migrate_db():
             cost_amount REAL DEFAULT 0.0,
             sell_amount REAL DEFAULT 0.0,
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             paid_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         )""")
     # Add employment_verified column to compliance_records if missing
-    try:
-        existing_cr_cols = {row[1] for row in cursor.execute("PRAGMA table_info(compliance_records)").fetchall()}
-        if "employment_verified" not in existing_cr_cols:
-            cursor.execute("ALTER TABLE compliance_records ADD COLUMN employment_verified INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "compliance_records", "employment_verified", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "compliance_records", "training_compliant", "INTEGER DEFAULT 0")
     # Add cv_file_name column to cv_analyses if missing
-    try:
-        existing_cv_cols = {row[1] for row in cursor.execute("PRAGMA table_info(cv_analyses)").fetchall()}
-        if "cv_file_name" not in existing_cv_cols:
-            cursor.execute("ALTER TABLE cv_analyses ADD COLUMN cv_file_name TEXT")
-        if "employment_entries" not in existing_cv_cols:
-            cursor.execute("ALTER TABLE cv_analyses ADD COLUMN employment_entries TEXT")
-    except Exception:
-        pass
+    _add_column_if_missing(cursor, "cv_analyses", "cv_file_name", "TEXT")
+    _add_column_if_missing(cursor, "cv_analyses", "employment_entries", "TEXT")
+    # Add monthly_checks and checks_used columns to agency_subscriptions if missing
+    _add_column_if_missing(cursor, "agency_subscriptions", "monthly_checks", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "checks_used", "INTEGER DEFAULT 0")
+    # Add monthly_checks and new columns to subscription_tier_config if missing
+    _add_column_if_missing(cursor, "subscription_tier_config", "monthly_checks", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "overage_rate", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "allow_rollover", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "monitoring_included", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "monitoring_cap", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "monitoring_addon_rate", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "is_active", "INTEGER DEFAULT 1")
+    # Add rollover and credit columns to agency_subscriptions if missing
+    _add_column_if_missing(cursor, "agency_subscriptions", "credits_total", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "credits_used", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "rollover_credits", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "allow_rollover", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "overage_rate", "REAL DEFAULT 0")
     # Seed default pricing if table is empty
-    count = cursor.execute("SELECT COUNT(*) FROM pricing_settings").fetchone()[0]
+    cursor.execute("SELECT COUNT(*) AS cnt FROM pricing_settings")
+    count = cursor.fetchone()["cnt"]
     if count == 0:
         defaults = [
             ("identity", "Identity Verification", 2.0, 15.0),
@@ -181,12 +253,897 @@ def migrate_db():
         for check_type, label, cost, sell in defaults:
             from app.utils.auth import generate_id
             cursor.execute(
-                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s)",
                 (generate_id(), check_type, label, cost, sell),
             )
 
+    # Seed expanded check types (granular DBS variants, etc.) if not already present
+    from app.utils.auth import generate_id as _gid_expand
+    expanded_checks = [
+        ("dbs_standard", "Standard DBS Check", 26.0, 45.0),
+        ("dbs_enhanced", "Enhanced DBS Check", 49.0, 85.0),
+        ("dbs_enhanced_barred", "Enhanced DBS + Barred List", 49.0, 95.0),
+        ("dbs_basic", "Basic DBS Check", 18.0, 30.0),
+        ("dbs_update_service", "DBS Update Service Check", 6.0, 15.0),
+        ("overseas_criminal", "Overseas Criminal Record Check", 20.0, 55.0),
+        ("professional_registration", "Professional Registration (NMC/GMC/HCPC)", 2.0, 15.0),
+        ("fit_to_work", "Fit to Work / Occupational Health", 15.0, 40.0),
+        ("training_verification", "Training Certificate Verification", 1.0, 8.0),
+        ("address_history", "Address History Check (5yr)", 3.0, 12.0),
+        ("sanctions_check", "Sanctions & Barred List Check", 5.0, 20.0),
+    ]
+    for check_type, label, cost, sell in expanded_checks:
+        cursor.execute(
+            "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (check_type) DO NOTHING",
+            (_gid_expand(), check_type, label, cost, sell),
+        )
+
+    # Seed default partial credit rates if table is empty
+    pcr_count = 0
+    if _table_exists(cursor, "partial_credit_rates"):
+        cursor.execute("SELECT COUNT(*) AS cnt FROM partial_credit_rates")
+        pcr_count = cursor.fetchone()["cnt"]
+    if pcr_count == 0:
+        from app.utils.auth import generate_id as _gid
+        pcr_defaults = [
+            ("full_vetting", "Full Vetting", 1.0, 73.50),
+            ("dbs_recheck", "DBS Recheck", 0.5, 41.00),
+            ("rtw_recheck", "Right to Work Recheck", 0.15, 4.00),
+            ("registration_check", "Registration Check Only", 0.10, 2.00),
+            ("reference_recheck", "Reference Re-chase (x1)", 0.12, 7.50),
+            ("training_update", "Training Certificate Update", 0.08, 1.50),
+            ("health_declaration", "Health Declaration Only", 0.05, 0.00),
+            ("monitoring_renewal", "Annual Monitoring Renewal", 0.25, 5.00),
+        ]
+        for ct, lbl, cv, cost in pcr_defaults:
+            cursor.execute(
+                "INSERT INTO partial_credit_rates (id, check_type, label, credit_value, third_party_cost) VALUES (%s, %s, %s, %s, %s)",
+                (_gid(), ct, lbl, cv, cost),
+            )
+
+    # Seed default subscription tier config if table is empty
+    stc_count = 0
+    if _table_exists(cursor, "subscription_tier_config"):
+        cursor.execute("SELECT COUNT(*) AS cnt FROM subscription_tier_config")
+        stc_count = cursor.fetchone()["cnt"]
+    if stc_count == 0:
+        from app.utils.auth import generate_id as _gid2
+        import json as _json
+        # Credit pack model: no monthly recurring charge, credits valid for 12 months
+        stc_defaults = [
+            ("starter", "Starter Pack", 125.0, 0, 99999, 25, 0, 0, 0, 0, 0,
+             _json.dumps(["25 credits", "12-month validity", "Full compliance dashboard", "Email alerts", "Standard support"])),
+            ("standard", "Standard Pack", 225.0, 0, 99999, 50, 0, 0, 0, 0, 0,
+             _json.dumps(["50 credits", "12-month validity", "10% saving per check", "Advanced analytics", "Priority alerts", "CQC audit pack"])),
+            ("professional", "Professional Pack", 400.0, 0, 99999, 100, 0, 0, 0, 0, 0,
+             _json.dumps(["100 credits", "12-month validity", "20% saving per check", "Full analytics suite", "Dedicated account manager", "SLA guarantee"])),
+            ("enterprise", "Enterprise Pack", 875.0, 0, 99999, 250, 0, 0, 0, 0, 0,
+             _json.dumps(["250 credits", "12-month validity", "30% saving per check", "Unlimited monitoring", "Custom integrations", "White-label options", "Dedicated account manager"])),
+        ]
+        for tier_key, name, mp, pwp, mw, mc, ovr, ar, mi, mcap, mar, feats in stc_defaults:
+            cursor.execute(
+                """INSERT INTO subscription_tier_config
+                   (id, tier_key, name, monthly_price, per_worker_price, max_workers, monthly_checks,
+                    overage_rate, allow_rollover, monitoring_included, monitoring_cap, monitoring_addon_rate, features, is_active)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)""",
+                (_gid2(), tier_key, name, mp, pwp, mw, mc, ovr, ar, mi, mcap, mar, feats),
+            )
+
+    # Add industry_template_id column to agencies if missing
+    _add_column_if_missing(cursor, "agencies", "industry_template_id", "TEXT")
+
+    # Add industry_template_id column to agency_sub_accounts if missing
+    _add_column_if_missing(cursor, "agency_sub_accounts", "industry_template_id", "TEXT")
+
+    # Add invited_by_sub_account_id column to agency_candidates if missing
+    _add_column_if_missing(cursor, "agency_candidates", "invited_by_sub_account_id", "TEXT")
+
+    # Add sub_account_id column to agency_invites if missing
+    _add_column_if_missing(cursor, "agency_invites", "sub_account_id", "TEXT")
+
+    # Create industry_templates and seed defaults if needed
+    if not _table_exists(cursor, "industry_templates"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS industry_templates (
+            id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, description TEXT,
+            compliance_label TEXT DEFAULT 'Compliant', compliance_threshold REAL DEFAULT 95.0,
+            is_default INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (NOW()::text), updated_at TEXT
+        )""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS industry_template_checks (
+            id TEXT PRIMARY KEY, template_id TEXT NOT NULL, check_key TEXT NOT NULL,
+            check_label TEXT NOT NULL, is_required INTEGER DEFAULT 1, is_enabled INTEGER DEFAULT 1,
+            weight REAL DEFAULT 10.0, config TEXT DEFAULT '{}', sort_order INTEGER DEFAULT 0,
+            FOREIGN KEY (template_id) REFERENCES industry_templates(id), UNIQUE(template_id, check_key)
+        )""")
+
+    # Seed default industry templates if table is empty
+    tmpl_count = 0
+    if _table_exists(cursor, "industry_templates"):
+        cursor.execute("SELECT COUNT(*) AS cnt FROM industry_templates")
+        tmpl_count = cursor.fetchone()["cnt"]
+    if tmpl_count == 0:
+        from app.utils.auth import generate_id as _tid
+        import json as _tjson
+        _templates = [
+            ("healthcare_cqc", "Healthcare (CQC)", "CQC-regulated healthcare staffing — nurses, care workers, allied health professionals", "CQC Ready", 95.0, 1, [
+                ("identity_verified", "Identity Verification", 1, 1, 13, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 13, _tjson.dumps({"requires_imposter_check": True}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 17, _tjson.dumps({"level": "enhanced_barred", "workforce": "adults"}), 3),
+                ("registration_active", "Professional Registration", 1, 1, 9, _tjson.dumps({"bodies": ["NMC", "GMC", "HCPC", "GPhC", "GOC", "GDC"]}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 13, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 13, _tjson.dumps({"min_count": 2}), 7),
+                ("training_compliant", "Mandatory Training", 1, 1, 12, _tjson.dumps({"certificates": ["Manual Handling", "Infection Prevention & Control", "Safeguarding Adults", "Safeguarding Children", "Basic Life Support (BLS)", "Fire Safety", "Health & Safety"]}), 8),
+            ]),
+            ("education", "Education", "Schools, colleges, and educational institutions", "Safeguarding Compliant", 95.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 15, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 15, _tjson.dumps({"requires_imposter_check": True}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 20, _tjson.dumps({"level": "enhanced_barred", "workforce": "children"}), 3),
+                ("registration_active", "Teaching Registration", 0, 1, 5, _tjson.dumps({"bodies": ["TRA", "EWC", "GTCS"]}), 4),
+                ("cv_validated", "CV Validation", 1, 1, 10, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 15, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 15, _tjson.dumps({"min_count": 2}), 7),
+                ("training_compliant", "Safeguarding Training", 1, 1, 5, _tjson.dumps({"certificates": ["Safeguarding Children", "Prevent Duty", "First Aid"]}), 8),
+            ]),
+            ("construction", "Construction (CSCS)", "Construction sites and trades — requires CSCS card verification", "Site Ready", 90.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 20, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 20, _tjson.dumps({"requires_imposter_check": False}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 15, _tjson.dumps({"level": "basic"}), 3),
+                ("registration_active", "CSCS Card", 0, 0, 0, _tjson.dumps({"bodies": ["CSCS"]}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 15, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 15, _tjson.dumps({"min_count": 1}), 7),
+                ("training_compliant", "Site Safety Training", 1, 1, 10, _tjson.dumps({"certificates": ["CSCS Health & Safety", "Working at Heights", "Manual Handling"]}), 8),
+            ]),
+            ("social_care", "Social Care", "Domiciliary care, residential care homes, supported living", "CQC Ready", 95.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 13, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 13, _tjson.dumps({"requires_imposter_check": True}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 17, _tjson.dumps({"level": "enhanced_barred", "workforce": "adults"}), 3),
+                ("registration_active", "Professional Registration", 0, 1, 5, _tjson.dumps({"bodies": ["Social Work England"]}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 13, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 17, _tjson.dumps({"min_count": 2}), 7),
+                ("training_compliant", "Care Training", 1, 1, 12, _tjson.dumps({"certificates": ["Manual Handling", "Medication Administration", "Safeguarding Adults", "Infection Prevention & Control", "First Aid", "Fire Safety"]}), 8),
+            ]),
+            ("finance", "Finance (FCA)", "FCA-regulated financial services — banking, insurance, fintech", "FCA Compliant", 95.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 15, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 15, _tjson.dumps({"requires_imposter_check": False}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 10, _tjson.dumps({"level": "basic"}), 3),
+                ("registration_active", "FCA Register", 1, 1, 15, _tjson.dumps({"bodies": ["FCA"]}), 4),
+                ("cv_validated", "CV Validation", 1, 1, 10, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 1, 1, 15, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 15, _tjson.dumps({"min_count": 2}), 7),
+                ("training_compliant", "Compliance Training", 0, 1, 5, _tjson.dumps({"certificates": ["AML Training", "GDPR Training"]}), 8),
+            ]),
+            ("logistics", "Logistics & Warehouse", "Warehouse, delivery, distribution, and logistics operations", "Cleared", 85.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 25, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 25, _tjson.dumps({"requires_imposter_check": False}), 2),
+                ("dbs_valid", "DBS Check", 1, 1, 15, _tjson.dumps({"level": "basic"}), 3),
+                ("registration_active", "Registration", 0, 0, 0, _tjson.dumps({}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 0, 1, 10, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 10, _tjson.dumps({"min_count": 1}), 7),
+                ("training_compliant", "Safety Training", 0, 1, 10, _tjson.dumps({"certificates": ["Manual Handling", "Health & Safety"]}), 8),
+            ]),
+            ("retail_hospitality", "Retail & Hospitality", "Shops, restaurants, hotels, and hospitality venues", "Cleared", 80.0, 0, [
+                ("identity_verified", "Identity Verification", 1, 1, 30, _tjson.dumps({"provider": "onfido"}), 1),
+                ("right_to_work_valid", "Right to Work", 1, 1, 30, _tjson.dumps({"requires_imposter_check": False}), 2),
+                ("dbs_valid", "DBS Check", 0, 0, 0, _tjson.dumps({"level": "none"}), 3),
+                ("registration_active", "Registration", 0, 0, 0, _tjson.dumps({}), 4),
+                ("cv_validated", "CV Validation", 0, 1, 5, _tjson.dumps({}), 5),
+                ("employment_verified", "Employment Verification", 0, 1, 10, _tjson.dumps({}), 6),
+                ("references_verified", "References", 1, 1, 15, _tjson.dumps({"min_count": 1}), 7),
+                ("training_compliant", "Training", 0, 1, 10, _tjson.dumps({"certificates": ["Food Hygiene", "Health & Safety"]}), 8),
+            ]),
+        ]
+        for tkey, tname, tdesc, tlabel, tthresh, tdefault, tchecks in _templates:
+            tid = _tid()
+            cursor.execute(
+                """INSERT INTO industry_templates (id, name, description, compliance_label, compliance_threshold, is_default, is_active)
+                   VALUES (%s, %s, %s, %s, %s, %s, 1)""",
+                (tid, tname, tdesc, tlabel, tthresh, tdefault),
+            )
+            for ck, cl, creq, cen, cw, ccfg, csort in tchecks:
+                cursor.execute(
+                    """INSERT INTO industry_template_checks (id, template_id, check_key, check_label, is_required, is_enabled, weight, config, sort_order)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (_tid(), tid, ck, cl, creq, cen, cw, ccfg, csort),
+                )
+
+    # ── Training catalogue ────────────────────────────────────────
+    # Courses live per-industry-template. Candidates pick from the catalogue
+    # via a dropdown (with "Other (specify)" fallback). Compliance matches
+    # certificates to courses by course_id or by name/aliases.
+    if not _table_exists(cursor, "training_courses"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS training_courses (
+            id TEXT PRIMARY KEY,
+            industry_template_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            aliases TEXT DEFAULT '[]',
+            category TEXT DEFAULT 'mandatory',
+            description TEXT,
+            default_validity_months INTEGER DEFAULT 12,
+            is_mandatory INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT,
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_training_courses_template ON training_courses(industry_template_id)")
+
+    # Backfill: seed one course row per certificate name listed in each
+    # industry template's training_compliant.certificates config.
+    cursor.execute("SELECT COUNT(*) AS cnt FROM training_courses")
+    courses_cnt = cursor.fetchone()["cnt"]
+    if courses_cnt == 0:
+        import json as _tcj
+        from app.utils.auth import generate_id as _tcid
+        cursor.execute("SELECT id FROM industry_templates WHERE is_active=1")
+        templates = [dict(r) for r in cursor.fetchall()]
+        # Default aliases (case variations) and validity months per known course
+        DEFAULT_VALIDITY_MONTHS = {
+            "Manual Handling": 12, "Infection Prevention & Control": 12,
+            "Safeguarding Adults": 36, "Safeguarding Children": 36,
+            "Basic Life Support (BLS)": 12, "Fire Safety": 12, "Health & Safety": 12,
+            "Medication Administration": 12, "First Aid": 36, "Food Hygiene": 12,
+            "Prevent Duty": 36, "AML Training": 12, "GDPR Training": 12,
+            "CSCS Health & Safety": 60, "Working at Heights": 36,
+        }
+        DEFAULT_ALIASES = {
+            "Basic Life Support (BLS)": ["BLS", "Basic Life Support", "Life Support", "CPR"],
+            "Infection Prevention & Control": ["IPC", "Infection Control", "Infection Prevention and Control"],
+            "Safeguarding Adults": ["Safeguarding Adults Level 2", "Adult Safeguarding"],
+            "Safeguarding Children": ["Safeguarding Children Level 2", "Child Safeguarding", "Child Protection"],
+            "Health & Safety": ["Health and Safety", "H&S", "Workplace Health and Safety"],
+            "Manual Handling": ["Moving and Handling", "Moving & Handling"],
+            "Fire Safety": ["Fire Awareness", "Fire Marshal"],
+            "Medication Administration": ["Medication Awareness", "Medicines Management"],
+            "First Aid": ["First Aid at Work", "Emergency First Aid"],
+            "Food Hygiene": ["Food Safety", "Food Safety & Hygiene"],
+        }
+        for t in templates:
+            cursor.execute(
+                "SELECT config FROM industry_template_checks WHERE template_id=%s AND check_key='training_compliant'",
+                (t["id"],),
+            )
+            row = cursor.fetchone()
+            if not row:
+                continue
+            try:
+                raw = dict(row).get("config") or "{}"
+                cfg = _tcj.loads(raw) if isinstance(raw, str) else (raw or {})
+            except Exception:
+                cfg = {}
+            cert_names = cfg.get("certificates", [])
+            for idx, cert_name in enumerate(cert_names):
+                cursor.execute(
+                    """INSERT INTO training_courses
+                       (id, industry_template_id, name, aliases, category, default_validity_months,
+                        is_mandatory, is_active, sort_order)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        _tcid(), t["id"], cert_name,
+                        _tcj.dumps(DEFAULT_ALIASES.get(cert_name, [])),
+                        "mandatory",
+                        DEFAULT_VALIDITY_MONTHS.get(cert_name, 12),
+                        1, 1, idx,
+                    ),
+                )
+
+    # Ensure training_certificates has course_id FK so we can match by id.
+    _add_column_if_missing(cursor, "training_certificates", "course_id", "TEXT")
+
+    # Link invoices and credit transactions back to the originating invite so that
+    # revoke-invite can cancel the billing line and refund credits / flag PAYG refunds.
+    _add_column_if_missing(cursor, "invoices", "invite_id", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "cancelled_at", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "refund_status", "TEXT")  # NULL | pending_admin_approval | approved | declined | refunded
+    _add_column_if_missing(cursor, "invoices", "refund_requested_at", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "refund_resolved_at", "TEXT")
+    _add_column_if_missing(cursor, "invoices", "refund_resolved_by", "TEXT")
+    if _table_exists(cursor, "credit_transactions"):
+        _add_column_if_missing(cursor, "credit_transactions", "invite_id", "TEXT")
+        _add_column_if_missing(cursor, "credit_transactions", "reversed_at", "TEXT")
+
+    # Seed expanded pricing elements if not present
+    _existing_pricing_types = set()
+    if _table_exists(cursor, "pricing_settings"):
+        cursor.execute("SELECT check_type FROM pricing_settings")
+        _existing_pricing_types = {row["check_type"] for row in cursor.fetchall()}
+    expanded_pricing = [
+        ("standard_dbs", "Standard DBS Check", 18.0, 45.0),
+        ("enhanced_dbs", "Enhanced DBS Check (no barred)", 38.0, 65.0),
+        ("enhanced_barred_dbs", "Enhanced DBS + Barred List", 49.0, 85.0),
+        ("basic_dbs", "Basic DBS Check", 18.0, 35.0),
+        ("dbs_update_service", "DBS Update Service Check", 1.0, 15.0),
+        ("training_verification", "Training Certificate Verification", 1.0, 8.0),
+        ("imposter_check", "Imposter Check (in-person/video)", 0.0, 5.0),
+    ]
+    for ct, lbl, cost, sell in expanded_pricing:
+        from app.utils.auth import generate_id as _pid
+        cursor.execute(
+            "INSERT INTO pricing_settings (id, check_type, label, cost_price, sell_price) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (check_type) DO NOTHING",
+            (_pid(), ct, lbl, cost, sell),
+        )
+
+    # Create imposter_declarations table if it doesn't exist (migration for existing DBs)
+    if not _table_exists(cursor, "imposter_declarations"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS imposter_declarations (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            agency_id TEXT NOT NULL,
+            declared_by_user_id TEXT NOT NULL,
+            declared_by_email TEXT NOT NULL,
+            declaration_text TEXT NOT NULL,
+            documents_verified TEXT,
+            ip_address TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        )""")
+
+    # Create lead generation tables if they don't exist
+    if not _table_exists(cursor, "scrape_jobs"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS scrape_jobs (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            industry TEXT,
+            industry_slug TEXT,
+            config TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'pending',
+            started_at TEXT,
+            completed_at TEXT,
+            results_count INTEGER DEFAULT 0,
+            error_message TEXT,
+            created_at TEXT DEFAULT (NOW()::text)
+        )""")
+    if not _table_exists(cursor, "leads"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS leads (
+            id TEXT PRIMARY KEY,
+            scrape_job_id TEXT,
+            source TEXT NOT NULL,
+            industry TEXT,
+            industry_slug TEXT,
+            agency_name TEXT NOT NULL,
+            description TEXT,
+            website TEXT,
+            email TEXT,
+            phone TEXT,
+            location TEXT,
+            coverage TEXT,
+            employment_types TEXT,
+            salary_range TEXT,
+            source_url TEXT,
+            verified INTEGER DEFAULT 0,
+            social_links TEXT DEFAULT '{}',
+            extra TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'new',
+            notes TEXT,
+            scraped_at TEXT DEFAULT (NOW()::text),
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (scrape_job_id) REFERENCES scrape_jobs(id)
+        )""")
+
+    # Create registration_scrape_results table for real professional register scraping
+    if not _table_exists(cursor, "registration_scrape_results"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS registration_scrape_results (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            registration_check_id TEXT,
+            body TEXT NOT NULL,
+            registration_number TEXT NOT NULL,
+            scrape_source TEXT NOT NULL,
+            registrant_name TEXT,
+            registration_status TEXT,
+            expiry_date TEXT,
+            sanctions TEXT DEFAULT '[]',
+            conditions TEXT DEFAULT '[]',
+            raw_data TEXT DEFAULT '{}',
+            scraped_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        )""")
+
+    # Create industry_plan_links table (Option A: Industry-Specific Plans)
+    if not _table_exists(cursor, "industry_plan_links"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS industry_plan_links (
+            id TEXT PRIMARY KEY,
+            tier_key TEXT NOT NULL,
+            industry_template_id TEXT NOT NULL,
+            custom_monthly_price REAL,
+            custom_per_worker_price REAL,
+            custom_monthly_checks INTEGER,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
+            UNIQUE(tier_key, industry_template_id)
+        )""")
+
+    # Create industry_check_pricing table (Option C: Per-Element Industry Pricing)
+    if not _table_exists(cursor, "industry_check_pricing"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS industry_check_pricing (
+            id TEXT PRIMARY KEY,
+            industry_template_id TEXT NOT NULL,
+            check_type TEXT NOT NULL,
+            label TEXT,
+            credit_value REAL DEFAULT 1.0,
+            third_party_cost REAL DEFAULT 0,
+            sell_price REAL DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            updated_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
+            UNIQUE(industry_template_id, check_type)
+        )""")
+
+    # Add industry_template_id column to subscription_tier_config if missing
+    _add_column_if_missing(cursor, "subscription_tier_config", "industry_template_id", "TEXT")
+    _add_column_if_missing(cursor, "subscription_tier_config", "industry_name", "TEXT")
+
+    # Add industry_template_id column to agency_subscriptions if missing
+    _add_column_if_missing(cursor, "agency_subscriptions", "industry_template_id", "TEXT")
+    _add_column_if_missing(cursor, "agency_subscriptions", "credits_total", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "credits_used", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "rollover_credits", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "allow_rollover", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "overage_rate", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "expires_at", "TEXT")
+    _add_column_if_missing(cursor, "agency_subscriptions", "auto_topup", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agency_subscriptions", "auto_topup_tier", "TEXT")
+    _add_column_if_missing(cursor, "agency_subscriptions", "pack_name", "TEXT")
+
+    # Create email_templates table if it doesn't exist
+    if not _table_exists(cursor, "email_templates"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS email_templates (
+            id TEXT PRIMARY KEY,
+            template_key TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            subject TEXT NOT NULL,
+            body_html TEXT NOT NULL,
+            body_text TEXT,
+            category TEXT DEFAULT 'general',
+            variables TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT DEFAULT (NOW()::text)
+        )""")
+
+    # Create email_send_log table if it doesn't exist
+    if not _table_exists(cursor, "email_send_log"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS email_send_log (
+            id TEXT PRIMARY KEY,
+            template_key TEXT,
+            recipient_email TEXT NOT NULL,
+            recipient_name TEXT,
+            subject TEXT NOT NULL,
+            body_rendered TEXT,
+            status TEXT DEFAULT 'queued',
+            provider TEXT DEFAULT 'sendgrid',
+            provider_message_id TEXT,
+            error_message TEXT,
+            variables_used TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            sent_at TEXT
+        )""")
+
+    # Create email_rules table if it doesn't exist
+    if not _table_exists(cursor, "email_rules"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS email_rules (
+            id TEXT PRIMARY KEY,
+            action_trigger TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            template_key TEXT NOT NULL,
+            recipient_type TEXT DEFAULT 'primary',
+            conditions TEXT DEFAULT '{}',
+            priority INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT DEFAULT (NOW()::text)
+        )""")
+
+    # Create system_settings table for admin-configurable settings (email provider, API keys, etc.)
+    if not _table_exists(cursor, "system_settings"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS system_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT,
+            updated_at TEXT DEFAULT (NOW()::text)
+        )""")
+
+    # Add verification_code column to employment_verifications
+    _add_column_if_missing(cursor, "employment_verifications", "verification_code", "TEXT")
+
+    # Add verification_code column to references_
+    _add_column_if_missing(cursor, "references_", "verification_code", "TEXT")
+
+    # ── 1.4 Auth & Security Hardening ──────────────────────────────────────────
+    # Create admin_users table (replaces hardcoded admin login)
+    cursor.execute("""CREATE TABLE IF NOT EXISTS admin_users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        role TEXT DEFAULT 'admin',
+        is_active INTEGER DEFAULT 1,
+        failed_login_attempts INTEGER DEFAULT 0,
+        locked_until TEXT,
+        last_login_at TEXT,
+        created_at TEXT DEFAULT (NOW()::text),
+        updated_at TEXT
+    )""")
+
+    # Create login_attempts table for account lockout tracking
+    cursor.execute("""CREATE TABLE IF NOT EXISTS login_attempts (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        user_type TEXT NOT NULL,
+        ip_address TEXT,
+        success INTEGER NOT NULL,
+        created_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    # Create password_reset_tokens table
+    cursor.execute("""CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_type TEXT NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    # Create token_blacklist table for revoked JWT tokens
+    cursor.execute("""CREATE TABLE IF NOT EXISTS token_blacklist (
+        id TEXT PRIMARY KEY,
+        token_jti TEXT UNIQUE NOT NULL,
+        user_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    # Add failed_login_attempts and locked_until to agencies
+    _add_column_if_missing(cursor, "agencies", "failed_login_attempts", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "locked_until", "TEXT")
+    _add_column_if_missing(cursor, "agencies", "last_login_at", "TEXT")
+
+    # Add failed_login_attempts and locked_until to candidates
+    _add_column_if_missing(cursor, "candidates", "failed_login_attempts", "INTEGER DEFAULT 0")
+    _add_column_if_missing(cursor, "candidates", "locked_until", "TEXT")
+    _add_column_if_missing(cursor, "candidates", "last_login_at", "TEXT")
+
+    # ── 2.3 Candidate Pre-Notification ─────────────────────────────────────────
+    # Create candidate_pre_notifications table
+    cursor.execute("""CREATE TABLE IF NOT EXISTS candidate_pre_notifications (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        verification_type TEXT NOT NULL,
+        verifier_name TEXT NOT NULL,
+        verifier_email TEXT NOT NULL,
+        verifier_organisation TEXT,
+        status TEXT DEFAULT 'pending',
+        sent_at TEXT,
+        candidate_confirmed_at TEXT,
+        verification_request_id TEXT,
+        created_at TEXT DEFAULT (NOW()::text),
+        FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+    )""")
+
+    # ── 3.4 Audit Trail (tamper-evident hash chain) ──────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS audit_trail (
+        id TEXT PRIMARY KEY,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        actor_type TEXT DEFAULT 'user',
+        details TEXT,
+        ip_address TEXT,
+        prev_hash TEXT,
+        chain_hash TEXT NOT NULL,
+        created_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    # Data access log for GDPR SAR compliance
+    cursor.execute("""CREATE TABLE IF NOT EXISTS data_access_log (
+        id TEXT PRIMARY KEY,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        accessor TEXT NOT NULL,
+        accessor_type TEXT DEFAULT 'user',
+        purpose TEXT,
+        ip_address TEXT,
+        created_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    # ── 3.3 Webhook delivery enhancements ──────────────────────────────────────
+    # Add next_retry_at column to webhook_deliveries if not present
+    _add_column_if_missing(cursor, "webhook_deliveries", "next_retry_at", "TEXT")
+
+    # ── 3.5 Background Jobs (enhanced) ─────────────────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS background_jobs (
+        id TEXT PRIMARY KEY,
+        task_name TEXT NOT NULL,
+        args TEXT DEFAULT '[]',
+        kwargs TEXT DEFAULT '{}',
+        status TEXT DEFAULT 'queued',
+        priority INTEGER DEFAULT 5,
+        timeout_seconds INTEGER DEFAULT 180,
+        max_retries INTEGER DEFAULT 3,
+        attempt INTEGER DEFAULT 0,
+        celery_task_id TEXT,
+        result TEXT,
+        error TEXT,
+        scheduled_at TEXT,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    # ── 3.2 Scheduled reports ──────────────────────────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS scheduled_reports (
+        id TEXT PRIMARY KEY,
+        agency_id TEXT NOT NULL,
+        report_type TEXT NOT NULL,
+        frequency TEXT DEFAULT 'weekly',
+        recipients TEXT DEFAULT '[]',
+        last_sent_at TEXT,
+        next_send_at TEXT,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (NOW()::text),
+        FOREIGN KEY (agency_id) REFERENCES agencies(id)
+    )""")
+
+    # ── 1.2 Payment Provider Configuration ─────────────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS payment_provider_config (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        is_enabled INTEGER DEFAULT 0,
+        api_key_set INTEGER DEFAULT 0,
+        api_key_encrypted TEXT,
+        api_secret_encrypted TEXT,
+        webhook_secret TEXT,
+        environment TEXT DEFAULT 'sandbox',
+        account_id TEXT,
+        account_name TEXT,
+        currency TEXT DEFAULT 'GBP',
+        config_json TEXT DEFAULT '{}',
+        last_tested_at TEXT,
+        test_status TEXT,
+        connected_at TEXT,
+        updated_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS payment_routing (
+        id TEXT PRIMARY KEY,
+        payment_type TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        provider TEXT,
+        fallback_provider TEXT,
+        is_enabled INTEGER DEFAULT 1,
+        description TEXT,
+        updated_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS payment_transactions (
+        id TEXT PRIMARY KEY,
+        agency_id TEXT NOT NULL,
+        invoice_id TEXT,
+        provider TEXT NOT NULL,
+        payment_type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        currency TEXT DEFAULT 'GBP',
+        status TEXT DEFAULT 'pending',
+        provider_payment_id TEXT,
+        provider_customer_id TEXT,
+        provider_session_url TEXT,
+        error_message TEXT,
+        metadata_json TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (NOW()::text),
+        completed_at TEXT,
+        FOREIGN KEY (agency_id) REFERENCES agencies(id)
+    )""")
+
+    # Seed default payment routing if empty
+    cursor.execute("SELECT COUNT(*) AS cnt FROM payment_routing")
+    routing_count = cursor.fetchone()["cnt"]
+    if routing_count == 0:
+        from app.utils.auth import generate_id as _gen_id
+        default_routes = [
+            ("credit_pack_purchase", "Credit Pack Purchases", "Card payments for credit pack top-ups"),
+            ("payg_invoice", "Pay-As-You-Go Invoices", "One-off invoice payments for individual checks"),
+            ("subscription_recurring", "Recurring Subscriptions", "Automatic monthly/annual subscription billing"),
+            ("direct_debit", "Direct Debit Collections", "Recurring direct debit mandate payments"),
+            ("refund", "Refunds", "Refund processing back to original payment method"),
+        ]
+        for ptype, label, desc in default_routes:
+            cursor.execute(
+                """INSERT INTO payment_routing (id, payment_type, label, description)
+                   VALUES (%s, %s, %s, %s)""",
+                (_gen_id(), ptype, label, desc),
+            )
+
+    # Seed default provider entries if empty
+    cursor.execute("SELECT COUNT(*) AS cnt FROM payment_provider_config")
+    ppc_count = cursor.fetchone()["cnt"]
+    if ppc_count == 0:
+        from app.utils.auth import generate_id as _gen_id2
+        for provider, name in [("stripe", "Stripe"), ("gocardless", "GoCardless")]:
+            cursor.execute(
+                """INSERT INTO payment_provider_config (id, provider, display_name)
+                   VALUES (%s, %s, %s)""",
+                (_gen_id2(), provider, name),
+            )
+
+    # ── TrustID Check Tables ──────────────────────────────────────────────────
+    cursor.execute("""CREATE TABLE IF NOT EXISTS trustid_config (
+        id TEXT PRIMARY KEY,
+        check_type TEXT UNIQUE NOT NULL,
+        label TEXT NOT NULL,
+        submission_mode TEXT DEFAULT 'manual',
+        api_key TEXT,
+        api_secret TEXT,
+        environment TEXT DEFAULT 'production',
+        updated_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS trustid_checks (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        check_type TEXT NOT NULL,
+        submission_mode TEXT DEFAULT 'manual',
+        status TEXT DEFAULT 'pending_admin',
+        result TEXT,
+        candidate_name TEXT,
+        candidate_email TEXT,
+        candidate_dob TEXT,
+        trustid_reference TEXT,
+        report_document_id TEXT,
+        submitted_by TEXT,
+        admin_submitted_by TEXT,
+        admin_submitted_at TEXT,
+        admin_completed_by TEXT,
+        admin_notes TEXT,
+        notes TEXT,
+        raw_response TEXT,
+        created_at TEXT DEFAULT (NOW()::text),
+        updated_at TEXT DEFAULT (NOW()::text),
+        completed_at TEXT,
+        FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+    )""")
+
+    # Seed default TrustID config if empty
+    tid_count = 0
+    if _table_exists(cursor, "trustid_config"):
+        cursor.execute("SELECT COUNT(*) AS cnt FROM trustid_config")
+        tid_count = cursor.fetchone()["cnt"]
+    if tid_count == 0:
+        from app.utils.auth import generate_id as _tid_gen
+        for ct, label in [
+            ("identity_verification", "Identity Verification"),
+            ("dbs_check", "DBS Check"),
+            ("right_to_work", "Right to Work"),
+        ]:
+            cursor.execute(
+                """INSERT INTO trustid_config (id, check_type, label, submission_mode)
+                   VALUES (%s, %s, %s, 'manual')""",
+                (_tid_gen(), ct, label),
+            )
+
+    # Create sms_notifications table if it doesn't exist
+    cursor.execute("""CREATE TABLE IF NOT EXISTS sms_notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        user_type TEXT,
+        to_number TEXT NOT NULL,
+        message TEXT NOT NULL,
+        category TEXT DEFAULT 'general',
+        reference_id TEXT,
+        provider TEXT DEFAULT 'console',
+        status TEXT DEFAULT 'pending',
+        provider_response TEXT,
+        created_at TEXT DEFAULT (NOW()::text)
+    )""")
+
+    # Migrate admin email from old healthvet.ai domain to viperai.io
+    cursor.execute("UPDATE admin_users SET email = REPLACE(email, '@healthvet.ai', '@viperai.io') WHERE email LIKE '%@healthvet.ai'")
+
+    # Seed default admin user if admin_users table is empty
+    cursor.execute("SELECT COUNT(*) AS cnt FROM admin_users")
+    admin_count = cursor.fetchone()["cnt"]
+    if admin_count == 0:
+        import os
+        from app.utils.auth import generate_id, hash_password
+        admin_email = os.environ.get("ADMIN_EMAIL", "admin@viperai.io")
+        admin_pw = os.environ.get("ADMIN_PASSWORD", "Password123!")
+        cursor.execute(
+            """INSERT INTO admin_users (id, email, password_hash, display_name, role)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (generate_id(), admin_email, hash_password(admin_pw),
+             "System Administrator", "super_admin"),
+        )
+
+    # ── Audit trail immutability: prevent UPDATE/DELETE on audit_trail ────
+    # Uses a PostgreSQL trigger to enforce append-only semantics.
+    cursor.execute("""
+        CREATE OR REPLACE FUNCTION audit_trail_immutable()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            RAISE EXCEPTION 'audit_trail is append-only: % operations are not allowed', TG_OP;
+            RETURN NULL;
+        END;
+        $$ LANGUAGE plpgsql;
+    """)
+    cursor.execute("""
+        DROP TRIGGER IF EXISTS trg_audit_trail_immutable ON audit_trail;
+    """)
+    cursor.execute("""
+        CREATE TRIGGER trg_audit_trail_immutable
+        BEFORE UPDATE OR DELETE ON audit_trail
+        FOR EACH ROW EXECUTE FUNCTION audit_trail_immutable();
+    """)
+
+    # -- Staged Workflow: agency workflow_mode setting --
+    _add_column_if_missing(cursor, "agencies", "workflow_mode", "TEXT DEFAULT 'standard'")
+
+    # -- Staged Workflow: submission phase tracking --
+    _add_column_if_missing(cursor, "candidate_submissions", "workflow_phase", "TEXT DEFAULT 'all'")
+    _add_column_if_missing(cursor, "candidate_submissions", "phase1_completed_at", "TEXT")
+    _add_column_if_missing(cursor, "candidate_submissions", "phase2_decision", "TEXT")
+    _add_column_if_missing(cursor, "candidate_submissions", "phase2_decision_at", "TEXT")
+    _add_column_if_missing(cursor, "candidate_submissions", "phase2_decision_by", "TEXT")
+
+    # -- Staged Workflow: employment_history verification columns --
+    _add_column_if_missing(cursor, "employment_history", "verification_status", "TEXT")
+    _add_column_if_missing(cursor, "employment_history", "verification_responses", "TEXT")
+    _add_column_if_missing(cursor, "employment_history", "verification_fraud_flags", "TEXT")
+    _add_column_if_missing(cursor, "employment_history", "verification_sentiment", "REAL")
+    _add_column_if_missing(cursor, "employment_history", "verified_at", "TEXT")
+    _add_column_if_missing(cursor, "employment_history", "verification_sent_at", "TEXT")
+
+    # -- £ Balance Billing: agency balance and discount --
+    _add_column_if_missing(cursor, "agencies", "balance_amount", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "total_topup_amount", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "total_spent_amount", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "agencies", "discount_percent", "REAL DEFAULT 0")
+
+    # -- £ Balance Billing: credit pack tiers with discount percentage --
+    _add_column_if_missing(cursor, "subscription_tier_config", "discount_percent", "REAL DEFAULT 0")
+    _add_column_if_missing(cursor, "subscription_tier_config", "topup_amount", "REAL DEFAULT 0")
+
+    # -- £ Balance Billing: balance transactions table --
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS balance_transactions (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_id TEXT,
+            transaction_type TEXT NOT NULL,
+            description TEXT,
+            gross_amount REAL DEFAULT 0,
+            discount_percent REAL DEFAULT 0,
+            discount_amount REAL DEFAULT 0,
+            net_amount REAL DEFAULT 0,
+            balance_after REAL DEFAULT 0,
+            check_type TEXT,
+            submission_id TEXT,
+            topup_pack_tier TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_balance_tx_agency ON balance_transactions(agency_id);
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_balance_tx_created ON balance_transactions(created_at);
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_balance_tx_type ON balance_transactions(transaction_type);
+    """)
+
     conn.commit()
-    conn.close()
+    _return_connection(conn)
 
 
 def init_db():
@@ -194,7 +1151,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.executescript("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS candidates (
             id TEXT PRIMARY KEY,
             email TEXT UNIQUE NOT NULL,
@@ -214,8 +1171,8 @@ def init_db():
             status TEXT DEFAULT 'pending',
             compliance_score REAL DEFAULT 0.0,
             compliance_status TEXT DEFAULT 'incomplete',
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS agencies (
@@ -227,13 +1184,18 @@ def init_db():
             phone TEXT,
             plan TEXT DEFAULT 'standard',
             monthly_fee REAL DEFAULT 300.0,
-            created_at TEXT DEFAULT (datetime('now'))
+            status TEXT DEFAULT 'active',
+            discount_percent REAL DEFAULT 0,
+            billing_mode TEXT DEFAULT 'manual_invoicing',
+            stripe_customer_id TEXT,
+            industry_template_id TEXT,
+            created_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS agency_candidates (
             agency_id TEXT NOT NULL,
             candidate_id TEXT NOT NULL,
-            assigned_at TEXT DEFAULT (datetime('now')),
+            assigned_at TEXT DEFAULT (NOW()::text),
             employment_status TEXT DEFAULT 'vetting',
             employment_status_updated_at TEXT,
             PRIMARY KEY (agency_id, candidate_id),
@@ -253,7 +1215,7 @@ def init_db():
             address_verified INTEGER DEFAULT 0,
             result TEXT,
             details TEXT,
-            started_at TEXT DEFAULT (datetime('now')),
+            started_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -274,7 +1236,7 @@ def init_db():
             verified INTEGER DEFAULT 0,
             result TEXT,
             details TEXT,
-            checked_at TEXT DEFAULT (datetime('now')),
+            checked_at TEXT DEFAULT (NOW()::text),
             next_check_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -292,7 +1254,7 @@ def init_db():
             details TEXT,
             update_service_registered INTEGER DEFAULT 0,
             next_renewal TEXT,
-            submitted_at TEXT DEFAULT (datetime('now')),
+            submitted_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -310,7 +1272,7 @@ def init_db():
             ai_summary TEXT,
             employment_entries TEXT,
             status TEXT DEFAULT 'pending',
-            analysed_at TEXT DEFAULT (datetime('now')),
+            analysed_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
 
@@ -323,7 +1285,7 @@ def init_db():
             is_active INTEGER,
             sanctions TEXT,
             conditions TEXT,
-            last_checked TEXT DEFAULT (datetime('now')),
+            last_checked TEXT DEFAULT (NOW()::text),
             next_check TEXT,
             result TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
@@ -346,7 +1308,7 @@ def init_db():
             ip_address TEXT,
             domain_verified INTEGER DEFAULT 0,
             reminder_count INTEGER DEFAULT 0,
-            sent_at TEXT DEFAULT (datetime('now')),
+            sent_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -363,9 +1325,10 @@ def init_db():
             references_verified INTEGER DEFAULT 0,
             cv_validated INTEGER DEFAULT 0,
             employment_verified INTEGER DEFAULT 0,
+            training_compliant INTEGER DEFAULT 0,
             flags TEXT,
             audit_log TEXT,
-            last_evaluated TEXT DEFAULT (datetime('now')),
+            last_evaluated TEXT DEFAULT (NOW()::text),
             cqc_ready INTEGER DEFAULT 0,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -379,7 +1342,7 @@ def init_db():
             details TEXT,
             is_read INTEGER DEFAULT 0,
             is_resolved INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             resolved_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -391,7 +1354,7 @@ def init_db():
             payload TEXT,
             status TEXT DEFAULT 'received',
             processed_at TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS audit_logs (
@@ -401,7 +1364,7 @@ def init_db():
             action TEXT NOT NULL,
             actor TEXT,
             details TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS employment_history (
@@ -419,7 +1382,7 @@ def init_db():
             verifier_email TEXT,
             verifier_job_title TEXT,
             source TEXT DEFAULT 'cv_extracted',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
 
@@ -441,7 +1404,7 @@ def init_db():
             ip_address TEXT,
             domain_verified INTEGER DEFAULT 0,
             reminder_count INTEGER DEFAULT 0,
-            sent_at TEXT DEFAULT (datetime('now')),
+            sent_at TEXT DEFAULT (NOW()::text),
             completed_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id),
             FOREIGN KEY (employment_id) REFERENCES employment_history(id)
@@ -454,7 +1417,7 @@ def init_db():
             invite_code TEXT UNIQUE NOT NULL,
             status TEXT DEFAULT 'pending',
             candidate_id TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             accepted_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
@@ -466,7 +1429,7 @@ def init_db():
             label TEXT NOT NULL,
             cost_price REAL DEFAULT 0.0,
             sell_price REAL DEFAULT 0.0,
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS invoices (
@@ -478,7 +1441,7 @@ def init_db():
             cost_amount REAL DEFAULT 0.0,
             sell_amount REAL DEFAULT 0.0,
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             paid_at TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
         );
@@ -492,7 +1455,29 @@ def init_db():
             notification_type TEXT,
             related_id TEXT,
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()::text)
+        );
+
+        -- Tracks when expiry warning emails were last sent per credential
+        -- to avoid sending duplicate warnings every scheduler run.
+        CREATE TABLE IF NOT EXISTS demo_requests (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            company TEXT NOT NULL,
+            candidates_per_month TEXT DEFAULT '',
+            message TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS expiry_warning_log (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            credential_type TEXT NOT NULL,
+            credential_id TEXT,
+            last_warned_at TEXT NOT NULL,
+            warning_count INTEGER DEFAULT 1,
+            UNIQUE(candidate_id, credential_type, credential_id)
         );
 
         CREATE TABLE IF NOT EXISTS training_certificates (
@@ -506,7 +1491,7 @@ def init_db():
             certificate_ref TEXT,
             file_name TEXT,
             status TEXT DEFAULT 'valid',
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             updated_at TEXT,
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -521,8 +1506,15 @@ def init_db():
             is_resolved INTEGER DEFAULT 0,
             resolved_by TEXT,
             resolved_at TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS alert_settings (
+            id TEXT PRIMARY KEY,
+            setting_key TEXT UNIQUE NOT NULL,
+            setting_value INTEGER NOT NULL,
+            updated_at TEXT DEFAULT (NOW()::text)
         );
 
         CREATE TABLE IF NOT EXISTS agency_subscriptions (
@@ -533,6 +1525,8 @@ def init_db():
             monthly_amount REAL DEFAULT 0.0,
             per_worker_amount REAL DEFAULT 0.0,
             max_workers INTEGER DEFAULT 50,
+            monthly_checks INTEGER DEFAULT 0,
+            checks_used INTEGER DEFAULT 0,
             stripe_payment_method_id TEXT,
             stripe_subscription_id TEXT,
             status TEXT DEFAULT 'active',
@@ -540,10 +1534,635 @@ def init_db():
             current_period_end TEXT,
             next_billing_date TEXT,
             cancelled_at TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (NOW()::text),
             FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS candidate_submissions (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            submission_type TEXT DEFAULT 'full',
+            sections_requested TEXT,
+            status TEXT DEFAULT 'draft',
+            consent_given INTEGER DEFAULT 0,
+            consent_timestamp TEXT,
+            consent_ip_address TEXT,
+            privacy_policy_version TEXT DEFAULT '1.0',
+            terms_version TEXT DEFAULT '1.0',
+            submitted_at TEXT,
+            processing_started_at TEXT,
+            processing_completed_at TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS candidate_draft_data (
+            id TEXT PRIMARY KEY,
+            submission_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            section TEXT NOT NULL,
+            data TEXT NOT NULL,
+            completed INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (submission_id) REFERENCES candidate_submissions(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS consent_logs (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            submission_id TEXT,
+            consent_type TEXT NOT NULL,
+            consent_given INTEGER NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT,
+            privacy_policy_version TEXT,
+            terms_version TEXT,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS revet_requests (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            sections TEXT NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'pending',
+            submission_id TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            completed_at TEXT,
+            FOREIGN KEY (agency_id) REFERENCES agencies(id),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS subscription_tier_config (
+            id TEXT PRIMARY KEY,
+            tier_key TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            monthly_price REAL DEFAULT 0,
+            per_worker_price REAL DEFAULT 0,
+            max_workers INTEGER DEFAULT 0,
+            monthly_checks INTEGER DEFAULT 0,
+            overage_rate REAL DEFAULT 0,
+            allow_rollover INTEGER DEFAULT 0,
+            monitoring_included INTEGER DEFAULT 0,
+            monitoring_cap INTEGER DEFAULT 0,
+            monitoring_addon_rate REAL DEFAULT 0,
+            features TEXT DEFAULT '[]',
+            is_active INTEGER DEFAULT 1,
+            updated_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS partial_credit_rates (
+            id TEXT PRIMARY KEY,
+            check_type TEXT UNIQUE NOT NULL,
+            label TEXT NOT NULL,
+            credit_value REAL DEFAULT 1.0,
+            third_party_cost REAL DEFAULT 0,
+            updated_at TEXT DEFAULT (NOW()::text)
+        );
+
+        CREATE TABLE IF NOT EXISTS imposter_declarations (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            agency_id TEXT NOT NULL,
+            declared_by_user_id TEXT NOT NULL,
+            declared_by_email TEXT NOT NULL,
+            declaration_text TEXT NOT NULL,
+            documents_verified TEXT,
+            ip_address TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS credit_transactions (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            candidate_id TEXT,
+            order_id TEXT,
+            check_type TEXT NOT NULL,
+            credits_consumed REAL DEFAULT 0,
+            credit_balance_after REAL DEFAULT 0,
+            unit_cost REAL DEFAULT 0,
+            charge_amount REAL DEFAULT 0,
+            is_overage INTEGER DEFAULT 0,
+            is_rollover INTEGER DEFAULT 0,
+            description TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+
+        -- GDPR tables
+        CREATE TABLE IF NOT EXISTS gdpr_erasure_requests (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            requested_by TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT (NOW()::text),
+            completed_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS gdpr_dpias (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            data_types TEXT NOT NULL,
+            processing_purpose TEXT NOT NULL,
+            risk_level TEXT DEFAULT 'medium',
+            mitigations TEXT,
+            status TEXT DEFAULT 'draft',
+            created_by TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS gdpr_retention_policies (
+            id TEXT PRIMARY KEY,
+            data_category TEXT UNIQUE NOT NULL,
+            retention_period_days INTEGER NOT NULL,
+            legal_basis TEXT NOT NULL,
+            description TEXT,
+            auto_delete INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT
+        );
+
+        -- API keys for external integrations
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            key_hash TEXT NOT NULL,
+            key_prefix TEXT NOT NULL,
+            name TEXT NOT NULL,
+            scopes TEXT DEFAULT '[]',
+            is_active INTEGER DEFAULT 1,
+            last_used_at TEXT,
+            expires_at TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+
+        -- Webhook subscriptions for agency HR integrations
+        CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            url TEXT NOT NULL,
+            secret TEXT NOT NULL,
+            events TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            failure_count INTEGER DEFAULT 0,
+            last_triggered_at TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+
+        -- Webhook delivery log
+        CREATE TABLE IF NOT EXISTS webhook_deliveries (
+            id TEXT PRIMARY KEY,
+            subscription_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            response_status INTEGER,
+            response_body TEXT,
+            attempt INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'pending',
+            next_retry_at TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            delivered_at TEXT,
+            FOREIGN KEY (subscription_id) REFERENCES webhook_subscriptions(id)
+        );
+
+        -- Celery-compatible task results (optional, for tracking)
+        CREATE TABLE IF NOT EXISTS background_tasks (
+            id TEXT PRIMARY KEY,
+            task_name TEXT NOT NULL,
+            args TEXT,
+            status TEXT DEFAULT 'pending',
+            result TEXT,
+            error TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            started_at TEXT,
+            completed_at TEXT
+        );
+
+        -- In-App Notifications
+        CREATE TABLE IF NOT EXISTS in_app_notifications (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            user_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            category TEXT DEFAULT 'general',
+            severity TEXT DEFAULT 'info',
+            link TEXT,
+            metadata TEXT,
+            is_read INTEGER DEFAULT 0,
+            read_at TEXT,
+            created_at TEXT DEFAULT (NOW()::text)
+        );
+
+        -- Agency Sub-Accounts
+        CREATE TABLE IF NOT EXISTS agency_sub_accounts (
+            id TEXT PRIMARY KEY,
+            agency_id TEXT NOT NULL,
+            email TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            role TEXT DEFAULT 'recruiter',
+            industry_template_id TEXT,
+            is_active INTEGER DEFAULT 1,
+            last_login_at TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (agency_id) REFERENCES agencies(id)
+        );
+
+        -- Industry Templates
+        CREATE TABLE IF NOT EXISTS industry_templates (
+            id TEXT PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            compliance_label TEXT DEFAULT 'Compliant',
+            compliance_threshold REAL DEFAULT 95.0,
+            is_default INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT
+        );
+
+        -- Industry Template Checks — configurable checks per industry
+        CREATE TABLE IF NOT EXISTS industry_template_checks (
+            id TEXT PRIMARY KEY,
+            template_id TEXT NOT NULL,
+            check_key TEXT NOT NULL,
+            check_label TEXT NOT NULL,
+            is_required INTEGER DEFAULT 1,
+            is_enabled INTEGER DEFAULT 1,
+            weight REAL DEFAULT 10.0,
+            config TEXT DEFAULT '{}',
+            sort_order INTEGER DEFAULT 0,
+            FOREIGN KEY (template_id) REFERENCES industry_templates(id),
+            UNIQUE(template_id, check_key)
+        );
+
+        -- Lead Generation: Scrape Jobs
+        CREATE TABLE IF NOT EXISTS scrape_jobs (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            industry TEXT,
+            industry_slug TEXT,
+            config TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'pending',
+            started_at TEXT,
+            completed_at TEXT,
+            results_count INTEGER DEFAULT 0,
+            error_message TEXT,
+            created_at TEXT DEFAULT (NOW()::text)
+        );
+
+        -- Lead Generation: Leads
+        CREATE TABLE IF NOT EXISTS leads (
+            id TEXT PRIMARY KEY,
+            scrape_job_id TEXT,
+            source TEXT NOT NULL,
+            industry TEXT,
+            industry_slug TEXT,
+            agency_name TEXT NOT NULL,
+            description TEXT,
+            website TEXT,
+            email TEXT,
+            phone TEXT,
+            location TEXT,
+            coverage TEXT,
+            employment_types TEXT,
+            salary_range TEXT,
+            source_url TEXT,
+            verified INTEGER DEFAULT 0,
+            social_links TEXT DEFAULT '{}',
+            extra TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'new',
+            notes TEXT,
+            scraped_at TEXT DEFAULT (NOW()::text),
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (scrape_job_id) REFERENCES scrape_jobs(id)
+        );
+
+        -- Professional Registration Scrape Results
+        CREATE TABLE IF NOT EXISTS registration_scrape_results (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            registration_check_id TEXT,
+            body TEXT NOT NULL,
+            registration_number TEXT NOT NULL,
+            scrape_source TEXT NOT NULL,
+            registrant_name TEXT,
+            registration_status TEXT,
+            expiry_date TEXT,
+            sanctions TEXT DEFAULT '[]',
+            conditions TEXT DEFAULT '[]',
+            raw_data TEXT DEFAULT '{}',
+            scraped_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        );
+
+        -- Industry-Specific Plan Links (Option A)
+        CREATE TABLE IF NOT EXISTS industry_plan_links (
+            id TEXT PRIMARY KEY,
+            tier_key TEXT NOT NULL,
+            industry_template_id TEXT NOT NULL,
+            custom_monthly_price REAL,
+            custom_per_worker_price REAL,
+            custom_monthly_checks INTEGER,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
+            UNIQUE(tier_key, industry_template_id)
+        );
+
+        -- Per-Element Industry Pricing (Option C)
+        CREATE TABLE IF NOT EXISTS industry_check_pricing (
+            id TEXT PRIMARY KEY,
+            industry_template_id TEXT NOT NULL,
+            check_type TEXT NOT NULL,
+            label TEXT,
+            credit_value REAL DEFAULT 1.0,
+            third_party_cost REAL DEFAULT 0,
+            sell_price REAL DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            updated_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (industry_template_id) REFERENCES industry_templates(id),
+            UNIQUE(industry_template_id, check_type)
+        );
+
+        -- TrustID Configuration (manual/api mode per check type)
+        CREATE TABLE IF NOT EXISTS trustid_config (
+            id TEXT PRIMARY KEY,
+            check_type TEXT UNIQUE NOT NULL,
+            label TEXT NOT NULL,
+            submission_mode TEXT DEFAULT 'manual',
+            api_key TEXT,
+            api_secret TEXT,
+            environment TEXT DEFAULT 'production',
+            updated_at TEXT DEFAULT (NOW()::text)
+        );
+
+        -- TrustID Checks (individual check submissions)
+        CREATE TABLE IF NOT EXISTS trustid_checks (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            check_type TEXT NOT NULL,
+            submission_mode TEXT DEFAULT 'manual',
+            status TEXT DEFAULT 'pending_admin',
+            result TEXT,
+            candidate_name TEXT,
+            candidate_email TEXT,
+            candidate_dob TEXT,
+            trustid_reference TEXT,
+            report_document_id TEXT,
+            submitted_by TEXT,
+            admin_submitted_by TEXT,
+            admin_submitted_at TEXT,
+            admin_completed_by TEXT,
+            admin_notes TEXT,
+            notes TEXT,
+            raw_response TEXT,
+            created_at TEXT DEFAULT (NOW()::text),
+            updated_at TEXT DEFAULT (NOW()::text),
+            completed_at TEXT,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
     """)
 
+    # ── Performance indices ───────────────────────────────────────────
+    # Foreign-key lookup columns (candidate_id, agency_id) are the most
+    # frequently filtered columns (239 and 133 WHERE-clause hits respectively).
+    # Status / type columns support dashboard filters and reporting.
+    cursor.execute("""
+        -- candidates
+        CREATE INDEX IF NOT EXISTS idx_candidates_status        ON candidates(status);
+        CREATE INDEX IF NOT EXISTS idx_candidates_email         ON candidates(email);
+
+        -- agencies
+        CREATE INDEX IF NOT EXISTS idx_agencies_status          ON agencies(status);
+
+        -- agency_candidates (composite PK exists, but we need reverse lookup)
+        CREATE INDEX IF NOT EXISTS idx_agency_candidates_candidate ON agency_candidates(candidate_id);
+
+        -- identity_checks
+        CREATE INDEX IF NOT EXISTS idx_identity_checks_candidate ON identity_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_identity_checks_status    ON identity_checks(status);
+
+        -- right_to_work_checks
+        CREATE INDEX IF NOT EXISTS idx_rtw_checks_candidate      ON right_to_work_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_rtw_checks_status         ON right_to_work_checks(status);
+
+        -- dbs_checks
+        CREATE INDEX IF NOT EXISTS idx_dbs_checks_candidate      ON dbs_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_dbs_checks_status         ON dbs_checks(status);
+
+        -- cv_analyses
+        CREATE INDEX IF NOT EXISTS idx_cv_analyses_candidate     ON cv_analyses(candidate_id);
+
+        -- registration_checks
+        CREATE INDEX IF NOT EXISTS idx_reg_checks_candidate      ON registration_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_reg_checks_status         ON registration_checks(status);
+
+        -- references_
+        CREATE INDEX IF NOT EXISTS idx_references_candidate      ON references_(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_references_status         ON references_(status);
+        CREATE INDEX IF NOT EXISTS idx_references_token          ON references_(token);
+
+        -- compliance_records
+        CREATE INDEX IF NOT EXISTS idx_compliance_candidate      ON compliance_records(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_compliance_status         ON compliance_records(overall_status);
+
+        -- monitoring_alerts
+        CREATE INDEX IF NOT EXISTS idx_mon_alerts_candidate      ON monitoring_alerts(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_mon_alerts_severity       ON monitoring_alerts(severity);
+        CREATE INDEX IF NOT EXISTS idx_mon_alerts_unresolved     ON monitoring_alerts(is_resolved) WHERE is_resolved = 0;
+
+        -- audit_logs
+        CREATE INDEX IF NOT EXISTS idx_audit_entity              ON audit_logs(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_created             ON audit_logs(created_at);
+
+        -- employment_history
+        CREATE INDEX IF NOT EXISTS idx_emp_history_candidate     ON employment_history(candidate_id);
+
+        -- employment_verifications
+        CREATE INDEX IF NOT EXISTS idx_emp_verif_candidate       ON employment_verifications(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_emp_verif_status          ON employment_verifications(status);
+
+        -- agency_invites
+        CREATE INDEX IF NOT EXISTS idx_invites_agency            ON agency_invites(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_invites_status            ON agency_invites(status);
+
+        -- invoices
+        CREATE INDEX IF NOT EXISTS idx_invoices_agency           ON invoices(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_invoices_status           ON invoices(status);
+        CREATE INDEX IF NOT EXISTS idx_invoices_candidate        ON invoices(candidate_id);
+
+        -- email_notifications
+        CREATE INDEX IF NOT EXISTS idx_email_notif_recipient     ON email_notifications(recipient_email);
+        CREATE INDEX IF NOT EXISTS idx_email_notif_status        ON email_notifications(status);
+
+        -- expiry_warning_log
+        CREATE INDEX IF NOT EXISTS idx_expiry_warn_candidate     ON expiry_warning_log(candidate_id, credential_type);
+
+        -- training_certificates
+        CREATE INDEX IF NOT EXISTS idx_training_certs_candidate  ON training_certificates(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_training_certs_expiry     ON training_certificates(expiry_date);
+
+        -- fraud_flags
+        CREATE INDEX IF NOT EXISTS idx_fraud_flags_candidate     ON fraud_flags(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_fraud_flags_unresolved    ON fraud_flags(is_resolved) WHERE is_resolved = 0;
+
+        -- agency_subscriptions
+        CREATE INDEX IF NOT EXISTS idx_agency_subs_agency        ON agency_subscriptions(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_agency_subs_status        ON agency_subscriptions(status);
+
+        -- candidate_submissions
+        CREATE INDEX IF NOT EXISTS idx_submissions_candidate     ON candidate_submissions(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_submissions_status        ON candidate_submissions(status);
+
+        -- candidate_draft_data
+        CREATE INDEX IF NOT EXISTS idx_draft_data_submission     ON candidate_draft_data(submission_id);
+        CREATE INDEX IF NOT EXISTS idx_draft_data_candidate      ON candidate_draft_data(candidate_id);
+
+        -- consent_logs
+        CREATE INDEX IF NOT EXISTS idx_consent_candidate         ON consent_logs(candidate_id);
+
+        -- revet_requests
+        CREATE INDEX IF NOT EXISTS idx_revet_agency              ON revet_requests(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_revet_candidate           ON revet_requests(candidate_id);
+
+        -- credit_transactions
+        CREATE INDEX IF NOT EXISTS idx_credit_tx_agency          ON credit_transactions(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_credit_tx_created         ON credit_transactions(created_at);
+
+        -- gdpr_erasure_requests
+        CREATE INDEX IF NOT EXISTS idx_gdpr_erasure_candidate    ON gdpr_erasure_requests(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_gdpr_erasure_status       ON gdpr_erasure_requests(status);
+
+        -- in_app_notifications
+        CREATE INDEX IF NOT EXISTS idx_notif_user                ON in_app_notifications(user_id, user_type);
+        CREATE INDEX IF NOT EXISTS idx_notif_unread              ON in_app_notifications(is_read) WHERE is_read = 0;
+
+        -- agency_sub_accounts
+        CREATE INDEX IF NOT EXISTS idx_sub_accounts_agency       ON agency_sub_accounts(agency_id);
+        CREATE INDEX IF NOT EXISTS idx_sub_accounts_email        ON agency_sub_accounts(email);
+
+        -- webhook_subscriptions
+        CREATE INDEX IF NOT EXISTS idx_webhook_subs_agency       ON webhook_subscriptions(agency_id);
+
+        -- webhook_deliveries
+        CREATE INDEX IF NOT EXISTS idx_webhook_del_subscription  ON webhook_deliveries(subscription_id);
+        CREATE INDEX IF NOT EXISTS idx_webhook_del_status        ON webhook_deliveries(status);
+
+        -- scrape_jobs
+        CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status        ON scrape_jobs(status);
+
+        -- leads
+        CREATE INDEX IF NOT EXISTS idx_leads_scrape_job          ON leads(scrape_job_id);
+        CREATE INDEX IF NOT EXISTS idx_leads_status              ON leads(status);
+        CREATE INDEX IF NOT EXISTS idx_leads_industry            ON leads(industry_slug);
+
+        -- registration_scrape_results
+        CREATE INDEX IF NOT EXISTS idx_reg_scrape_candidate      ON registration_scrape_results(candidate_id);
+
+        -- trustid_checks
+        CREATE INDEX IF NOT EXISTS idx_trustid_candidate         ON trustid_checks(candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_trustid_status            ON trustid_checks(status);
+
+        -- industry_template_checks
+        CREATE INDEX IF NOT EXISTS idx_tmpl_checks_template      ON industry_template_checks(template_id);
+
+        -- webhook_events
+        CREATE INDEX IF NOT EXISTS idx_webhook_events_source     ON webhook_events(source, event_type);
+
+        -- background_tasks
+        CREATE INDEX IF NOT EXISTS idx_bg_tasks_status           ON background_tasks(status);
+
+        -- api_keys
+        CREATE INDEX IF NOT EXISTS idx_api_keys_agency           ON api_keys(agency_id);
+    """)
+
+    # ── Candidate-supplied DBS support ─────────────────────────────
+    # Add dbs_mode column to dbs_checks to track whether Viper-managed or candidate-supplied
+    _add_column_if_missing(cursor, "dbs_checks", "dbs_mode", "TEXT DEFAULT 'viper_managed'")
+    _add_column_if_missing(cursor, "dbs_checks", "candidate_certificate_number", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "candidate_issue_date", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "candidate_dbs_type", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "candidate_workforce", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "update_service_ref", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "validation_status", "TEXT DEFAULT 'pending'")
+    _add_column_if_missing(cursor, "dbs_checks", "validation_details", "TEXT")
+    _add_column_if_missing(cursor, "dbs_checks", "validated_at", "TEXT")
+
+    # DBS consent/authority records — separate from general consent_logs for auditability
+    if not _table_exists(cursor, "dbs_consent_records"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS dbs_consent_records (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            agency_id TEXT,
+            submission_id TEXT,
+            dbs_check_id TEXT,
+            consent_given INTEGER NOT NULL DEFAULT 0,
+            consent_text TEXT NOT NULL,
+            consent_timestamp TEXT NOT NULL,
+            consent_ip_address TEXT,
+            consent_user_agent TEXT,
+            consent_version TEXT DEFAULT '1.0',
+            created_at TEXT DEFAULT (NOW()::text),
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_dbs_consent_candidate ON dbs_consent_records(candidate_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_dbs_consent_agency ON dbs_consent_records(agency_id)")
+
+    # ── QR Codes & Expo Lead Generation ────────────────────────────
+    if not _table_exists(cursor, "qr_codes"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS qr_codes (
+            id TEXT PRIMARY KEY,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            campaign TEXT,
+            event_name TEXT,
+            redirect_url TEXT,
+            scan_count INTEGER DEFAULT 0,
+            lead_count INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (NOW()::text)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_codes_code ON qr_codes(code)")
+
+    if not _table_exists(cursor, "qr_scans"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS qr_scans (
+            id TEXT PRIMARY KEY,
+            qr_code_id TEXT NOT NULL REFERENCES qr_codes(id),
+            ip_address TEXT,
+            user_agent TEXT,
+            referer TEXT,
+            scanned_at TEXT DEFAULT (NOW()::text)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_scans_qr_code ON qr_scans(qr_code_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_scans_date ON qr_scans(scanned_at)")
+
+    if not _table_exists(cursor, "expo_leads"):
+        cursor.execute("""CREATE TABLE IF NOT EXISTS expo_leads (
+            id TEXT PRIMARY KEY,
+            qr_code_id TEXT REFERENCES qr_codes(id),
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            company TEXT NOT NULL,
+            phone TEXT,
+            industry TEXT,
+            team_size TEXT,
+            message TEXT,
+            created_at TEXT DEFAULT (NOW()::text)
+        )""")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_expo_leads_qr ON expo_leads(qr_code_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_expo_leads_email ON expo_leads(email)")
+
     conn.commit()
-    conn.close()
+    _return_connection(conn)

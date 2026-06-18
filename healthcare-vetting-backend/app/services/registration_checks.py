@@ -1,13 +1,21 @@
 """
 Professional Registration Check Service
-Simulates querying NMC, GMC, HCPC public registers.
-In production, scrape or API-query the actual public registers.
+Queries NMC, GMC, HCPC, GPhC public registers via HTTP scraping (live mode)
+or simulation (dev/test). Controlled by REGISTRATION_MODE env var.
+Set REGISTRATION_MODE=live to use real HTTP-based scrapers (no Chrome/Selenium needed).
 """
 import json
+import logging
+import os
 import random
 from datetime import datetime, timedelta, timezone
 from app.database import get_db
 from app.utils.auth import generate_id
+
+logger = logging.getLogger(__name__)
+
+# Set REGISTRATION_MODE=live to use real headless Selenium scrapers
+REGISTRATION_MODE = os.environ.get("REGISTRATION_MODE", "simulate")
 
 
 class RegistrationCheckService:
@@ -41,20 +49,64 @@ class RegistrationCheckService:
     }
 
     @staticmethod
+    def _live_register_check(body: str, registration_number: str) -> dict:
+        """Query the real public register using headless Selenium scrapers."""
+        from app.services.registration_scrapers import scrape_registration
+
+        scrape_result = scrape_registration(body, registration_number)
+
+        is_active = scrape_result.get("registration_status") == "active"
+        sanctions = scrape_result.get("sanctions", [])
+        conditions = scrape_result.get("conditions", [])
+        success = scrape_result.get("success", False)
+        error = scrape_result.get("error")
+
+        if not success:
+            logger.warning(
+                "Live scrape failed for %s/%s: %s — falling back to simulation",
+                body, registration_number, error,
+            )
+            return RegistrationCheckService._simulate_register_check(body, registration_number)
+
+        body_info = RegistrationCheckService.REGISTRATION_BODIES.get(body, {})
+        result_status = "active" if is_active and not sanctions else "review_required"
+
+        return {
+            "status": "completed",
+            "is_active": is_active,
+            "sanctions": sanctions,
+            "conditions": conditions,
+            "result": result_status,
+            "details": {
+                "body": body,
+                "body_name": body_info.get("name", body),
+                "registration_number": registration_number,
+                "register_entry_found": True,
+                "registrant_name": scrape_result.get("registrant_name", ""),
+                "expiry_date": scrape_result.get("expiry_date", ""),
+                "source": "live_scrape",
+                "scraped_at": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+
+    @staticmethod
     def check_registration(candidate_id: str, body: str, registration_number: str) -> dict:
         check_id = generate_id()
         now = datetime.now(timezone.utc).isoformat()
         next_check = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
 
         with get_db() as db:
-            # Simulate register query
-            result = RegistrationCheckService._simulate_register_check(body, registration_number)
+            # Use live scrapers or simulation based on REGISTRATION_MODE
+            if REGISTRATION_MODE == "live":
+                result = RegistrationCheckService._live_register_check(body, registration_number)
+            else:
+                result = RegistrationCheckService._simulate_register_check(body, registration_number)
 
             db.execute(
                 """INSERT INTO registration_checks
                    (id, candidate_id, body, registration_number, status, is_active,
                     sanctions, conditions, last_checked, next_check, result)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     check_id, candidate_id, body, registration_number,
                     result["status"],
@@ -71,7 +123,7 @@ class RegistrationCheckService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'registration_sanction', 'critical', ?, ?, ?)""",
+                       VALUES (%s, %s, 'registration_sanction', 'critical', %s, %s, %s)""",
                     (
                         generate_id(), candidate_id,
                         f"Active sanctions found on {body} registration",
@@ -84,7 +136,7 @@ class RegistrationCheckService:
                 db.execute(
                     """INSERT INTO monitoring_alerts
                        (id, candidate_id, alert_type, severity, message, details, created_at)
-                       VALUES (?, ?, 'registration_inactive', 'high', ?, ?, ?)""",
+                       VALUES (%s, %s, 'registration_inactive', 'high', %s, %s, %s)""",
                     (
                         generate_id(), candidate_id,
                         f"{body} registration is not active",
@@ -96,11 +148,12 @@ class RegistrationCheckService:
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'registration_check', ?, 'completed', 'system', ?, ?)""",
+                   VALUES (%s, 'registration_check', %s, 'completed', 'system', %s, %s)""",
                 (generate_id(), check_id, json.dumps(result), now),
             )
 
-            row = db.execute("SELECT * FROM registration_checks WHERE id=?", (check_id,)).fetchone()
+            db.execute("SELECT * FROM registration_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -147,7 +200,8 @@ class RegistrationCheckService:
     @staticmethod
     def get_check(check_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM registration_checks WHERE id=?", (check_id,)).fetchone()
+            db.execute("SELECT * FROM registration_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -155,8 +209,9 @@ class RegistrationCheckService:
     @staticmethod
     def get_checks_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
-                "SELECT * FROM registration_checks WHERE candidate_id=? ORDER BY last_checked DESC",
+            db.execute(
+                "SELECT * FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]

@@ -6,6 +6,7 @@ compliance files, timestamped logs, verification evidence, and scoring history.
 import json
 import io
 from datetime import datetime, timezone
+from pathlib import Path
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -14,8 +15,30 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
     PageBreak, HRFlowable, Image
 )
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from app.database import get_db
+
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+LOGO_PATH = ASSETS_DIR / "viper-logo.png"
+COVER_PATH = ASSETS_DIR / "viper-cover.png"
+
+# VIPER brand colours
+BRAND_NAVY = colors.HexColor('#17365D')
+BRAND_HEADING = colors.HexColor('#365F91')
+BRAND_TABLE_HDR = colors.HexColor('#1E3A5F')
+BRAND_ROW_ALT = colors.HexColor('#F0F4F8')
+
+
+def _s(val, default="N/A"):
+    """Return val as a string, or default if val is None."""
+    return str(val) if val is not None else default
+
+
+def _n(val, default=0):
+    """Return val as a number, or default if val is None."""
+    try:
+        return float(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
 
 
 class AuditPackService:
@@ -25,64 +48,77 @@ class AuditPackService:
     def generate_candidate_audit(candidate_id: str) -> bytes:
         """Generate a full audit pack PDF for a single candidate."""
         with get_db() as db:
-            candidate = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+            db.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+            candidate = db.fetchone()
             if not candidate:
                 raise ValueError("Candidate not found")
             c = dict(candidate)
 
             # Gather all check data
-            identity = db.execute(
-                "SELECT * FROM identity_checks WHERE candidate_id=? ORDER BY started_at DESC",
+            db.execute(
+                "SELECT * FROM identity_checks WHERE candidate_id=%s ORDER BY started_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            rtw = db.execute(
-                "SELECT * FROM right_to_work_checks WHERE candidate_id=? ORDER BY checked_at DESC",
+            )
+            identity = db.fetchall()
+            db.execute(
+                "SELECT * FROM right_to_work_checks WHERE candidate_id=%s ORDER BY checked_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            dbs = db.execute(
-                "SELECT * FROM dbs_checks WHERE candidate_id=? ORDER BY submitted_at DESC",
+            )
+            rtw = db.fetchall()
+            db.execute(
+                "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            cv = db.execute(
-                "SELECT * FROM cv_analyses WHERE candidate_id=? ORDER BY analysed_at DESC",
+            )
+            dbs = db.fetchall()
+            db.execute(
+                "SELECT * FROM cv_analyses WHERE candidate_id=%s ORDER BY analysed_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            reg = db.execute(
-                "SELECT * FROM registration_checks WHERE candidate_id=? ORDER BY last_checked DESC",
+            )
+            cv = db.fetchall()
+            db.execute(
+                "SELECT * FROM registration_checks WHERE candidate_id=%s ORDER BY last_checked DESC",
                 (candidate_id,),
-            ).fetchall()
-            refs = db.execute(
-                "SELECT * FROM references_ WHERE candidate_id=?",
+            )
+            reg = db.fetchall()
+            db.execute(
+                "SELECT * FROM references_ WHERE candidate_id=%s",
                 (candidate_id,),
-            ).fetchall()
-            emp_history = db.execute(
-                "SELECT * FROM employment_history WHERE candidate_id=? ORDER BY start_date DESC",
+            )
+            refs = db.fetchall()
+            db.execute(
+                "SELECT * FROM employment_history WHERE candidate_id=%s ORDER BY start_date DESC",
                 (candidate_id,),
-            ).fetchall()
-            emp_verifications = db.execute(
-                "SELECT * FROM employment_verifications WHERE candidate_id=?",
+            )
+            emp_history = db.fetchall()
+            db.execute(
+                "SELECT * FROM employment_verifications WHERE candidate_id=%s",
                 (candidate_id,),
-            ).fetchall()
-            compliance = db.execute(
-                "SELECT * FROM compliance_records WHERE candidate_id=?",
+            )
+            emp_verifications = db.fetchall()
+            db.execute(
+                "SELECT * FROM compliance_records WHERE candidate_id=%s",
                 (candidate_id,),
-            ).fetchone()
-            audit_logs = db.execute(
-                "SELECT * FROM audit_logs WHERE entity_id=? ORDER BY created_at DESC",
+            )
+            compliance = db.fetchone()
+            db.execute(
+                "SELECT * FROM audit_logs WHERE entity_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
-            ).fetchall()
-            alerts = db.execute(
-                "SELECT * FROM monitoring_alerts WHERE candidate_id=? ORDER BY created_at DESC",
+            )
+            audit_logs = db.fetchall()
+            db.execute(
+                "SELECT * FROM monitoring_alerts WHERE candidate_id=%s ORDER BY created_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            alerts = db.fetchall()
 
             # Try to get training certificates
             training = []
             try:
-                training = db.execute(
-                    "SELECT * FROM training_certificates WHERE candidate_id=?",
+                db.execute(
+                    "SELECT * FROM training_certificates WHERE candidate_id=%s",
                     (candidate_id,),
-                ).fetchall()
+                )
+                training = db.fetchall()
             except Exception:
                 pass
 
@@ -94,38 +130,91 @@ class AuditPackService:
 
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle('Title2', parent=styles['Title'],
-                                      fontSize=20, textColor=colors.HexColor('#1e3a5f'))
+                                      fontSize=22, textColor=BRAND_NAVY)
         heading_style = ParagraphStyle('Heading2a', parent=styles['Heading2'],
-                                        textColor=colors.HexColor('#1e3a5f'),
+                                        textColor=BRAND_HEADING,
                                         spaceAfter=6)
-        subheading_style = ParagraphStyle('Heading3a', parent=styles['Heading3'],
-                                           textColor=colors.HexColor('#2d5f8a'))
         normal_style = styles['Normal']
         small_style = ParagraphStyle('Small', parent=normal_style, fontSize=8,
                                       textColor=colors.grey)
 
         elements = []
 
-        # Cover page
-        elements.append(Spacer(1, 30*mm))
-        elements.append(Paragraph("HealthVet AI", title_style))
+        # ── COVER PAGE ─────────────────────────────────────────
+        if LOGO_PATH.exists():
+            elements.append(Image(str(LOGO_PATH), width=65*mm, height=65*mm))
         elements.append(Spacer(1, 5*mm))
-        elements.append(Paragraph("CQC Compliance Audit Pack", heading_style))
+        if COVER_PATH.exists():
+            elements.append(Image(str(COVER_PATH), width=130*mm, height=80*mm))
         elements.append(Spacer(1, 10*mm))
-        elements.append(HRFlowable(width="80%", color=colors.HexColor('#1e3a5f')))
-        elements.append(Spacer(1, 10*mm))
+        elements.append(Paragraph("CQC COMPLIANCE AUDIT REPORT", title_style))
+        elements.append(Spacer(1, 3*mm))
+        elements.append(Paragraph(
+            "Enterprise Compliance Report",
+            ParagraphStyle('SubTitle', parent=styles['Normal'], fontSize=12,
+                           textColor=BRAND_HEADING, alignment=1),
+        ))
+        elements.append(Spacer(1, 3*mm))
+        elements.append(Paragraph(
+            "Confidential",
+            ParagraphStyle('Conf', parent=styles['Normal'], fontSize=10,
+                           textColor=colors.grey, alignment=1),
+        ))
+        elements.append(PageBreak())
 
-        # Candidate info table
-        candidate_name = f"{c.get('first_name', '')} {c.get('last_name', '')}"
+        # ── PAGE 2: COMPLIANCE SCORE + CANDIDATE DETAILS ──────
         comp = dict(compliance) if compliance else {}
+        candidate_name = f"{_s(c.get('first_name'), '')} {_s(c.get('last_name'), '')}"
+        compliance_status = _s(comp.get("overall_status"), "incomplete").upper()
+        cqc_ready = "YES" if comp.get("cqc_ready") else "NO"
+        risk_level = "LOW" if comp.get("cqc_ready") else "MEDIUM"
+        score = _n(comp.get("score"))
+
+        # Compliance score heading
+        elements.append(Paragraph(
+            f"Compliance Score: {score:.0f}% ({risk_level} RISK)",
+            ParagraphStyle('ScoreHead', parent=styles['Normal'], fontSize=14,
+                           textColor=BRAND_NAVY, alignment=1,
+                           spaceAfter=6, fontName='Helvetica-Bold'),
+        ))
+
+        # Section summary table
+        section_checks = [
+            ["Section", "Status"],
+            ["Identity Verification", "\u25A0 Compliant" if identity else "\u25A0 Pending"],
+            ["Right to Work", "\u25A0 Verified" if rtw else "\u25A0 Pending"],
+            ["DBS Check", "\u25A0 Clear" if dbs else "\u25A0 Pending"],
+            ["Fraud Detection", "\u25A0 Low Risk" if cv else "\u25A0 Pending"],
+        ]
+        st = Table(section_checks, colWidths=[80*mm, 80*mm])
+        st.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), BRAND_TABLE_HDR),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, BRAND_ROW_ALT]),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(st)
+        elements.append(Spacer(1, 2*mm))
+        elements.append(Paragraph(
+            "This report is generated by VIPER AI and provides real-time audit-ready compliance intelligence.",
+            ParagraphStyle('Disc', parent=small_style, alignment=1),
+        ))
+        elements.append(Spacer(1, 8*mm))
+
+        # Candidate details table
         info_data = [
-            ["Candidate Name:", candidate_name],
-            ["Email:", c.get("email", "N/A")],
-            ["Profession:", c.get("profession", "N/A")],
-            ["Registration:", f"{c.get('registration_body', 'N/A')} - {c.get('registration_number', 'N/A')}"],
-            ["Compliance Score:", f"{comp.get('score', 0)}%"],
-            ["Compliance Status:", comp.get("overall_status", "incomplete").upper()],
-            ["CQC Ready:", "YES" if comp.get("cqc_ready") else "NO"],
+            ["Candidate ID:", candidate_id[:12] + "..."],
+            ["Name:", candidate_name],
+            ["Email:", _s(c.get("email"))],
+            ["Profession:", _s(c.get("profession"))],
+            ["Registration:", f"{_s(c.get('registration_body'))} - {_s(c.get('registration_number'))}"],
+            ["Compliance Status:", compliance_status],
+            ["CQC Ready:", cqc_ready],
+            ["Risk Level:", risk_level],
             ["Report Generated:", datetime.now(timezone.utc).strftime("%d %B %Y at %H:%M UTC")],
         ]
         info_table = Table(info_data, colWidths=[45*mm, 120*mm])
@@ -148,8 +237,8 @@ class AuditPackService:
                 data = [
                     ["Provider:", cd.get("provider", "N/A")],
                     ["Document Type:", cd.get("document_type", "N/A")],
-                    ["Result:", cd.get("result", "N/A").upper()],
-                    ["Facial Match:", f"{cd.get('facial_match_score', 0):.0f}%"],
+                    ["Result:", _s(cd.get("result")).upper()],
+                    ["Facial Match:", f"{_n(cd.get('facial_match_score')):.0f}%"],
                     ["Liveness:", cd.get("liveness_check", "N/A")],
                     ["Address Verified:", "Yes" if cd.get("address_verified") else "No"],
                     ["Date:", cd.get("started_at", "N/A")],
@@ -201,17 +290,29 @@ class AuditPackService:
         if dbs:
             for check in dbs:
                 cd = dict(check)
+                is_candidate_supplied = cd.get("dbs_mode") == "candidate_supplied"
                 data = [
-                    ["Provider:", cd.get("provider", "N/A")],
+                    ["Provider:", "Candidate Supplied" if is_candidate_supplied else cd.get("provider", "N/A")],
+                    ["DBS Mode:", "Candidate Supplied" if is_candidate_supplied else "Viper AI Managed"],
                     ["Check Type:", cd.get("check_type", "enhanced")],
                     ["Status:", cd.get("status", "N/A")],
-                    ["Result:", cd.get("result", "N/A").upper()],
+                    ["Result:", _s(cd.get("result")).upper()],
                     ["Certificate No:", cd.get("certificate_number", "N/A")],
                     ["Issue Date:", cd.get("issue_date", "N/A")],
                     ["Update Service:", "Registered" if cd.get("update_service_registered") else "Not Registered"],
                     ["Next Renewal:", cd.get("next_renewal", "N/A")],
                     ["Submitted:", cd.get("submitted_at", "N/A")],
                 ]
+                if is_candidate_supplied:
+                    data.append(["Validation Status:", cd.get("validation_status", "N/A")])
+                    try:
+                        vd = json.loads(cd.get("validation_details") or "{}")
+                        if vd.get("age_warning"):
+                            data.append(["Age Warning:", vd["age_warning"]])
+                        if vd.get("update_service_status"):
+                            data.append(["Update Service Check:", vd["update_service_status"]])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
                 t = Table(data, colWidths=[40*mm, 125*mm])
                 t.setStyle(TableStyle([
                     ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
@@ -222,6 +323,47 @@ class AuditPackService:
                 elements.append(Spacer(1, 3*mm))
         else:
             elements.append(Paragraph("No DBS checks on record.", normal_style))
+        elements.append(Spacer(1, 3*mm))
+
+        # Section 3a: DBS Verification Consent/Authority Record
+        dbs_consents = []
+        try:
+            db.execute(
+                "SELECT * FROM dbs_consent_records WHERE candidate_id=%s ORDER BY consent_timestamp DESC",
+                (candidate_id,),
+            )
+            dbs_consents = db.fetchall()
+        except Exception:
+            pass
+
+        if dbs_consents:
+            elements.append(Paragraph("3a. DBS Verification Authority & Consent", heading_style))
+            elements.append(HRFlowable(width="100%", color=colors.lightgrey))
+            elements.append(Spacer(1, 3*mm))
+            for consent in dbs_consents:
+                ccd = dict(consent)
+                consent_data = [
+                    ["Consent Given:", "Yes" if ccd.get("consent_given") else "No"],
+                    ["Consent Timestamp:", ccd.get("consent_timestamp", "N/A")],
+                    ["IP Address:", ccd.get("consent_ip_address", "N/A")],
+                    ["Consent Version:", ccd.get("consent_version", "1.0")],
+                ]
+                ct = Table(consent_data, colWidths=[40*mm, 125*mm])
+                ct.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ]))
+                elements.append(ct)
+                elements.append(Spacer(1, 2*mm))
+                # Add the full consent text
+                consent_text = ccd.get("consent_text", "")
+                if consent_text:
+                    elements.append(Paragraph(
+                        f"<i>{consent_text}</i>",
+                        ParagraphStyle("ConsentText", parent=normal_style, fontSize=7, leading=9, textColor=colors.grey),
+                    ))
+                elements.append(Spacer(1, 3*mm))
         elements.append(Spacer(1, 5*mm))
 
         # Section 4: CV Analysis
@@ -232,7 +374,7 @@ class AuditPackService:
             for check in cv:
                 cd = dict(check)
                 data = [
-                    ["Fraud Risk Score:", f"{cd.get('fraud_risk_score', 0):.1%}"],
+                    ["Fraud Risk Score:", f"{_n(cd.get('fraud_risk_score')):.1%}"],
                     ["Status:", cd.get("status", "N/A")],
                     ["Analysis Date:", cd.get("analysed_at", "N/A")],
                 ]
@@ -266,7 +408,7 @@ class AuditPackService:
             for entry in emp_history:
                 e = dict(entry)
                 ver = emp_ver_map.get(e["id"])
-                verified = "Yes" if ver and ver.get("status") == "completed" else "No"
+                verified = "Yes" if ver and ver.get("status") in ("verified", "completed") else "No"
                 dates = f"{e.get('start_date', '?')} - {e.get('end_date', 'Present')}"
                 emp_table_data.append([
                     e.get("employer_name", "N/A"),
@@ -328,7 +470,7 @@ class AuditPackService:
                 ref_table_data.append([
                     r.get("referee_name", "N/A"),
                     r.get("referee_organisation", "N/A"),
-                    r.get("status", "N/A").upper(),
+                    _s(r.get("status")).upper(),
                     "Yes" if r.get("domain_verified") else "No",
                     r.get("sent_at", "N/A")[:10] if r.get("sent_at") else "N/A",
                 ])
@@ -361,7 +503,7 @@ class AuditPackService:
                     cd.get("provider", "N/A"),
                     cd.get("issue_date", "N/A"),
                     cd.get("expiry_date", "N/A"),
-                    cd.get("status", "N/A").upper(),
+                    _s(cd.get("status")).upper(),
                 ])
             t = Table(train_data, colWidths=[40*mm, 35*mm, 30*mm, 30*mm, 25*mm])
             t.setStyle(TableStyle([
@@ -384,26 +526,37 @@ class AuditPackService:
         elements.append(HRFlowable(width="100%", color=colors.lightgrey))
         elements.append(Spacer(1, 3*mm))
         if alerts:
-            alert_data = [["Type", "Severity", "Message", "Resolved", "Date"]]
+            alert_cell = ParagraphStyle('AlertCell', parent=normal_style,
+                                         fontSize=8, leading=10, wordWrap='CJK')
+            alert_hdr = ParagraphStyle('AlertHdr', parent=alert_cell,
+                                        textColor=colors.white)
+            alert_data = [[
+                Paragraph("<b>Type</b>", alert_hdr),
+                Paragraph("<b>Severity</b>", alert_hdr),
+                Paragraph("<b>Message</b>", alert_hdr),
+                Paragraph("<b>Resolved</b>", alert_hdr),
+                Paragraph("<b>Date</b>", alert_hdr),
+            ]]
             for alert in alerts:
                 ad = dict(alert)
                 alert_data.append([
-                    ad.get("alert_type", "N/A").replace("_", " ").title(),
-                    ad.get("severity", "N/A").upper(),
-                    ad.get("message", "N/A")[:60],
-                    "Yes" if ad.get("is_resolved") else "No",
-                    ad.get("created_at", "N/A")[:10] if ad.get("created_at") else "N/A",
+                    Paragraph(_s(ad.get("alert_type")).replace("_", " ").title(), alert_cell),
+                    Paragraph(_s(ad.get("severity")).upper(), alert_cell),
+                    Paragraph(_s(ad.get("message"))[:80], alert_cell),
+                    Paragraph("Yes" if ad.get("is_resolved") else "No", alert_cell),
+                    Paragraph(str(ad.get("created_at", "N/A"))[:10] if ad.get("created_at") else "N/A", alert_cell),
                 ])
-            t = Table(alert_data, colWidths=[30*mm, 20*mm, 65*mm, 20*mm, 25*mm])
+            t = Table(alert_data, colWidths=[35*mm, 18*mm, 75*mm, 16*mm, 22*mm])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 7),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
             ]))
             elements.append(t)
         else:
@@ -416,28 +569,96 @@ class AuditPackService:
         elements.append(HRFlowable(width="100%", color=colors.lightgrey))
         elements.append(Spacer(1, 3*mm))
         if audit_logs:
-            log_data = [["Action", "Actor", "Details", "Timestamp"]]
-            for log in audit_logs[:50]:  # Last 50 entries
+            def _fmt_action(raw):
+                """Convert snake_case action to readable label."""
+                if not raw:
+                    return "N/A"
+                return str(raw).replace("_", " ").title()
+
+            def _fmt_actor(raw):
+                """Shorten UUIDs and clean up actor names."""
+                if not raw:
+                    return "N/A"
+                s = str(raw)
+                if s == "compliance_engine":
+                    return "System"
+                # Truncate UUIDs (8 chars + ...)
+                import re
+                s = re.sub(
+                    r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                    lambda m: m.group(0)[:8] + '\u2026',
+                    s,
+                )
+                return s
+
+            def _fmt_details(raw):
+                """Parse JSON details into readable key-value summary."""
+                if not raw:
+                    return ""
+                import re as _re
+                _uuid_re = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+                s = str(raw)
+                try:
+                    d = json.loads(s) if isinstance(raw, str) else (raw if isinstance(raw, dict) else {})
+                    if isinstance(d, dict):
+                        skip_keys = {"flags", "compliance_label", "template_checks"}
+                        parts = []
+                        for k, v in d.items():
+                            if k in skip_keys and (not v or str(v).startswith("[")):
+                                continue
+                            label = str(k).replace("_", " ").title()
+                            val = str(v)
+                            val = _re.sub(_uuid_re, lambda m: m.group(0)[:8] + '\u2026', val)
+                            if len(val) > 40:
+                                val = val[:37] + "..."
+                            parts.append(f"{label}: {val}")
+                        return " | ".join(parts) if parts else s[:60]
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+                s = _re.sub(_uuid_re, lambda m: m.group(0)[:8] + '\u2026', s)
+                return s[:80] + ("..." if len(s) > 80 else "")
+
+            def _fmt_ts(raw):
+                """Format timestamp to readable date/time."""
+                if not raw:
+                    return "N/A"
+                s = str(raw)[:19]  # 2026-04-28T21:56:18
+                try:
+                    dt = datetime.fromisoformat(s)
+                    return dt.strftime("%d %b %Y  %H:%M")
+                except (ValueError, TypeError):
+                    return s
+
+            audit_style = ParagraphStyle('AuditCell', parent=normal_style,
+                                          fontSize=7, leading=9,
+                                          wordWrap='CJK')
+            audit_hdr = ParagraphStyle('AuditHdr', parent=audit_style,
+                                        textColor=colors.white)
+            log_data = [[
+                Paragraph("<b>Action</b>", audit_hdr),
+                Paragraph("<b>Actor</b>", audit_hdr),
+                Paragraph("<b>Details</b>", audit_hdr),
+                Paragraph("<b>Timestamp</b>", audit_hdr),
+            ]]
+            for log in audit_logs[:50]:
                 ld = dict(log)
-                details = ld.get("details", "")
-                if details and len(details) > 80:
-                    details = details[:77] + "..."
                 log_data.append([
-                    ld.get("action", "N/A"),
-                    ld.get("actor", "N/A"),
-                    details,
-                    ld.get("created_at", "N/A")[:19] if ld.get("created_at") else "N/A",
+                    Paragraph(_fmt_action(ld.get("action")), audit_style),
+                    Paragraph(_fmt_actor(ld.get("actor")), audit_style),
+                    Paragraph(_fmt_details(ld.get("details")), audit_style),
+                    Paragraph(_fmt_ts(ld.get("created_at")), audit_style),
                 ])
-            t = Table(log_data, colWidths=[30*mm, 30*mm, 70*mm, 35*mm])
+            t = Table(log_data, colWidths=[32*mm, 22*mm, 80*mm, 30*mm])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 7),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f4f8')]),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
             ]))
             elements.append(t)
         else:
@@ -448,7 +669,7 @@ class AuditPackService:
         elements.append(HRFlowable(width="100%", color=colors.HexColor('#1e3a5f')))
         elements.append(Spacer(1, 3*mm))
         elements.append(Paragraph(
-            f"This audit pack was generated by HealthVet AI on "
+            f"This audit pack was generated by Viper AI on "
             f"{datetime.now(timezone.utc).strftime('%d %B %Y at %H:%M UTC')}. "
             f"All data is verified and timestamped for CQC compliance purposes.",
             small_style,
@@ -458,20 +679,38 @@ class AuditPackService:
         return buffer.getvalue()
 
     @staticmethod
+    def generate_bulk_audit(candidate_ids: list) -> bytes:
+        """Generate a combined audit pack PDF for multiple candidates."""
+        from PyPDF2 import PdfMerger
+        merger = PdfMerger()
+        for cid in candidate_ids:
+            try:
+                pdf_bytes = AuditPackService.generate_candidate_audit(cid)
+                merger.append(io.BytesIO(pdf_bytes))
+            except Exception:
+                continue
+        output = io.BytesIO()
+        merger.write(output)
+        merger.close()
+        return output.getvalue()
+
+    @staticmethod
     def generate_agency_audit(agency_id: str) -> bytes:
         """Generate an agency-wide audit summary PDF."""
         with get_db() as db:
-            agency = db.execute("SELECT * FROM agencies WHERE id=?", (agency_id,)).fetchone()
+            db.execute("SELECT * FROM agencies WHERE id=%s", (agency_id,))
+            agency = db.fetchone()
             if not agency:
                 raise ValueError("Agency not found")
             a = dict(agency)
 
-            candidates = db.execute(
+            db.execute(
                 """SELECT c.*, ac.employment_status FROM candidates c
                    JOIN agency_candidates ac ON c.id = ac.candidate_id
-                   WHERE ac.agency_id=?""",
+                   WHERE ac.agency_id=%s""",
                 (agency_id,),
-            ).fetchall()
+            )
+            candidates = db.fetchall()
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4,
@@ -480,19 +719,26 @@ class AuditPackService:
 
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle('Title2', parent=styles['Title'],
-                                      fontSize=20, textColor=colors.HexColor('#1e3a5f'))
+                                      fontSize=22, textColor=BRAND_NAVY)
         heading_style = ParagraphStyle('Heading2a', parent=styles['Heading2'],
-                                        textColor=colors.HexColor('#1e3a5f'))
+                                        textColor=BRAND_HEADING)
         normal_style = styles['Normal']
         small_style = ParagraphStyle('Small', parent=normal_style, fontSize=8,
                                       textColor=colors.grey)
 
         elements = []
-        elements.append(Spacer(1, 20*mm))
-        elements.append(Paragraph("HealthVet AI", title_style))
-        elements.append(Paragraph("Agency Compliance Summary", heading_style))
+        if LOGO_PATH.exists():
+            elements.append(Image(str(LOGO_PATH), width=50*mm, height=50*mm))
+        elements.append(Spacer(1, 5*mm))
+        elements.append(Paragraph("Agency Compliance Summary", title_style))
+        elements.append(Spacer(1, 5*mm))
+        elements.append(Paragraph(
+            "Enterprise Compliance Report",
+            ParagraphStyle('SubT2', parent=styles['Normal'], fontSize=12,
+                           textColor=BRAND_HEADING, alignment=1),
+        ))
         elements.append(Spacer(1, 10*mm))
-        elements.append(HRFlowable(width="80%", color=colors.HexColor('#1e3a5f')))
+        elements.append(HRFlowable(width="80%", color=BRAND_NAVY))
         elements.append(Spacer(1, 10*mm))
 
         info_data = [
@@ -519,10 +765,10 @@ class AuditPackService:
             for cand in candidates:
                 cd = dict(cand)
                 cand_data.append([
-                    f"{cd.get('first_name', '')} {cd.get('last_name', '')}",
-                    cd.get("profession", "N/A"),
-                    f"{cd.get('compliance_score', 0):.0f}%",
-                    cd.get("compliance_status", "incomplete").upper(),
+                    f"{_s(cd.get('first_name'), '')} {_s(cd.get('last_name'), '')}",
+                    _s(cd.get("profession")),
+                    f"{_n(cd.get('compliance_score')):.0f}%",
+                    _s(cd.get("compliance_status"), "incomplete").upper(),
                     "Yes" if cd.get("compliance_status") == "compliant" else "No",
                 ])
             t = Table(cand_data, colWidths=[40*mm, 30*mm, 25*mm, 35*mm, 25*mm])
@@ -542,7 +788,7 @@ class AuditPackService:
         elements.append(HRFlowable(width="100%", color=colors.HexColor('#1e3a5f')))
         elements.append(Spacer(1, 3*mm))
         elements.append(Paragraph(
-            f"Generated by HealthVet AI on {datetime.now(timezone.utc).strftime('%d %B %Y at %H:%M UTC')}.",
+            f"Generated by Viper AI on {datetime.now(timezone.utc).strftime('%d %B %Y at %H:%M UTC')}.",
             small_style,
         ))
 

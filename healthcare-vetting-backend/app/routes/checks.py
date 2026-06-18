@@ -4,13 +4,18 @@ from app.utils.auth import get_current_user, verify_agency_owns_candidate
 from app.schemas.checks import (
     IdentityCheckRequest, IdentityCheckResponse, IdentitySDKTokenResponse,
     RightToWorkRequest, RightToWorkUKCitizenRequest, RightToWorkResponse,
-    DBSCheckRequest, DBSCheckResponse,
+    DBSCheckRequest, DBSCheckResponse, CandidateDBSSubmission, DBSConsentResponse,
     CVAnalysisRequest, CVAnalysisResponse,
     RegistrationCheckRequest, RegistrationCheckResponse,
     ReferenceRequest, ReferenceResponse, ReferenceSubmission,
     EmploymentHistoryEntry, EmploymentEntryUpdate, EmploymentEntryCreate,
     EmploymentVerificationRequest, EmploymentVerificationResponse,
+    ImposterDeclarationRequest, ImposterDeclarationResponse,
 )
+import json
+from datetime import datetime, timezone
+from app.database import get_db
+from app.utils.auth import generate_id
 from app.services.identity_verification import IdentityVerificationService
 from app.services.right_to_work import RightToWorkService
 from app.services.dbs_checks import DBSCheckService
@@ -107,6 +112,164 @@ async def get_dbs_checks(candidate_id: str, current_user: dict = Depends(get_cur
 @router.post("/dbs/update-service")
 async def check_dbs_update_service(candidate_id: str, certificate_number: str, current_user: dict = Depends(get_current_user)):
     return DBSCheckService.check_update_service(candidate_id, certificate_number)
+
+
+# ── Candidate-Supplied DBS ─────────────────────────────────────────
+DBS_CONSENT_TEXT = (
+    "I hereby authorise {agency_name} and Viper AI Ltd to access, verify, and process "
+    "my Disclosure and Barring Service (DBS) certificate information for the purposes of "
+    "pre-employment vetting and compliance checks. I confirm that the DBS certificate "
+    "details I have provided are accurate and relate to a genuine DBS certificate issued "
+    "to me. I understand that {agency_name} and Viper AI Ltd will use this information "
+    "solely for the purpose of verifying my suitability for the role applied for, in "
+    "accordance with the Data Protection Act 2018, UK GDPR, and the DBS Code of Practice. "
+    "I consent to checks being made against the DBS Update Service where applicable."
+)
+
+
+@router.post("/dbs/candidate-supplied", response_model=DBSCheckResponse)
+async def submit_candidate_supplied_dbs(
+    data: CandidateDBSSubmission,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Submit a candidate-supplied DBS certificate for validation."""
+    if current_user["type"] != "candidate":
+        raise HTTPException(status_code=403, detail="Only candidates can submit their own DBS")
+    if not data.consent_given:
+        raise HTTPException(status_code=400, detail="You must provide authority for the agency and Viper AI to verify your DBS")
+
+    candidate_id = current_user["sub"]
+    now = datetime.now(timezone.utc).isoformat()
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("User-Agent", "")
+    check_id = generate_id()
+
+    # Validate certificate number format (12 digits)
+    cert_clean = data.certificate_number.strip()
+    if not cert_clean.isdigit() or len(cert_clean) != 12:
+        raise HTTPException(status_code=400, detail="DBS certificate number must be exactly 12 digits")
+
+    with get_db() as db:
+        # Get agency info for consent text
+        db.execute(
+            """SELECT a.id, a.company_name FROM agencies a
+               JOIN agency_candidates ac ON a.id = ac.agency_id
+               WHERE ac.candidate_id = %s LIMIT 1""",
+            (candidate_id,),
+        )
+        agency_row = db.fetchone()
+        agency_id = dict(agency_row)["id"] if agency_row else None
+        agency_name = dict(agency_row)["company_name"] if agency_row else "the agency"
+
+        # Record DBS consent
+        consent_id = generate_id()
+        consent_text = DBS_CONSENT_TEXT.format(agency_name=agency_name)
+        db.execute(
+            """INSERT INTO dbs_consent_records
+               (id, candidate_id, agency_id, dbs_check_id, consent_given,
+                consent_text, consent_timestamp, consent_ip_address, consent_user_agent)
+               VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s)""",
+            (consent_id, candidate_id, agency_id, check_id,
+             consent_text, now, ip_address, user_agent),
+        )
+
+        # Also record in consent_logs for GDPR audit trail
+        db.execute(
+            """INSERT INTO consent_logs
+               (id, candidate_id, consent_type, consent_given, ip_address, user_agent, timestamp)
+               VALUES (%s, %s, 'dbs_verification_authority', 1, %s, %s, %s)""",
+            (generate_id(), candidate_id, ip_address, user_agent, now),
+        )
+
+        # Run validation on the candidate-supplied certificate
+        validation = DBSCheckService.validate_candidate_dbs(
+            cert_clean, data.issue_date, data.dbs_type, data.update_service_ref
+        )
+
+        # Insert the DBS check record
+        db.execute(
+            """INSERT INTO dbs_checks
+               (id, candidate_id, provider, check_type, status, certificate_number,
+                issue_date, result, details, submitted_at, completed_at,
+                dbs_mode, candidate_certificate_number, candidate_issue_date,
+                candidate_dbs_type, candidate_workforce, update_service_ref,
+                validation_status, validation_details, validated_at)
+               VALUES (%s, %s, 'candidate_supplied', %s, %s, %s, %s, %s, %s, %s, %s,
+                       'candidate_supplied', %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (check_id, candidate_id, data.dbs_type, validation["status"],
+             cert_clean, data.issue_date, validation["result"],
+             json.dumps(validation["details"]), now,
+             now if validation["status"] == "completed" else None,
+             cert_clean, data.issue_date, data.dbs_type,
+             data.workforce, data.update_service_ref,
+             validation["validation_status"],
+             json.dumps(validation["validation_details"]),
+             now),
+        )
+
+        # Audit log
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (%s, 'dbs_check', %s, 'candidate_supplied_dbs', %s, %s, %s)""",
+            (generate_id(), check_id, candidate_id,
+             json.dumps({
+                 "dbs_mode": "candidate_supplied",
+                 "certificate_number": cert_clean,
+                 "dbs_type": data.dbs_type,
+                 "consent_id": consent_id,
+                 "ip_address": ip_address,
+             }), now),
+        )
+
+        db.execute("SELECT * FROM dbs_checks WHERE id=%s", (check_id,))
+        row = db.fetchone()
+
+    # Re-evaluate compliance
+    ComplianceEngine.evaluate_candidate(candidate_id)
+
+    return dict(row)
+
+
+@router.get("/dbs/consent/{candidate_id}", response_model=list[DBSConsentResponse])
+async def get_dbs_consent_records(candidate_id: str, current_user: dict = Depends(get_current_user)):
+    """Get DBS consent/authority records for a candidate."""
+    user_type = current_user.get("type")
+    if user_type == "candidate" and current_user["sub"] != candidate_id:
+        raise HTTPException(status_code=403, detail="You can only view your own consent records")
+    if user_type not in ("candidate", "agency", "admin"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    with get_db() as db:
+        db.execute(
+            "SELECT * FROM dbs_consent_records WHERE candidate_id=%s ORDER BY consent_timestamp DESC",
+            (candidate_id,),
+        )
+        rows = db.fetchall()
+        return [dict(r) for r in rows]
+
+
+@router.get("/dbs/mode/{candidate_id}")
+async def get_dbs_mode(candidate_id: str, current_user: dict = Depends(get_current_user)):
+    """Get the DBS mode for a candidate based on their agency's template config."""
+    with get_db() as db:
+        db.execute(
+            """SELECT itc.config FROM industry_template_checks itc
+               JOIN agencies a ON a.industry_template_id = itc.template_id
+               JOIN agency_candidates ac ON ac.agency_id = a.id
+               WHERE ac.candidate_id = %s AND itc.check_key LIKE 'dbs%%'
+               AND itc.is_enabled = 1
+               ORDER BY itc.sort_order ASC LIMIT 1""",
+            (candidate_id,),
+        )
+        row = db.fetchone()
+        if row:
+            try:
+                cfg = json.loads(dict(row).get("config") or "{}")
+                return {"dbs_mode": cfg.get("dbs_mode", "viper_managed")}
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return {"dbs_mode": "viper_managed"}
 
 
 # ── CV Analysis ────────────────────────────────────────────────────
@@ -271,3 +434,95 @@ async def send_employment_verification_reminder(ver_id: str, current_user: dict 
     if not result:
         raise HTTPException(status_code=404, detail="Employment verification not found")
     return result
+
+
+# ── Imposter Check Declarations ──────────────────────────────────
+@router.post("/imposter-declaration", response_model=ImposterDeclarationResponse)
+async def submit_imposter_declaration(
+    data: ImposterDeclarationRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Agency submits a signed imposter check declaration for a candidate.
+    This is required before RTW can be marked as compliant.
+    The declaration is timestamped, non-editable, and logged in the audit trail."""
+    if current_user.get("type") != "agency":
+        raise HTTPException(status_code=403, detail="Only agency users can submit imposter declarations")
+
+    verify_agency_owns_candidate(current_user, data.candidate_id)
+
+    # JWT only contains sub (user_id) and type — look up agency details from DB
+    agency_id = current_user["sub"]
+    ip_address = request.client.host if request.client else "unknown"
+    now = datetime.now(timezone.utc).isoformat()
+    declaration_id = generate_id()
+    docs_json = json.dumps(data.documents_verified) if data.documents_verified else None
+
+    with get_db() as db:
+        # Look up agency email from the database
+        db.execute("SELECT email FROM agencies WHERE id=%s", (agency_id,))
+        agency_row = db.fetchone()
+        agency_email = dict(agency_row)["email"] if agency_row else "unknown"
+
+        # Check if declaration already exists (non-editable - only one allowed)
+        db.execute(
+            "SELECT id FROM imposter_declarations WHERE candidate_id=%s AND agency_id=%s",
+            (data.candidate_id, agency_id),
+        )
+        existing = db.fetchone()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="Imposter declaration already submitted for this candidate. Declarations are non-editable."
+            )
+
+        db.execute(
+            """INSERT INTO imposter_declarations
+               (id, candidate_id, agency_id, declared_by_user_id, declared_by_email,
+                declaration_text, documents_verified, ip_address, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                declaration_id, data.candidate_id, agency_id,
+                agency_id, agency_email,
+                data.declaration_text, docs_json, ip_address, now,
+            ),
+        )
+
+        # Immutable audit log entry
+        db.execute(
+            """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
+               VALUES (%s, 'imposter_declaration', %s, 'submitted', %s, %s, %s)""",
+            (
+                generate_id(), data.candidate_id, agency_email,
+                json.dumps({
+                    "declaration_id": declaration_id,
+                    "declared_by_user_id": agency_id,
+                    "declared_by_email": agency_email,
+                    "agency_id": agency_id,
+                    "ip_address": ip_address,
+                    "documents_verified": data.documents_verified,
+                    "declaration_text": data.declaration_text,
+                }),
+                now,
+            ),
+        )
+
+        db.execute("SELECT * FROM imposter_declarations WHERE id=%s", (declaration_id,))
+        row = db.fetchone()
+
+    # Re-evaluate compliance now that declaration is in place
+    ComplianceEngine.evaluate_candidate(data.candidate_id)
+    return dict(row)
+
+
+@router.get("/imposter-declaration/{candidate_id}", response_model=list[ImposterDeclarationResponse])
+async def get_imposter_declarations(candidate_id: str, current_user: dict = Depends(get_current_user)):
+    """Get imposter declarations for a candidate."""
+    verify_agency_owns_candidate(current_user, candidate_id)
+    with get_db() as db:
+        db.execute(
+            "SELECT * FROM imposter_declarations WHERE candidate_id=%s ORDER BY created_at DESC",
+            (candidate_id,),
+        )
+        rows = db.fetchall()
+        return [dict(r) for r in rows]

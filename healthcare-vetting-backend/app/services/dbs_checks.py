@@ -32,7 +32,7 @@ class DBSCheckService:
             db.execute(
                 """INSERT INTO dbs_checks
                    (id, candidate_id, provider, check_type, status, application_ref, submitted_at)
-                   VALUES (?, ?, ?, ?, 'submitted', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, 'submitted', %s, %s)""",
                 (check_id, candidate_id, provider, check_type, app_ref, now),
             )
 
@@ -50,9 +50,9 @@ class DBSCheckService:
 
             db.execute(
                 """UPDATE dbs_checks SET
-                   status=?, certificate_number=?, issue_date=?,
-                   result=?, details=?, next_renewal=?, completed_at=?
-                   WHERE id=?""",
+                   status=%s, certificate_number=%s, issue_date=%s,
+                   result=%s, details=%s, next_renewal=%s, completed_at=%s
+                   WHERE id=%s""",
                 (
                     result["status"],
                     cert_number,
@@ -68,11 +68,12 @@ class DBSCheckService:
             # Audit log
             db.execute(
                 """INSERT INTO audit_logs (id, entity_type, entity_id, action, actor, details, created_at)
-                   VALUES (?, 'dbs_check', ?, 'submitted', 'system', ?, ?)""",
+                   VALUES (%s, 'dbs_check', %s, 'submitted', 'system', %s, %s)""",
                 (generate_id(), check_id, json.dumps({"provider": provider, "type": check_type}), now),
             )
 
-            row = db.execute("SELECT * FROM dbs_checks WHERE id=?", (check_id,)).fetchone()
+            db.execute("SELECT * FROM dbs_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             return dict(row)
 
     @staticmethod
@@ -114,6 +115,92 @@ class DBSCheckService:
         }
 
     @staticmethod
+    def validate_candidate_dbs(
+        certificate_number: str,
+        issue_date: str,
+        dbs_type: str = "enhanced",
+        update_service_ref: str = None,
+    ) -> dict:
+        """
+        Validate a candidate-supplied DBS certificate.
+        In production, this would call the DBS Update Service API.
+        Currently simulates validation checks.
+        """
+        validation_details = {}
+        issues = []
+
+        # 1. Certificate number format check (12 digits)
+        if not certificate_number.isdigit() or len(certificate_number) != 12:
+            issues.append("Certificate number must be exactly 12 digits")
+            validation_details["format_check"] = "failed"
+        else:
+            validation_details["format_check"] = "passed"
+
+        # 2. Issue date validity — must not be in the future
+        try:
+            issue_dt = datetime.fromisoformat(issue_date.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            if issue_dt > now:
+                issues.append("Issue date is in the future")
+                validation_details["date_check"] = "failed"
+            else:
+                validation_details["date_check"] = "passed"
+                # Check if older than 3 years (may need renewal)
+                age_days = (now - issue_dt).days
+                validation_details["certificate_age_days"] = age_days
+                if age_days > 1095:  # 3 years
+                    validation_details["age_warning"] = "Certificate is over 3 years old — may need renewal"
+        except (ValueError, TypeError):
+            issues.append("Invalid issue date format")
+            validation_details["date_check"] = "failed"
+
+        # 3. DBS type validation
+        valid_types = ["basic", "standard", "enhanced", "enhanced_barred"]
+        if dbs_type not in valid_types:
+            issues.append(f"Invalid DBS type: {dbs_type}")
+            validation_details["type_check"] = "failed"
+        else:
+            validation_details["type_check"] = "passed"
+
+        # 4. Update Service check (simulated)
+        if update_service_ref:
+            validation_details["update_service_registered"] = True
+            # Simulate Update Service check
+            is_current = random.random() < 0.92
+            validation_details["update_service_status"] = "no_change" if is_current else "changed"
+            if not is_current:
+                issues.append("DBS Update Service reports changes since certificate was issued — new check may be required")
+        else:
+            validation_details["update_service_registered"] = False
+
+        # 5. Cross-reference check (simulated — in production, call DBS API)
+        validation_details["cross_reference_check"] = "passed"
+
+        # Determine overall result
+        if issues:
+            result = "requires_review"
+            validation_status = "review_required"
+        else:
+            result = "clear"
+            validation_status = "validated"
+
+        validation_details["issues"] = issues
+        validation_details["candidate_supplied"] = True
+
+        return {
+            "status": "completed",
+            "result": result,
+            "details": {
+                "convictions": "candidate_supplied_certificate",
+                "validation_method": "candidate_supplied",
+                "dbs_type": dbs_type,
+                "certificate_number": certificate_number,
+            },
+            "validation_status": validation_status,
+            "validation_details": validation_details,
+        }
+
+    @staticmethod
     def check_update_service(candidate_id: str, certificate_number: str) -> dict:
         """Check DBS Update Service for changes since certificate was issued."""
         is_current = random.random() < 0.95
@@ -127,7 +214,8 @@ class DBSCheckService:
     @staticmethod
     def get_check(check_id: str) -> dict:
         with get_db() as db:
-            row = db.execute("SELECT * FROM dbs_checks WHERE id=?", (check_id,)).fetchone()
+            db.execute("SELECT * FROM dbs_checks WHERE id=%s", (check_id,))
+            row = db.fetchone()
             if not row:
                 return None
             return dict(row)
@@ -135,8 +223,9 @@ class DBSCheckService:
     @staticmethod
     def get_checks_for_candidate(candidate_id: str) -> list:
         with get_db() as db:
-            rows = db.execute(
-                "SELECT * FROM dbs_checks WHERE candidate_id=? ORDER BY submitted_at DESC",
+            db.execute(
+                "SELECT * FROM dbs_checks WHERE candidate_id=%s ORDER BY submitted_at DESC",
                 (candidate_id,),
-            ).fetchall()
+            )
+            rows = db.fetchall()
             return [dict(r) for r in rows]
